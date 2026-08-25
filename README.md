@@ -2,7 +2,7 @@
 
 Portable, versioned defaults for how my coding agents work across machines and repositories.
 
-This repository is the source of truth for global behavior, communication style, portable Claude safety settings, shared skills, third-party skill pins, Git safety hooks, and intentionally public brand context. Project-specific instructions remain in each project. Personal permissions, machine-specific identities, credentials, and application setup remain in the workstation repository.
+This repository is the source of truth for global behavior, communication style, portable Claude safety settings, shared skills, third-party skill pins, Git safety hooks, shared executable tools, and intentionally public brand context. Project-specific instructions remain in each project. Personal permissions, machine-specific identities, credentials, and application setup remain in the workstation repository.
 
 ## What this solves
 
@@ -61,6 +61,7 @@ global/ ───────────────> ~/.claude/CLAUDE.md
 claude/settings.json ──> ~/.claude/settings.json (portable keys merged)
 skills/ + vendor/ ─────> ~/.claude/skills/ and ~/.codex/skills/
 brand/ ── explicit ────> existing publication repositories
+tools/ ── not installed, run from the checkout
 ```
 
 `AGENTS.md` is the canonical project instruction file. A project's `CLAUDE.md` should import it with `@AGENTS.md`, avoiding two drifting project rule sets.
@@ -100,6 +101,50 @@ bin/llmctx vendor check
 ```
 
 Floating `main`, `master`, and `HEAD` are rejected.
+
+## Tools
+
+`tools/` holds executable tooling that is too large to embed in a skill and too general to belong to any one project. The split is deliberate: a skill describes how to do something and travels as prose; a tool does it and has to run.
+
+This is the only part of the repository that is not shell, so it is kept at arm's length. Each tool carries its own manifest and dependencies, gitignores its own build output and artifacts, and is **not** installed by `install.sh` or `llmctx install`. Nothing in `bin/` or `tests/` depends on `tools/`, and the shell linters do not read it. A tool can be deleted without affecting anything else here.
+
+### snapshot
+
+Captures a visual baseline of a site across viewports: a dated folder of PNGs, a manifest, and a contact sheet laying every page against every viewport. Filenames derive from the URL and viewport rather than the page title, so a later run over the same URLs lines up file-for-file with an earlier one — which is the whole basis of a before/after comparison.
+
+Use it for design-degradation evidence, QA rounds, client onboarding, and competitive teardowns. The companion [`site-visual-baseline`](skills/site-visual-baseline/SKILL.md) skill covers the judgement: which pages matter, how to tell a real defect from a capture artifact, and the traps that silently produce wrong screenshots.
+
+**Stack.** Node 18+ and Playwright driving headless Chromium. Plain ESM with no build step, no framework, and no bundler — the files run exactly as written. Playwright is the only dependency.
+
+**Setup.** Chromium is a separate download of roughly 300MB and is not fetched by `npm install`:
+
+```sh
+cd tools/snapshot
+npm install
+npx playwright install chromium
+```
+
+**Run.** Nothing else needs to be running — no server, no other service:
+
+```sh
+# a known list of pages, all three viewports
+node snapshot.mjs --url https://example.com --pages urls.txt
+
+# discover pages by following same-origin links instead
+node snapshot.mjs --url https://example.com --crawl --max 25
+
+# one viewport, one page — the loop to use while checking a fix
+node snapshot.mjs --url https://example.com --pages urls.txt --viewport desktop --only /pricing
+
+# rebuild the contact sheet without re-capturing
+node snapshot.mjs --url https://example.com --render-only
+
+node snapshot.mjs --help
+```
+
+`urls.txt` is newline-delimited paths or full URLs, where `#` starts a comment. Output lands in `./captures/<date>-<host>/` unless `--out` says otherwise, and `index.html` in that folder is the contact sheet. It references the PNGs by relative path, so it opens straight off disk but has to stay next to them.
+
+Roughly 3–5 seconds per page. That is the deliberate settle waits, not concurrency: the tool scrolls each page to force lazy images to load, waits for them to decode, and suppresses delay-triggered marketing overlays before shooting. [`tools/snapshot/README.md`](tools/snapshot/README.md) explains why each of those steps exists — every one of them was a wrong screenshot first.
 
 ## Safe multi-agent work
 
@@ -143,16 +188,46 @@ Resolution order is preset → client → repo-local git config, mirroring git's
 
 ## Layout
 
+Source content — what gets installed onto a machine:
+
 ```text
-global/       portable behavioral, communication, and handoff rules
-claude/       portable Claude safety settings
-skills/       owned skills
-vendor/       pinned third-party skills
-brand/        intentionally public personal-brand context
-bin/          stable CLI, installers, checks, hooks, and libraries
-tests/        deterministic shell tests and portable runner
-docs/         detailed operating references
+global/       portable behavioral, communication, and handoff rules. Claude Code
+              supports @import so its adapter references these files; Codex does
+              not, so they are concatenated inline into ~/.codex/AGENTS.md
+  behavioral-guidelines.md   how to work: think first, stay surgical, branch before building
+  communication-style.md     how to write: plain, direct, options then a recommendation
+  handoff-and-briefs.md      where briefs and handoffs live so any agent finds them
+claude/       settings.json — the portable Claude keys merged into ~/.claude/settings.json.
+              Personal permissions deliberately do not live here
+skills/       owned skills, one directory per skill, each with a SKILL.md.
+              bundles.conf groups them by project type and is what makes
+              selection real, since a project's own skills are additive
+vendor/       third-party skills, pinned by upstream commit and content hash.
+              Treated as immutable; changed only through bin/update-vendor.sh
+tools/        executable tooling, currently just snapshot. Node rather than
+              shell, self-contained, and not installed by llmctx
+brand/        intentionally public personal-brand context, published explicitly
+              and never as part of a local install
+templates/    canonical shapes for things instantiated elsewhere. Currently the
+              client-profile example, whose instances live in workstation
 ```
+
+Machinery — how the repository operates on itself:
+
+```text
+bin/          the stable CLI and everything behind it
+  llmctx        entry point every daily command goes through
+  lib/          shared shell libraries: policy, skills, vendor
+  claude-hooks/ branch-policy guard Claude Code runs as a PreToolUse hook
+  git-hooks/    pre-commit hook, installed into this repo and others
+  *.sh          installers, checks, adapter build, doctor, worktree helper
+tests/        deterministic shell tests plus run.sh; no network access, so the
+              suite runs anywhere
+docs/         operating references: operations, repository policy, the
+              publication boundary, and the briefs convention
+```
+
+Root files worth knowing: `AGENTS.md` is the canonical project instruction file and `CLAUDE.md` simply imports it. `.llmctx.json` is this repository's own committed policy. `vendor.lock.json` pins third-party skills. `install.sh` is the one-shot entry point for a new machine.
 
 ## Development and releases
 
