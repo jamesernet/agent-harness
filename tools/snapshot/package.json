@@ -1,0 +1,15 @@
+{
+  "name": "@llmctx/snapshot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Capture a visual baseline of a site across viewports, with stable filenames for before/after comparison.",
+  "type": "module",
+  "bin": { "snapshot": "./snapshot.mjs" },
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "postinstall-browser": "playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
+}
