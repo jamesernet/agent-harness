@@ -29,7 +29,7 @@ POLICY_LIB_SRC="$SCRIPT_DIR/lib/policy.sh"
 MARKER="llmctx-hook"
 
 REPOS=(
-  "$HOME/repos/github.com/jamesernet/llm-context"
+  "$HOME/repos/github.com/jamesernet/agent-harness"
   "$HOME/repos/github.com/emergentlabs/jamesernet.com"
   "$HOME/repos/github.com/emergentlabs/emergentlabs.xyz"
 )
