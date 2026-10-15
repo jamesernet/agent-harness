@@ -2,7 +2,7 @@
 #
 # THIS FILE IS THE PATTERN. Real profiles live in the workstation repo, at
 # config/clients/<slug>.toml, and are private to that machine. This copy exists
-# here because llm-context owns the reusable patterns; workstation owns the
+# here because agent-harness owns the reusable patterns; workstation owns the
 # instantiation.
 #
 # WHAT PROBLEM THIS SOLVES
@@ -139,7 +139,7 @@ browser_profile = "Acme"
 #
 # When a generator is written (against real clients, not this example), it
 # should emit rather than interpret, so that everything stays greppable and
-# debuggable — the same model as llm-context's build-adapters.sh:
+# debuggable — the same model as agent-harness's build-adapters.sh:
 #
 #   config/git/config-<slug>        identity + signingkey
 #   config/git/config               the includeIf entry

@@ -4,7 +4,7 @@ Personal, in-development skill set. Each skill is a flat directory with a `SKILL
 (Claude Code does **not** discover nested category folders), so the grouping below is
 organizational only.
 
-**Workflow:** these live in the `llm-context` repo (version-controlled) and are installed
+**Workflow:** these live in the `agent-harness` repo (version-controlled) and are installed
 into each account's `skills/<name>/` by `bin/install-skills.sh` — managed copies by default,
 symlinks under `--dev` so edits take effect immediately. A project-local `.claude/skills/` is
 **additive**: it cannot hide a globally installed skill.

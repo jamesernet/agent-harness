@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Repo-local pre-commit checks for llm-context ITSELF. Installed as
+# Repo-local pre-commit checks for agent-harness ITSELF. Installed as
 # .git/hooks/pre-commit.local by bin/bootstrap.sh; the branch backstop
 # (bin/git-hooks/pre-commit) execs it after its own check passes.
 set -euo pipefail

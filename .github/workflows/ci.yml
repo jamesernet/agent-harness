@@ -1,10 +1,10 @@
-# CI for llm-context: catch malformed skills and broken builds before they
+# CI for agent-harness: catch malformed skills and broken builds before they
 # silently degrade skill triggering or adapter generation.
 #
 # Note: `build-adapters.sh --check` is inherently local — it diffs against the
 # adapters installed in $HOME — so CI runs a smoke build into a throwaway HOME
 # instead. The real drift check runs in this repo's pre-commit.local
-# (bin/git-hooks/pre-commit-local.llm-context).
+# (bin/git-hooks/pre-commit-local.agent-harness).
 name: ci
 on:
   push:

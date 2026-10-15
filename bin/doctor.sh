@@ -115,9 +115,9 @@ fi
 if command -v git >/dev/null 2>&1 && git -C "$SRC" rev-parse --git-dir >/dev/null 2>&1; then
   hooks_path="$(git -C "$SRC" config --get core.hooksPath || true)"
   if [[ -n "$hooks_path" ]]; then
-    add_check self-git-hook FAIL "core.hooksPath is managed externally: $hooks_path" "integrate the llm-context checks into that hook framework"
+    add_check self-git-hook FAIL "core.hooksPath is managed externally: $hooks_path" "integrate the agent-harness checks into that hook framework"
     add_check self-policy-library FAIL "policy resolver could not be verified through core.hooksPath" "integrate the policy resolver into that hook framework"
-    add_check self-local-checks FAIL "local checks could not be verified through core.hooksPath" "integrate the llm-context checks into that hook framework"
+    add_check self-local-checks FAIL "local checks could not be verified through core.hooksPath" "integrate the agent-harness checks into that hook framework"
   else
     hooks_dir="$(git -C "$SRC" rev-parse --git-path hooks)"
     case "$hooks_dir" in /*) ;; *) hooks_dir="$SRC/$hooks_dir" ;; esac
@@ -134,16 +134,16 @@ if command -v git >/dev/null 2>&1 && git -C "$SRC" rev-parse --git-dir >/dev/nul
       add_check self-policy-library FAIL "Git hook policy resolver is missing or stale" "$SRC/install.sh"
     fi
 
-    if [[ -x "$hooks_dir/pre-commit.local" ]] && cmp "$SCRIPT_DIR/git-hooks/pre-commit-local.llm-context" "$hooks_dir/pre-commit.local" >/dev/null 2>&1; then
+    if [[ -x "$hooks_dir/pre-commit.local" ]] && cmp "$SCRIPT_DIR/git-hooks/pre-commit-local.agent-harness" "$hooks_dir/pre-commit.local" >/dev/null 2>&1; then
       add_check self-local-checks PASS "repository-local checks are current" ""
     else
       add_check self-local-checks FAIL "repository-local checks are missing or stale" "$SRC/install.sh"
     fi
   fi
 else
-  add_check self-git-hook FAIL "llm-context source is not a Git repository" "clone llm-context with Git"
-  add_check self-policy-library FAIL "llm-context source is not a Git repository" "clone llm-context with Git"
-  add_check self-local-checks FAIL "llm-context source is not a Git repository" "clone llm-context with Git"
+  add_check self-git-hook FAIL "agent-harness source is not a Git repository" "clone agent-harness with Git"
+  add_check self-policy-library FAIL "agent-harness source is not a Git repository" "clone agent-harness with Git"
+  add_check self-local-checks FAIL "agent-harness source is not a Git repository" "clone agent-harness with Git"
 fi
 
 build_skill_catalog() {

@@ -1,5 +1,11 @@
 # shellcheck shell=bash
 LLMCTX_SKILL_MARKER_NAME=".llmctx-managed.json"
+# FROZEN at the pre-rename value, deliberately. llmctx_skill_is_managed_copy()
+# compares this string for exact equality against .llmctx-managed.json in every
+# installed skill. Changing it to jamesernet/agent-harness would make every
+# skill already installed in a consumer repo read as unmanaged, and the
+# installer would refuse to touch it. This is a protocol identifier like
+# llmctx-hook and the llmctx:begin markers, not a label — see ADR-001.
 LLMCTX_SKILL_MANAGED_BY="jamesernet/llm-context"
 
 llmctx_skill_hash_file() {

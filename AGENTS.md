@@ -1,4 +1,4 @@
-# llm-context project instructions
+# agent-harness project instructions
 
 ## Purpose
 
