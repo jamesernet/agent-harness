@@ -1,11 +1,11 @@
-# Pre-commit config for llm-context ITSELF.
+# Pre-commit config for agent-harness ITSELF.
 #
 # WHY THIS EXISTS ALONGSIDE bin/git-hooks/pre-commit
 #
 # This repo has its own hook chain, installed by bin/bootstrap.sh:
 #
 #   .git/hooks/pre-commit        branch policy + gitleaks   (bin/git-hooks/pre-commit)
-#     └─ execs pre-commit.local  lint-skills + adapter drift (bin/git-hooks/pre-commit-local.llm-context)
+#     └─ execs pre-commit.local  lint-skills + adapter drift (bin/git-hooks/pre-commit-local.agent-harness)
 #         └─ runs `pre-commit run` when the framework is installed  ← this file
 #
 # That chain is the canonical path and covers every committer, including humans

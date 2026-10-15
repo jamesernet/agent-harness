@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# llmctx-hook: branch backstop from jamesernet/llm-context. Managed by
+# llmctx-hook: branch backstop from jamesernet/agent-harness. Managed by
 # bin/install-git-hooks.sh — don't edit this copy; edit bin/git-hooks/pre-commit
-# in the llm-context repo and re-run the installer.
+# in the agent-harness repo and re-run the installer.
 #
 # Blocks commits on protected branches. A tool-agnostic backstop for the
 # "branch before you build" rule: it fires for ANY committer — human, Claude,
@@ -32,12 +32,12 @@ if [ -f "$POLICY_LIB" ]; then
     policy="$LLMCTX_BRANCH_POLICY"
     protected="$LLMCTX_PROTECTED_BRANCHES"
   else
-    echo "warning: llm-context policy is invalid; branch check skipped: $LLMCTX_POLICY_ERROR" >&2
+    echo "warning: agent-harness policy is invalid; branch check skipped: $LLMCTX_POLICY_ERROR" >&2
     policy=off
     protected=""
   fi
 else
-  echo "warning: llm-context policy library missing; branch check skipped" >&2
+  echo "warning: agent-harness policy library missing; branch check skipped" >&2
   policy=off
   protected=""
 fi

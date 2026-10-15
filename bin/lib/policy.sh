@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034 # resolved values are consumed by scripts that source this library
 
-# Shared llm-context repository policy resolution. Source this file; it does not
+# Shared agent-harness repository policy resolution. Source this file; it does not
 # execute anything on its own. Compatible with the Bash 3.2 shipped by macOS.
 
 LLMCTX_POLICY_SCHEMA_VERSION=1

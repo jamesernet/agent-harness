@@ -103,7 +103,7 @@ fi
 
 hooks_path="$(git -C "$root" config --get core.hooksPath || true)"
 if [[ -n "$hooks_path" ]]; then
-  add_finding git-hook UNKNOWN "llm-context branch backstop" "managed by core.hooksPath=$hooks_path" git-local "integrate the branch check through that hook framework"
+  add_finding git-hook UNKNOWN "agent-harness branch backstop" "managed by core.hooksPath=$hooks_path" git-local "integrate the branch check through that hook framework"
 
   # Do not stop here. Reporting only UNKNOWN and skipping the rest meant a
   # repository with core.hooksPath set and NO branch enforcement at all printed
@@ -138,13 +138,13 @@ else
   remediation="$SRC/bin/install-git-hooks.sh $root"
 
   if [[ ! -f "$installed_hook" ]]; then
-    add_finding git-hook MISSING "llm-context branch backstop" missing git-hooks "$remediation"
+    add_finding git-hook MISSING "agent-harness branch backstop" missing git-hooks "$remediation"
   elif ! grep -q 'llmctx-hook' "$installed_hook"; then
-    add_finding git-hook UNKNOWN "llm-context branch backstop" "foreign pre-commit hook" git-hooks "$remediation"
+    add_finding git-hook UNKNOWN "agent-harness branch backstop" "foreign pre-commit hook" git-hooks "$remediation"
   elif cmp "$SRC/bin/git-hooks/pre-commit" "$installed_hook" >/dev/null 2>&1; then
-    add_finding git-hook OK "current llm-context branch backstop" current git-hooks ""
+    add_finding git-hook OK "current agent-harness branch backstop" current git-hooks ""
   else
-    add_finding git-hook STALE "current llm-context branch backstop" stale git-hooks "$remediation"
+    add_finding git-hook STALE "current agent-harness branch backstop" stale git-hooks "$remediation"
   fi
 
   if [[ ! -f "$installed_policy" ]]; then

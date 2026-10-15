@@ -17,7 +17,7 @@ printf '%s\n' '# Example vendor' >"$copy/vendor/example-vendor/SKILL.md"
 git -C "$copy" init -q
 export GIT_CONFIG_GLOBAL="$tmp/global.gitconfig"
 
-# Private machine settings may be installed before llm-context. Installation
+# Private machine settings may be installed before agent-harness. Installation
 # must preserve keys this public repository does not own.
 mkdir -p "$test_home/.claude"
 printf '%s\n' '{"permissions":{"allow":["Private(example)"]},"theme":"dark"}' \

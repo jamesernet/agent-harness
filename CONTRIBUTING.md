@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve `llm-context`. This repository contains portable,
+Thanks for helping improve `agent-harness`. This repository contains portable,
 public defaults for coding agents. Keep changes focused on behavior that is
 safe and useful across machines and repositories.
 

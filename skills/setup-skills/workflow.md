@@ -9,7 +9,7 @@ and `triage` read it. Replace the bracketed parts and delete the options that do
 
 **On the tracker only.** The ticket *is* the brief. Nothing is committed. A brief that
 restates its ticket is a second copy free to drift, so there is no file to write and no
-directory to create. Working notes stay wherever the harness puts temporary files, and are
+directory to create. Working notes stay wherever the agent tool puts temporary files, and are
 never committed. Where `.llmctx.json` declares `"briefs": "tracker"`, that file is the
 record of the decision — state the consequence here and point at it, rather than restating
 the choice and creating the second copy this section exists to prevent.

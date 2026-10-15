@@ -38,4 +38,4 @@ external Git actions remain explicit.
 
 ## Recovery
 
-Re-running `install.sh` is idempotent and repairs stale managed files. If `doctor` reports a conflict, inspect it before removal: conflicts indicate content that is not marked as owned by llm-context. For repositories using Husky, Lefthook, or another `core.hooksPath`, integrate the branch check through that framework rather than overwriting it.
+Re-running `install.sh` is idempotent and repairs stale managed files. If `doctor` reports a conflict, inspect it before removal: conflicts indicate content that is not marked as owned by agent-harness. For repositories using Husky, Lefthook, or another `core.hooksPath`, integrate the branch check through that framework rather than overwriting it.

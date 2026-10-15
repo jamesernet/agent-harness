@@ -31,7 +31,7 @@ session per worktree.
    its equivalents encode that repo's base branch, location convention and
    pre-flight — core-api's fetches `origin/main` first, because a stale base is
    how you author a migration chaining off a superseded head. Fall back to
-   `llm-context/bin/worktree.sh new <branch>` only where the repo ships nothing.
+   `agent-harness/bin/worktree.sh new <branch>` only where the repo ships nothing.
    All subsequent work happens inside that worktree, leaving the main checkout
    free for parallel grabs.
 
