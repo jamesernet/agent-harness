@@ -42,24 +42,35 @@ extract_block() {
   awk '/llmctx:begin/{f=1;next} /llmctx:end/{f=0} f' "$1"
 }
 
+# The marker has ONE definition, used whether the destination already has one
+# or not. It used to exist only on the creation path: a destination that already
+# carried a marker had that line reprinted verbatim, so the marker was
+# write-once and the tool that owns it could never correct it. ADR-001 renamed
+# the repository and expected one resync to update every mirror's marker; it
+# would not have, because of this. The marker now follows the source.
+marker_line() {
+  printf '<!-- llmctx:begin — synced from agent-harness/%s; edit there, then run bin/sync-published-context.sh. Do not edit between these markers. -->' "$1"
+}
+
 sync_block() {
-  local source_rel="$1" src="$2" dest="$3" dest_dir tmp
+  local source_rel="$1" src="$2" dest="$3" dest_dir tmp marker
   dest_dir="$(dirname "$dest")"
   mkdir -p "$dest_dir"
+  marker="$(marker_line "$source_rel")"
   tmp="$(mktemp "$dest_dir/.llmctx-publish.XXXXXX")"
   # shellcheck disable=SC2064 # expand $tmp now, not at trap time
   trap "rm -f '$tmp'" RETURN
 
   if grep -q "llmctx:begin" "$dest" 2>/dev/null; then
-    awk -v srcfile="$src" '
+    awk -v srcfile="$src" -v marker="$marker" '
       function emit(){ while ((getline l < srcfile) > 0) print l; close(srcfile) }
-      /llmctx:begin/ { print; emit(); inblk=1; next }
+      /llmctx:begin/ { print marker; emit(); inblk=1; next }
       /llmctx:end/   { inblk=0; print; next }
       !inblk { print }
     ' "$dest" >"$tmp"
   else
     {
-      echo "<!-- llmctx:begin — synced from agent-harness/$source_rel; edit there, then run bin/sync-published-context.sh. Do not edit between these markers. -->"
+      printf '%s\n' "$marker"
       cat "$src"
       echo "<!-- llmctx:end -->"
     } >"$tmp"
@@ -67,6 +78,12 @@ sync_block() {
 
   mv "$tmp" "$dest"
 }
+
+# Sourcing this file exposes marker_line and sync_block without running a sync,
+# which is what tests/sync-published-test.sh drives.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return 0
+fi
 
 result=0
 for entry in "${SYNC_MAP[@]}"; do
