@@ -271,23 +271,21 @@ Preferred sections:
 
 ### Emergent Labs
 
-Emergent Labs should feel like a practical lab for helping founders and teams navigate technical uncertainty.
+Emergent Labs is a small lab of engineers and designers building practical tools, in the open where we can.
 
 It should answer:
 
-> How can we work together?
+> What do they build, and how do they work?
 
-Use language that is founder-friendly, useful, and practical without sounding like an agency or generic consultancy.
+Write for CTOs and founders, plainly and sparsely. Emergent Labs is not an agency or a consultancy, and most work comes by referral, so the copy never needs to sell. Less is more.
 
 Focus on:
 
-- technical assessments
-- founder workshops
-- architecture reviews
-- technical due diligence
-- validation sprints
-- product and engineering alignment
-- practical execution
+- the tools we build and the problems they solve
+- working in the open: open source, published notes, public repos
+- collaboration: working alongside a team rather than handing work off
+- ethical technology: show it through choices and defaults rather than claiming it
+- the ways we work with others: technical assessments, architecture reviews, technical due diligence
 
 ---
 

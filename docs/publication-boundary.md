@@ -1,6 +1,6 @@
 # Publication boundary
 
-`llm-context` is designed to be public. It contains portable agent behavior,
+`agent-harness` is designed to be public. It contains portable agent behavior,
 reusable skills, safety hooks, policy schemas, and personal-brand content that is
 already published to websites. It must not become a convenient aggregation point
 for client or workstation secrets.
@@ -11,7 +11,7 @@ for client or workstation secrets.
 public contributors/upstreams
             |
             v
-      llm-context source ---- tagged release ----> local agent configuration
+      agent-harness source ---- tagged release ----> local agent configuration
             |                                            ^
             | explicit publication                       |
             v                                            |

@@ -53,7 +53,7 @@ is available, ask — those three change every reviewer's verdict.
 ### 2. Run three reviewers in parallel
 
 Three agents, dispatched in a single message so they run concurrently and none
-can see another's findings. Whatever your harness calls that — a general-purpose
+can see another's findings. Whatever your agent tool calls that — a general-purpose
 subagent, a task, a worker — each one gets the same context pack, is told to
 report rather than edit, and is given no path to the others' output. If your
 harness cannot run agents, run the three passes yourself in separate turns

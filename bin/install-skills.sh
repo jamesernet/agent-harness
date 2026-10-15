@@ -119,7 +119,7 @@ install_copy() {
       return 1
     fi
   elif [[ -e "$destination" ]] && ! llmctx_skill_is_managed_copy "$destination"; then
-    echo "conflict: $destination is not managed by llm-context" >&2
+    echo "conflict: $destination is not managed by agent-harness" >&2
     return 1
   fi
 
@@ -164,7 +164,7 @@ install_dev_link() {
     if llmctx_skill_is_managed_copy "$destination"; then
       rm -rf "$destination" || return 1
     else
-      echo "conflict: $destination is not managed by llm-context" >&2
+      echo "conflict: $destination is not managed by agent-harness" >&2
       return 1
     fi
   fi

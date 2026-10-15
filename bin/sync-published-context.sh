@@ -59,7 +59,7 @@ sync_block() {
     ' "$dest" >"$tmp"
   else
     {
-      echo "<!-- llmctx:begin — synced from llm-context/$source_rel; edit there, then run bin/sync-published-context.sh. Do not edit between these markers. -->"
+      echo "<!-- llmctx:begin — synced from agent-harness/$source_rel; edit there, then run bin/sync-published-context.sh. Do not edit between these markers. -->"
       cat "$src"
       echo "<!-- llmctx:end -->"
     } >"$tmp"

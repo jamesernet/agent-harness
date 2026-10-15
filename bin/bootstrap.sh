@@ -34,7 +34,7 @@ SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
 "$SCRIPT_DIR/install-git-hooks.sh" "$SRC"
 hooks_dir="$(git -C "$SRC" rev-parse --git-path hooks)"
 case "$hooks_dir" in /*) ;; *) hooks_dir="$SRC/$hooks_dir" ;; esac
-cp "$SCRIPT_DIR/git-hooks/pre-commit-local.llm-context" "$hooks_dir/pre-commit.local"
+cp "$SCRIPT_DIR/git-hooks/pre-commit-local.agent-harness" "$hooks_dir/pre-commit.local"
 chmod +x "$hooks_dir/pre-commit.local"
 echo "installed pre-commit.local (skill lint + adapter drift check) -> $SRC"
 

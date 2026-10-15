@@ -1,4 +1,4 @@
-# llm-context
+# agent-harness
 
 Portable, versioned defaults for how my coding agents work across machines and repositories.
 
@@ -13,15 +13,31 @@ This repository is the source of truth for global behavior, communication style,
 - Local drift is visible through deterministic commands rather than agent interpretation.
 - Public content publication is separate from local agent installation.
 
-The boundary is deliberate: `llm-context` owns portable agent behavior; a project owns its local context; `workstation` owns machine setup and private values.
+The boundary is deliberate: `agent-harness` owns portable agent behavior; a project owns its local context; `workstation` owns machine setup and private values.
+
+### Why the CLI is still called `llmctx`
+
+This repository was named `llm-context` until ADR-001. The name under-described
+what it holds, so it was renamed; the acronym was left alone on purpose.
+
+`llmctx` is a protocol identifier, not a label. It appears in Git config keys,
+`.llmctx.json`, `.llmctx-managed.json`, the `llmctx:begin`/`llmctx:end` mirror
+markers, the `llmctx-hook` marker in installed Git hooks, and consumers'
+`.llmctx-version` pins. Those strings are compared for equality by tooling that
+is already installed in other repositories and on other machines, so renaming
+them would not be a rename — it would be a migration, with a window in which
+every consumer reads as unmanaged. The acronym stays frozen.
+
+The same reasoning keeps `LLMCTX_SKILL_MANAGED_BY` at `jamesernet/llm-context`;
+`bin/lib/skills.sh` says so at the line itself.
 
 ## Quick start
 
 Prerequisites are Git, Bash, jq, and either `shasum` or `sha256sum`. macOS and Linux are supported.
 
 ```sh
-git clone https://github.com/jamesernet/llm-context.git
-cd llm-context
+git clone https://github.com/jamesernet/agent-harness.git
+cd agent-harness
 ./install.sh
 bin/llmctx doctor
 ```
@@ -209,7 +225,7 @@ Normal sync skips consumer repositories that are not cloned and never creates re
 
 `templates/client-profile.example.toml` is the canonical shape for describing a client engagement: identity, AWS SSO, enforcement level, collaboration etiquette, and AI/egress policy in one file.
 
-**The pattern lives here; the instances live in `workstation`** (`config/clients/<slug>.toml`, private to that machine). Same split as everything else in this repo — llm-context owns the reusable form, the consuming repo owns the content.
+**The pattern lives here; the instances live in `workstation`** (`config/clients/<slug>.toml`, private to that machine). Same split as everything else in this repo — agent-harness owns the reusable form, the consuming repo owns the content.
 
 Two ideas carry most of the value:
 
