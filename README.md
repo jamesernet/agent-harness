@@ -198,7 +198,7 @@ bin/llmctx vendor check
 
 Floating `main`, `master`, and `HEAD` are rejected.
 
-Managed subagent definitions live in `agents/` and install into every Claude account's `agents/` with the same ownership contract, recorded in a sidecar `.llmctx-managed.json` because an agent is one file rather than a directory. They exist to pin the model, effort and turn budget of the subagents skills spawn, which no hook can do after the fact. See [`agents/README.md`](agents/README.md) for the set and the tiering. Codex has no subagent format and gets none.
+Managed subagent definitions live in `agents/` and install into every Claude account's `agents/` with the same ownership contract, recorded in a sidecar `.llmctx-managed.json` because an agent is one file rather than a directory. They give the subagents skills spawn a default model, effort and turn budget that travels with the work, which no hook can set after the fact; a caller can still override per invocation. See [`agents/README.md`](agents/README.md) for the set and the tiering. Codex has no subagent format and gets none.
 
 ## Safe multi-agent work
 

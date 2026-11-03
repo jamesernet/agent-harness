@@ -66,7 +66,8 @@ fi
 # Nothing to ship is not an error: a release without agents/ simply manages
 # none, and prunes whatever an earlier release installed.
 source_names="$(mktemp "${TMPDIR:-/tmp}/llmctx-agent-names.XXXXXX")"
-trap 'rm -f "$source_names"' EXIT
+staged=""
+trap 'rm -f "$source_names" "$staged"' EXIT
 for f in "$SRC"/agents/*.md; do
   [[ -f "$f" ]] || continue
   name="$(basename "$f" .md)"
@@ -82,17 +83,39 @@ while IFS=$'\t' read -r account_name account_dir; do
   target="$account_dir/agents"
   manifest="$target/$LLMCTX_SKILL_MARKER_NAME"
   mkdir -p "$target"
+  # An unreadable manifest is a hard stop for this account, not an empty one.
+  # Treating it as {} made every managed file a conflict AND rewrote the
+  # manifest with no entries, so one truncated write de-owned the whole set
+  # permanently; repairing the JSON afterwards could not undo it.
   current='{}'
-  [[ -f "$manifest" ]] && current="$(jq -c '.agents // {}' "$manifest" 2>/dev/null || echo '{}')"
+  if [[ -f "$manifest" ]]; then
+    if ! current="$(jq -c '.agents // {}' "$manifest" 2>/dev/null)"; then
+      echo "error: $manifest is not valid JSON; fix or remove it, nothing in $target was touched" >&2
+      failures=$((failures + 1))
+      continue
+    fi
+  fi
   next='{}'
+  account_failures=0
 
-  # Prune managed files whose source is gone.
+  # Prune managed files whose source is gone — unless the file no longer
+  # matches the hash this installer recorded, in which case someone edited it
+  # and it is theirs now. It stays, un-owned, with a warning.
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
     grep -Fxq "$name" "$source_names" && continue
-    if [[ -e "$target/$name.md" || -L "$target/$name.md" ]]; then
-      rm -f "$target/$name.md"
-      echo "pruned: $target/$name.md"
+    retired="$target/$name.md"
+    if [[ -L "$retired" ]]; then
+      rm -f "$retired"
+      echo "pruned: $retired"
+    elif [[ -f "$retired" ]]; then
+      recorded="$(jq -r --arg n "$name" '.[$n].contentHash // ""' <<<"$current")"
+      if [[ -n "$recorded" && "$(llmctx_skill_hash_file "$retired")" != "$recorded" ]]; then
+        echo "warning: $retired was edited after install; its source is retired, so it is left in place and no longer managed" >&2
+      else
+        rm -f "$retired"
+        echo "pruned: $retired"
+      fi
     fi
   done < <(jq -r 'keys[]' <<<"$current")
 
@@ -110,6 +133,7 @@ while IFS=$'\t' read -r account_name account_dir; do
     if [[ -e "$destination" || -L "$destination" ]] && [[ "$managed" -eq 0 ]]; then
       echo "conflict: $destination is not managed by agent-harness" >&2
       failures=$((failures + 1))
+      account_failures=$((account_failures + 1))
       continue
     fi
     content_hash="$(llmctx_skill_hash_file "$source_file")"
@@ -125,11 +149,14 @@ while IFS=$'\t' read -r account_name account_dir; do
         echo "current: $destination"
       else
         staged="$(mktemp "$target/.llmctx-agent.XXXXXX")"
-        if ! cp "$source_file" "$staged" || ! mv "$staged" "$destination"; then
+        if ! cp "$source_file" "$staged" || ! chmod 0644 "$staged" || ! mv "$staged" "$destination"; then
           rm -f "$staged"
+          staged=""
           failures=$((failures + 1))
+          account_failures=$((account_failures + 1))
           continue
         fi
+        staged=""
         if [[ -n "$(jq -r --arg n "$name" '.[$n] // empty' <<<"$current")" ]]; then
           echo "updated: $destination ($source_version)"
         else
@@ -140,6 +167,14 @@ while IFS=$'\t' read -r account_name account_dir; do
     next="$(jq -c --arg n "$name" --arg h "$content_hash" '.[$n] = {contentHash: $h}' <<<"$next")"
   done <"$source_names"
 
+  # A conflict leaves this account's manifest exactly as it was: rewriting it
+  # from the partial pass would record the files that did install and forget
+  # the ones that did not, which is how an owned file turns into a conflict on
+  # the next run.
+  if [[ "$account_failures" -gt 0 ]]; then
+    echo "manifest left unchanged for $target ($account_failures conflict(s))" >&2
+    continue
+  fi
   jq -n \
     --arg managed_by "$LLMCTX_SKILL_MANAGED_BY" \
     --arg mode "$mode" \

@@ -359,6 +359,8 @@ if [[ "$hash_available" -eq 1 ]] && [[ -n "$accounts" ]]; then
       check_agent_target "$account_dir/agents" "claude-agents[$account_name]"
     fi
   done <<<"$accounts"
+else
+  add_check claude-agents FAIL "managed agents could not be inventoried" "$SRC/bin/llmctx agents install"
 fi
 
 if [[ "$quiet" -eq 0 ]]; then

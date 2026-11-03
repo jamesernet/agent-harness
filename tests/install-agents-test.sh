@@ -58,6 +58,44 @@ fi
 [[ "$(cat "$target/mine.md")" == "mine" ]] || fail "conflicting unmanaged agent was overwritten"
 rm "$fixture/agents/mine.md"
 
+# A corrupt manifest is a hard stop, not an empty one: nothing is touched, the
+# manifest is not rewritten, and repairing it restores ownership.
+good_manifest="$(cat "$target/.llmctx-managed.json")"
+printf '%s\n' '{not json' >"$target/.llmctx-managed.json"
+if HOME="$home" "$fixture/bin/llmctx" agents install >/dev/null 2>&1; then
+  fail "corrupt manifest was accepted"
+fi
+[[ "$(cat "$target/.llmctx-managed.json")" == '{not json' ]] || fail "corrupt manifest was rewritten"
+[[ -f "$target/alpha.md" ]] || fail "corrupt manifest caused a managed file to be removed"
+printf '%s\n' "$good_manifest" >"$target/.llmctx-managed.json"
+HOME="$home" "$fixture/bin/llmctx" agents install >/dev/null || fail "repaired manifest did not restore ownership"
+
+# A conflict leaves the manifest as it was, so the files that did install stay owned.
+agent gamma >"$fixture/agents/gamma.md"
+printf '%s\n' 'theirs' >"$target/gamma.md"
+before_manifest="$(cat "$target/.llmctx-managed.json")"
+if HOME="$home" "$fixture/bin/llmctx" agents install >/dev/null 2>&1; then
+  fail "conflict on gamma was accepted"
+fi
+[[ "$(cat "$target/.llmctx-managed.json")" == "$before_manifest" ]] || fail "manifest was rewritten despite a conflict"
+rm "$fixture/agents/gamma.md" "$target/gamma.md"
+
+# A managed file edited by hand is not pruned when its source retires.
+agent delta >"$fixture/agents/delta.md"
+HOME="$home" "$fixture/bin/llmctx" agents install >/dev/null
+printf '%s\n' 'my edit' >>"$target/delta.md"
+rm "$fixture/agents/delta.md"
+HOME="$home" "$fixture/bin/llmctx" agents install >/dev/null 2>&1 || fail "install failed after retiring an edited agent"
+[[ -f "$target/delta.md" ]] || fail "hand-edited agent was pruned"
+jq -e '.agents | has("delta") | not' "$target/.llmctx-managed.json" >/dev/null || fail "retired edited agent still in manifest"
+rm "$target/delta.md"
+
+# Installed copies are world-readable like skills, not mktemp's 0600.
+# GNU stat first: on Linux `stat -f` is a different command that succeeds with
+# filesystem data, so the BSD form cannot be the one tried first.
+perms="$(stat -c %a "$target/alpha.md" 2>/dev/null || stat -f %Lp "$target/alpha.md")"
+[[ "$perms" == "644" ]] || fail "installed agent is not 0644 (got $perms)"
+
 # Every registered account gets the set.
 acme_dir="$home/.claude-acme"
 git config --global --add llmctx.claudeAccount "acme=$acme_dir"

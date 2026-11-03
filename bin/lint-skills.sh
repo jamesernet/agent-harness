@@ -109,6 +109,19 @@ for f in "$SRC"/agents/*.md; do
     continue
   fi
   fm="$(awk 'NR==1 && $0=="---" {infm=1; next} infm && $0=="---" {exit} infm' "$f")"
+  # Claude Code ignores a frontmatter key it does not recognise without saying
+  # so, which makes `maxturns:` a silent no-op and `MaxTurns:` a silent no-op
+  # with a different spelling. Only the documented keys pass, each at most once.
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    case "$key" in
+      name | description | model | effort | tools | disallowedTools | maxTurns | permissionMode | skills | memory | hooks | isolation | mcpServers | background | autoCompactWindow | color) ;;
+      *) err "agents/$name" "unknown frontmatter key \"$key\" (silently ignored by Claude Code)" ;;
+    esac
+  done < <(printf '%s\n' "$fm" | sed -n 's/^\([A-Za-z][A-Za-z0-9_-]*\):.*/\1/p')
+  while IFS= read -r key; do
+    [ -n "$key" ] && err "agents/$name" "frontmatter key \"$key\" appears more than once"
+  done < <(printf '%s\n' "$fm" | sed -n 's/^\([A-Za-z][A-Za-z0-9_-]*\):.*/\1/p' | LC_ALL=C sort | uniq -d)
   fm_name="$(printf '%s\n' "$fm" | sed -n 's/^name:[[:space:]]*//p' | head -1)"
   desc="$(printf '%s\n' "$fm" | sed -n 's/^description:[[:space:]]*//p' | head -1)"
   model="$(printf '%s\n' "$fm" | sed -n 's/^model:[[:space:]]*//p' | head -1)"
