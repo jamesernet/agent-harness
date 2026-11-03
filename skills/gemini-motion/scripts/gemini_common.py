@@ -13,6 +13,7 @@ import json
 import mimetypes
 import os
 import re
+import signal
 import sys
 import time
 from datetime import datetime, timezone
@@ -30,6 +31,19 @@ MODELS = {
     "code_fallbacks": ("gemini-3.6-flash", "gemini-3.5-flash-lite"),
     "ping": "gemini-3.5-flash-lite",
 }
+
+DEFAULT_TIMEOUT_S = {"text": 180, "image": 300, "video": 1800}
+"""Per-call request timeouts, seconds.
+
+The SDK sets none by default, so a stalled request waits forever: observed
+here as a 26-minute hang on a text call that never errored and never
+returned. An agent workflow that hangs is worse than one that fails, because
+nothing surfaces to act on.
+
+Video is generous on purpose. A client-side timeout does not cancel work the
+server already accepted, so cutting a paid render short risks being billed
+for a clip that is never collected.
+"""
 
 MAX_CLIP_SECONDS = 10
 """One Omni call tops out here; longer needs --previous-id to extend."""
@@ -72,42 +86,61 @@ def get_client():
 
 
 RETRY_STATUSES = (429, 503)
-"""Only these are retried.
+"""Statuses worth trying a DIFFERENT MODEL for. Not a retry list.
 
-A 503 (model overloaded) and a 429 (rate limit) both mean the request was
-refused before any generation happened, so re-sending cannot double-charge.
-Timeouts and connection errors are deliberately NOT retried: the request may
-have been accepted and a paid video may already be generating, and a blind
-retry would bill for it twice. Those surface to the caller instead.
+google-genai already retries transient failures itself: its default config is
+max_retries=4 over ["408", "409", "429", "5XX"] with exponential backoff
+capped at 30s elapsed. Adding a second retry loop here multiplied that — four
+outer attempts over five inner requests is twenty calls for one generation,
+with two layers of backoff stacked. Worse than useless when 503s are reported
+to consume the free daily allowance.
+
+So the SDK owns retrying. What it cannot do is give up on a model and try
+another one, which is the only thing left worth doing when a capacity outage
+outlasts its backoff. That is what these statuses gate, in the caller.
 """
 
 
-def create_with_retry(client, attempts: int = 4, base_delay: float = 5.0, **kwargs):
-    """client.interactions.create, retried with exponential backoff on 429/503.
+class Timeout(Exception):
+    """A call exceeded its wall-clock deadline and was abandoned locally."""
 
-    gemini-3.8-flash in particular returns 503 "experiencing high demand" in
-    bursts; without this a transient spike ends the run and loses the brief's
-    place in the workflow.
+
+def create(client, timeout: float, **kwargs):
+    """client.interactions.create under a hard local deadline.
+
+    The SDK accepts a `timeout` and documents it as a wall-clock budget for
+    the whole call. Measured here, it is not one: a create() passed timeout=5
+    against an overloaded model raised after 677 seconds, and another after
+    1572. Nothing in the skill should depend on it, so the deadline is
+    enforced locally with SIGALRM, which interrupts the blocking call
+    whatever the SDK is doing underneath. The SDK value is still passed, so a
+    future fix there only helps.
+
+    Abandoning a call does NOT cancel work the server accepted. For video that
+    means a render may still complete and bill; the interaction is stored, so
+    recover it from the dashboard rather than assuming it never happened.
+
+    SIGALRM is Unix-only and must run on the main thread, which is how these
+    scripts run. Elsewhere this degrades to the SDK's own behaviour.
     """
-    last = None
-    for attempt in range(1, attempts + 1):
-        try:
-            return client.interactions.create(**kwargs)
-        except Exception as e:  # noqa: BLE001
-            status = getattr(e, "status_code", None)
-            if status is None:
-                text = str(e)
-                status = next((c for c in RETRY_STATUSES if str(c) in text), None)
-            if status not in RETRY_STATUSES or attempt == attempts:
-                raise
-            last = e
-            delay = base_delay * (2 ** (attempt - 1))
-            print(
-                f"  {status} from the API (attempt {attempt}/{attempts}); retrying in {delay:.0f}s",
-                file=sys.stderr, flush=True,
-            )
-            time.sleep(delay)
-    raise last  # unreachable
+    def _fire(signum, frame):
+        raise Timeout(
+            f"no response after {timeout:.0f}s; abandoned locally because the SDK's "
+            "own timeout does not reliably bound the call. Work the server already "
+            "accepted may still complete and, for video, still bill."
+        )
+
+    try:
+        previous = signal.signal(signal.SIGALRM, _fire)
+    except (AttributeError, ValueError):
+        return client.interactions.create(timeout=timeout, **kwargs)
+
+    signal.setitimer(signal.ITIMER_REAL, timeout)
+    try:
+        return client.interactions.create(timeout=timeout, **kwargs)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def guess_mime(path: Path, default: str = "application/octet-stream") -> str:
@@ -123,6 +156,11 @@ def image_block(path: str | Path) -> dict:
     mime = guess_mime(p, "image/png")
     if not mime.startswith("image/"):
         die(f"not an image mime type ({mime}): {p}")
+    if p.stat().st_size == 0:
+        # An empty file passes is_file(), encodes to "", and comes back from the
+        # API as "Unable to process input image" with nothing pointing at the
+        # cause. A failed download leaves exactly this.
+        die(f"image file is empty: {p}")
     data = base64.b64encode(p.read_bytes()).decode("ascii")
     return {"type": "image", "data": data, "mime_type": mime}
 

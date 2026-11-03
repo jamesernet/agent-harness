@@ -32,10 +32,11 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gemini_common import (  # noqa: E402
     MAX_CLIP_SECONDS,
+    DEFAULT_TIMEOUT_S,
     MODELS,
     VIDEO_RATES_USD,
     die,
-    create_with_retry,
+    create,
     get_client,
     image_block,
     log_run,
@@ -126,6 +127,9 @@ def main() -> int:
     ap.add_argument("--no-store", action="store_true", help="faster, but the result cannot be edited later")
     ap.add_argument("--approve", type=int, metavar="SECONDS",
                     help="the seconds of video you agreed to pay for; must equal what this\nrender will bill, so a plan that changed since you looked stops here")
+    ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S["video"],
+                    help="seconds to wait for the API before giving up "
+                         f"(default {DEFAULT_TIMEOUT_S['video']}); the SDK sets none, so without this a stall hangs forever")
     ap.add_argument("--json", action="store_true", help="print a JSON summary only")
     args = ap.parse_args()
 
@@ -179,7 +183,7 @@ def main() -> int:
 
     t0 = time.time()
     try:
-        interaction = create_with_retry(client, **kwargs)
+        interaction = create(client, args.timeout, **kwargs)
     except Exception as e:  # noqa: BLE001
         die(f"{type(e).__name__}: {e}")
 

@@ -73,11 +73,23 @@ Then open the frame PNGs with the Read tool and check against the brief:
 
 - [ ] Right elements, nothing extra (no surprise gradients, text, shadows).
 - [ ] Timing matches the timeline (frame at 2 s should be the peak, etc.).
-- [ ] Loop is seamless. Don't eyeball this — `--frames N` over `--duration D`
-      captures t=0 and t=D inclusive, so the first and last PNG must be
-      byte-identical if the loop closes: `md5 -r frames/*.png` (macOS) or
-      `md5sum frames/*.png` (Linux) and compare the first and last hash.
-      Different hashes mean a visible snap, even when the frames look alike.
+- [ ] Loop is seamless. Don't eyeball it, and don't stop at the hash either.
+      `--frames N` over `--duration D` captures t=0 and t=D inclusive, so a
+      closed loop gives two identical end frames: `md5 -r frames/*.png`
+      (macOS) or `md5sum frames/*.png` (Linux), compare first against last.
+      Matching hashes mean it closes exactly; stop there.
+      Differing hashes are a question, not a verdict — anti-aliasing alone
+      changes a hash. Measure before you act on it:
+      `ffmpeg -i frames/frame_0000.png -i frames/frame_000N.png -lavfi psnr -f null -`
+      `inf` is exact. Above ~50 dB is visually lossless: real, invisible, not
+      worth an iteration. Below ~40 dB is a snap the viewer will see; fix that
+      one. Measured here: a model that scored 83 dB looked flawless beside one
+      that scored `inf`. A whole iteration was spent asking for the endpoints
+      to match exactly; the CSS keyframes were already symmetric (0% and 100%
+      identical), the model rewrote the middle, and the number did not move at
+      all. Above ~50 dB you are looking at how the browser rasterises t=0
+      against the wrapped end frame, not at anything the animation controls.
+      Re-prompting cannot fix it. Accept it and move on.
 - [ ] Colours/sizes match the project's values.
 - [ ] Reduced-motion branch exists (`@media (prefers-reduced-motion: reduce)`).
 - [ ] No external URLs. Grepping for `http` alone gives a false positive on

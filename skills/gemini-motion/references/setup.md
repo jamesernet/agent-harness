@@ -85,11 +85,14 @@ Add `.gemini-motion/` to `.gitignore` if the project is under version control.
 - `403` / `PERMISSION_DENIED` / quota error on video only → billing (step 5).
 - `429 RESOURCE_EXHAUSTED` on text/image → free-tier rate limit; wait a minute.
 - `503 service_unavailable` ("experiencing high demand") → the model is
-  overloaded, not your key. The scripts retry 429/503 four times with
-  exponential backoff; if it still fails the spike is long-running. Either
-  wait, or pass `--model gemini-3.5-flash-lite` for animation work — it is
-  a separate capacity pool and has produced correct, brief-compliant output
-  when `gemini-3.8-flash` was refusing every request.
+  overloaded, not your key, and it reaches paid projects too. google-genai
+  already retries this for you (4 attempts over 408/409/429/5XX, backoff
+  capped at 30s), so by the time you see a 503 the SDK has given up. Do not
+  add another retry loop on top: it multiplies the request count, and 503s
+  are reported to consume the free daily allowance.
+  `generate_animation.py` instead falls over to another model, which is the
+  one thing the SDK cannot do. `gemini-3.5-flash-lite` produced correct,
+  brief-compliant output while `gemini-3.8-flash` refused every request.
 - Video call returns no video and a text apology → safety filter; rephrase
   (no real people's likenesses, no minors, nothing violent or explicit).
 - Region errors on editing *uploaded* videos → not available in the EEA, UK

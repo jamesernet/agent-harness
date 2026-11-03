@@ -27,10 +27,13 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gemini_common import (  # noqa: E402
+    DEFAULT_TIMEOUT_S,
     MODELS,
+    RETRY_STATUSES,
+    Timeout,
+    create,
     die,
     extract_code,
-    create_with_retry,
     get_client,
     guess_mime,
     log_run,
@@ -94,6 +97,9 @@ def main() -> int:
                     help="fail instead of trying the fallback models on a 503")
     ap.add_argument("--thinking", choices=("low", "medium", "high"), default="medium")
     ap.add_argument("--previous-id", help="iterate on an earlier result (keeps Gemini's context)")
+    ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S["text"],
+                    help="seconds to wait for the API before giving up "
+                         f"(default {DEFAULT_TIMEOUT_S['text']}); the SDK sets none, so without this a stall hangs forever")
     ap.add_argument("--json", action="store_true", help="print a JSON summary only")
     args = ap.parse_args()
 
@@ -115,6 +121,8 @@ def main() -> int:
     for a in assets:
         if not a.is_file():
             die(f"asset not found: {a}")
+        if a.stat().st_size == 0:
+            die(f"asset is empty: {a} (a failed download looks exactly like this)")
 
     user_text = brief
     if assets:
@@ -148,15 +156,17 @@ def main() -> int:
             note = "" if i == 0 else f"  (falling back from {chain[i - 1]})"
             print(f"asking {model} for {fmt['label']} ...{note}", flush=True)
         try:
-            interaction = create_with_retry(client, model=model, **kwargs)
+            interaction = create(client, args.timeout, model=model, **kwargs)
             break
         except Exception as e:  # noqa: BLE001
             status = getattr(e, "status_code", None)
             if status is None:
                 status = next((c for c in RETRY_STATUSES if str(c) in str(e)), None)
             # Only a capacity failure is worth trying a different model for; a bad
-            # request will fail identically everywhere.
-            if status not in RETRY_STATUSES or i == len(chain) - 1:
+            # request will fail identically everywhere. A local timeout counts:
+            # a model too loaded to answer is as unavailable as one returning 503.
+            capacity = status in RETRY_STATUSES or isinstance(e, Timeout)
+            if not capacity or i == len(chain) - 1:
                 die(f"{type(e).__name__}: {e}")
             print(f"  {model} unavailable; trying {chain[i + 1]}", file=sys.stderr, flush=True)
     model_used = model

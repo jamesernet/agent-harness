@@ -86,8 +86,23 @@ def main() -> int:
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": args.width, "height": args.height})
-        page.goto(src.as_uri())
-        page.add_style_tag(content=f"html{{background:{args.background}}}")
+        if src.suffix.lower() == ".svg":
+            # A standalone SVG document has no <head>, so add_style_tag throws
+            # "Cannot read properties of null (reading 'appendChild')" and no
+            # frame is ever captured. Render it inside a minimal HTML shell
+            # instead: the SVG's own CSS animations still run, and there is a
+            # head to style. Keeps --background working for every format.
+            svg = src.read_text(encoding="utf-8")
+            page.set_content(
+                "<!doctype html><meta charset=utf-8>"
+                f"<style>html,body{{margin:0;background:{args.background}}}"
+                "svg{{width:100vw;height:100vh;display:block}}</style>".replace("{{", "{").replace("}}", "}")
+                + svg,
+                wait_until="load",
+            )
+        else:
+            page.goto(src.as_uri())
+            page.add_style_tag(content=f"html{{background:{args.background}}}")
         page.wait_for_timeout(100)
         seekable = 0
         if not args.realtime:

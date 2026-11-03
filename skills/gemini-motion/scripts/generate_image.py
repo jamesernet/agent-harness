@@ -23,9 +23,10 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gemini_common import (  # noqa: E402
+    DEFAULT_TIMEOUT_S,
     MODELS,
     die,
-    create_with_retry,
+    create,
     get_client,
     image_block,
     log_run,
@@ -49,6 +50,9 @@ def main() -> int:
     ap.add_argument("--previous-id", help="edit the image from an earlier call")
     ap.add_argument("--model", default=MODELS["image"])
     ap.add_argument("--thinking", choices=("minimal", "medium", "high"))
+    ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S["image"],
+                    help="seconds to wait for the API before giving up "
+                         f"(default {DEFAULT_TIMEOUT_S['image']}); the SDK sets none, so without this a stall hangs forever")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
@@ -78,7 +82,7 @@ def main() -> int:
         print(f"generating image with {args.model} ...", flush=True)
     t0 = time.time()
     try:
-        interaction = create_with_retry(client, **kwargs)
+        interaction = create(client, args.timeout, **kwargs)
     except Exception as e:  # noqa: BLE001
         die(f"{type(e).__name__}: {e}")
 
