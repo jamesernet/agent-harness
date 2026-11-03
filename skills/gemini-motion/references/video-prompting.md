@@ -2,8 +2,10 @@
 
 Model: `gemini-omni-1.1-flash`. One call returns a 3–10 second .mp4 with
 native audio (24 fps). Extension adds up to 10 s per turn, 40 s total.
-There is no `duration` parameter: say the length in the prompt ("an 8-second
-clip") and use timecodes for structure.
+Length is a parameter: `--duration 3..10` sets `response_format.duration`
+("3s".."10s"). Prefer it over asking in prose — you are billed per second of
+output, and the flag is honoured where a sentence may not be. Still use
+timecodes in the prompt for structure *within* the clip.
 
 Condensed from Google's prompt guide (ai.google.dev/gemini-api/docs/omni),
 plus what matters in practice.

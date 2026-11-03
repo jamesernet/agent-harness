@@ -45,7 +45,7 @@ from gemini_common import (  # noqa: E402
 
 RESOLUTIONS = ("360p", "720p", "1080p", "4k")
 ASPECTS = ("16:9", "9:16")
-TASKS = ("text_to_video", "image_to_video", "reference_to_video", "edit", "extend")
+TASKS = ("text_to_video", "image_to_video", "reference_to_video", "edit", "extend", "upscale")
 BIG_RESOLUTIONS = ("1080p", "4k")  # payloads > 4 MB need URI delivery
 
 
@@ -111,6 +111,8 @@ def main() -> int:
     ap.add_argument("--aspect", choices=ASPECTS, default=None, help="16:9 (default) or 9:16")
     ap.add_argument("--resolution", choices=RESOLUTIONS, default=None, help="default 720p")
     ap.add_argument("--draft", action="store_true", help="shorthand for --resolution 360p")
+    ap.add_argument("--duration", type=int, choices=range(3, 11), metavar="SECONDS",
+                    help="clip length, 3-10 (default: model decides from the prompt). Billed per second.")
     ap.add_argument("--image", action="append", help="reference image (repeatable, up to a handful)")
     ap.add_argument("--first-frame", help="image to start the video on")
     ap.add_argument("--last-frame", help="image to end the video on (needs --first-frame)")
@@ -134,6 +136,8 @@ def main() -> int:
     response_format: dict = {"type": "video", "resolution": resolution}
     if args.aspect:
         response_format["aspect_ratio"] = args.aspect
+    if args.duration:
+        response_format["duration"] = f"{args.duration}s"
     use_uri = args.uri or resolution in BIG_RESOLUTIONS
     if use_uri:
         response_format["delivery"] = "uri"
@@ -181,6 +185,7 @@ def main() -> int:
         "model": MODELS["video"],
         "resolution": resolution,
         "aspect": args.aspect or "16:9",
+        "duration": f"{args.duration}s" if args.duration else None,
         "previous_id": args.previous_id,
         "seconds": elapsed,
         "usage": usage_summary(interaction),

@@ -33,8 +33,8 @@ from gemini_common import (  # noqa: E402
     usage_summary,
 )
 
-ASPECTS = ("1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9", "1:4", "4:1")
-SIZES = ("1K", "2K", "4K")
+ASPECTS = ("1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9", "1:8", "8:1")
+SIZES = ("512", "1K", "2K", "4K")
 
 
 def main() -> int:
@@ -43,7 +43,7 @@ def main() -> int:
     ap.add_argument("--prompt-file")
     ap.add_argument("--out", help="output path (.png default)")
     ap.add_argument("--aspect", choices=ASPECTS)
-    ap.add_argument("--size", choices=SIZES, help="1K (default), 2K or 4K")
+    ap.add_argument("--size", choices=SIZES, help="512, 1K (default), 2K or 4K")
     ap.add_argument("--ref", action="append", help="reference image to edit or keep consistent (repeatable)")
     ap.add_argument("--previous-id", help="edit the image from an earlier call")
     ap.add_argument("--model", default=MODELS["image"])
