@@ -1,6 +1,7 @@
 ---
 name: threat-model
 description: Threat-model a system or flow — data-flow diagram, trust boundaries, STRIDE enumeration, ranked mitigations. Use when designing or reviewing auth, payment, webhook, file-upload, or admin flows, handling untrusted input, or when a security review of an architecture is needed.
+effort: xhigh
 ---
 
 # Threat Model
