@@ -8,7 +8,7 @@ Where cross-agent work lives, so any agent — Claude Code, Codex, or a human en
 - **Working notes stay local and uncommitted.** Scratch a plan wherever your agent tool puts temporary files; do not commit it.
 - **On session start, read the tracker** — open, unassigned, ready-labelled tickets — before asking what to work on.
 
-**This file no longer prescribes a directory.** It used to mirror briefs into `docs/briefs/` and tell a session to look there first. A global file cannot know whether a repo has adopted that layout, retired it, or forbidden it — core-api retired it on 2026-08-03 after the mirror rotted, and now gitignores the path. A committed briefs directory is still fine where a repo chooses one. **Where a repo says otherwise, the repo wins**, so read the repo before creating a directory for artifacts.
+**This file no longer prescribes a directory.** It used to mirror briefs into `docs/briefs/` and tell a session to look there first. A global file cannot know whether a repo has adopted that layout, retired it, or forbidden it — one repo retired it after the mirror rotted, and now gitignores the path. A committed briefs directory is still fine where a repo chooses one. **Where a repo says otherwise, the repo wins**, so read the repo before creating a directory for artifacts.
 
 ## Routing work
 

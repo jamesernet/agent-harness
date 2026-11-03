@@ -1,11 +1,10 @@
----
-name: money-modeling
-description: Review or design how money is represented and computed — minor units, decimals, currency, rounding, allocation, FX. Use when code touches monetary amounts, prices, balances, fees, invoices, discounts, taxes, or currency conversion, or when reviewing schemas/APIs/DB columns that carry money.
----
-
 # Money Modeling
 
-My standard for representing money in code. Use it two ways: as design rules
+Rule set for how money is represented and computed. Loaded by
+[money-movement-review](SKILL.md); read it whenever amounts, prices, fees,
+balances, or currency conversion are in the code under review.
+
+Use it two ways: as design rules
 when writing new money-handling code, and as a review procedure when auditing
 existing code. When reviewing, output findings ranked by severity with
 file/line evidence.
@@ -87,4 +86,4 @@ file/line evidence.
 - Serialization round-trip: value out equals value in, exactly.
 
 ## Related
-- [payment-flow-review](../payment-flow-review/) · [ledger-and-reconciliation](../ledger-and-reconciliation/)
+- [SKILL.md](SKILL.md) (the review procedure) · [LEDGER.md](LEDGER.md)

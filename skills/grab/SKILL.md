@@ -29,7 +29,7 @@ session per worktree.
    `docs/agents/workflow.md` names where `setup-skills` has been run here (the
    repo's CLAUDE.md/AGENTS.md otherwise). `scripts/new-worktree.sh <branch>` and
    its equivalents encode that repo's base branch, location convention and
-   pre-flight — core-api's fetches `origin/main` first, because a stale base is
+   pre-flight — a helper that fetches `origin/main` first, because a stale base is
    how you author a migration chaining off a superseded head. Fall back to
    `agent-harness/bin/worktree.sh new <branch>` only where the repo ships nothing.
    All subsequent work happens inside that worktree, leaving the main checkout
@@ -46,10 +46,18 @@ session per worktree.
    there is nothing to write. Never create a briefs directory a repo does not
    already use.
 
-5. **Implement** via [implement](../implement/), honoring the brief's
-   verification criteria as the definition of done. On completion or when
-   stopping mid-flight, write a handoff per [handoff](../handoff/) so any
-   agent — or a human — can resume.
+5. **Implement**, honoring the brief's verification criteria as the
+   definition of done. Use [tdd](../tdd/) where possible, at pre-agreed seams.
+   Run typechecking regularly, single test files regularly, and the full test
+   suite once at the end. Before review, check the work against the
+   verification criteria the brief gave you: state each criterion and the
+   evidence that it is met — a test name, a command's output, a file path —
+   not a claim that it is met. Where a criterion cannot be verified as stated,
+   say so rather than reinterpreting it into something that passes. Unmet or
+   unverifiable criteria go on the ticket, not into the commit message. Then
+   use `/code-review` to review the work, and commit to the branch. On
+   completion or when stopping mid-flight, write a handoff per
+   [handoff](../handoff/) so any agent — or a human — can resume.
 
 ## Rules
 - One grab = one branch = one worktree = one brief. No batching.
@@ -58,4 +66,4 @@ session per worktree.
   global handoff-and-briefs conventions).
 
 ## Related
-- [triage](../triage/) · [to-issues](../to-issues/) · [implement](../implement/) · [handoff](../handoff/)
+- [triage](../triage/) · [to-issues](../to-issues/) · [tdd](../tdd/) · [handoff](../handoff/)

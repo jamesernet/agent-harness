@@ -83,11 +83,11 @@ a calendar.
 
 ## Red flags — instant findings
 - Webhook or callback endpoints with no signature verification (the
-  boundary everyone forgets — see payment-flow-review).
+  boundary everyone forgets — see money-movement-review).
 - Authorization checked at the route but not at the object (IDOR).
 - Admin actions with no audit trail.
 - Secrets in code, config files in git, or logs.
 - Internal services that trust each other because "it's inside the VPC."
 
 ## Related
-- [payment-flow-review](../payment-flow-review/) · [data-privacy-review](../data-privacy-review/) · [pci-dss-scoping](../pci-dss-scoping/) · [tech-due-diligence](../tech-due-diligence/) §5
+- [money-movement-review](../money-movement-review/) · [data-privacy-review](../data-privacy-review/) · [pci-dss-scoping](../pci-dss-scoping/) · [tech-due-diligence](../tech-due-diligence/) §5
