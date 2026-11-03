@@ -5,3 +5,8 @@
 *.local
 *.tmp
 __pycache__/
+
+# templates/newsroom run output and tooling; in an org's own repo the drafts are the product
+templates/newsroom/newsroom/
+.venv/
+.pytest_cache/

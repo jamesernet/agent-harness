@@ -26,6 +26,10 @@ jobs:
         run: bin/lint-skills.sh
       - name: Verify vendor lock
         run: bin/check-vendor-lock.sh
+      - name: Install uv (templates/newsroom tests)
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
       - name: Run tests
         run: tests/run.sh
       - name: Verify release tag
