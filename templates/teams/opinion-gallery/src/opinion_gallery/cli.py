@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -17,6 +18,7 @@ from .llm import LLMError, build_llm
 from .run import format_report, preflight, run_cycle
 
 EXIT_OK, EXIT_RUNTIME, EXIT_CONFIG = 0, 1, 2
+IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def load_dotenv(path: Path = Path(".env")) -> None:
@@ -29,7 +31,9 @@ def load_dotenv(path: Path = Path(".env")) -> None:
             continue
         key, value = line.split("=", 1)
         key, value = key.strip(), value.strip().strip("'\"")
-        if key and value:
+        if not IDENTIFIER_RE.fullmatch(key):
+            continue  # a pasted command or stray prose is not a variable; ignore it rather than invent one
+        if value:
             os.environ.setdefault(key, value)
 
 

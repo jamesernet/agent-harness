@@ -92,3 +92,21 @@ def test_check_names_the_credential_source_when_no_variable_is_given(tmp_path, c
     c = write_contract(tmp_path, overrides={"provider": {"kind": "anthropic", "model": "claude-opus-5", "api_key_env": ""}})
     assert cli.main(["check", "--contract", str(c)]) == 0
     assert "ant auth login" in capsys.readouterr().out
+
+
+def test_dotenv_ignores_lines_that_are_not_variables(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    for name in ("GOOD", "printf 'ANTHROPIC_API_KEY", "2BAD", "has space"):
+        monkeypatch.delenv(name, raising=False)
+    (tmp_path / ".env").write_text(
+        "GOOD=yes\n"
+        "# either: a key file, from the clipboard\n"
+        "printf 'ANTHROPIC_API_KEY=%s\\n' \"$(pbpaste)\" > .env\n"
+        "2BAD=no\n"
+        "has space=no\n"
+    )
+    cli.load_dotenv()
+    import os
+
+    assert os.environ["GOOD"] == "yes"
+    assert not any(k for k in os.environ if not cli.IDENTIFIER_RE.fullmatch(k))
