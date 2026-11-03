@@ -30,6 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 "$SCRIPT_DIR/install-skills.sh" "$@"
+"$SCRIPT_DIR/install-agents.sh" "$@"
 
 "$SCRIPT_DIR/install-git-hooks.sh" "$SRC"
 hooks_dir="$(git -C "$SRC" rev-parse --git-path hooks)"
