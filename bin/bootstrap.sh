@@ -9,6 +9,8 @@ set -euo pipefail
 #    <account>/skills and ~/.codex/skills
 # 2. installs the branch backstop + this repo's own pre-commit checks
 #    (lint-skills + build-adapters --check) into THIS repo's .git/hooks
+# 2b. installs managed agents into <account>/agents (a conflict is reported,
+#    not fatal)
 # 3. builds the tool adapters (<account>/CLAUDE.md, ~/.codex/AGENTS.md)
 #    and installs the versioned <account>/settings.json
 #
@@ -28,6 +30,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
+bootstrap_args=("$@")
 
 "$SCRIPT_DIR/install-skills.sh" "$@"
 "$SCRIPT_DIR/install-agents.sh" "$@"
@@ -39,10 +42,37 @@ cp "$SCRIPT_DIR/git-hooks/pre-commit-local.agent-harness" "$hooks_dir/pre-commit
 chmod +x "$hooks_dir/pre-commit.local"
 echo "installed pre-commit.local (skill lint + adapter drift check) -> $SRC"
 
+# Agents install AFTER the backstop and never abort it: a hand-written
+# ~/.claude/agents/reviewer.md is a conflict, not a reason to leave the repo
+# without its branch guard. Only the flags it understands are forwarded —
+# --bundle belongs to skills, and an unknown flag here used to exit 2 and stop
+# everything that followed.
+agent_args=()
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --dev) agent_args+=("$1") ;;
+    --account)
+      agent_args+=("$1" "${2:-}")
+      shift
+      ;;
+    --account=*) agent_args+=("$1") ;;
+  esac
+  shift
+done
+# ${arr[@]+"${arr[@]}"}: an empty array is an unbound variable under set -u in
+# bash 3.2, which is what macOS ships and the CI runner uses.
+set -- ${bootstrap_args[@]+"${bootstrap_args[@]}"}
+agents_status=0
+"$SCRIPT_DIR/install-agents.sh" ${agent_args[@]+"${agent_args[@]}"} || agents_status=$?
+
 adapter_status=0
 "$SCRIPT_DIR/build-adapters.sh" "$@" || adapter_status=$?
 
 echo
+if ((agents_status != 0)); then
+  echo "bootstrap: install-agents.sh exited $agents_status; the agents above were not all installed." >&2
+  echo "  resolve the conflict named, then re-run bin/install-agents.sh." >&2
+fi
 if ((adapter_status != 0)); then
   echo "bootstrap INCOMPLETE: build-adapters.sh exited $adapter_status." >&2
   echo "  installed:     skills, the branch backstop, this repo's pre-commit.local" >&2
@@ -50,5 +80,6 @@ if ((adapter_status != 0)); then
   echo "  the adapter error above says what to do; re-run bin/build-adapters.sh to finish." >&2
   exit "$adapter_status"
 fi
+((agents_status == 0)) || exit "$agents_status"
 
 echo "bootstrap complete. per-repo git hooks: bin/install-git-hooks.sh in each repo."

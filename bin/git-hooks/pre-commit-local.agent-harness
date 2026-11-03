@@ -19,7 +19,7 @@ else
   # it reaches tests/run.sh above and the worktree-install test rightly fails.
   test_home="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-adapters.XXXXXX")"
   trap 'rm -rf "$test_home"' EXIT
-  HOME="$test_home" LLMCTX_ALLOW_WORKTREE_INSTALL=1 bin/build-adapters.sh >/dev/null 2>&1
+  HOME="$test_home" LLMCTX_ALLOW_WORKTREE_INSTALL=1 bin/build-adapters.sh >/dev/null
   HOME="$test_home" LLMCTX_ALLOW_WORKTREE_INSTALL=1 bin/build-adapters.sh --check
 fi
 
