@@ -34,7 +34,7 @@ with public defaults.
   `vendor.lock.json`; updates are explicit and reviewed as executable guidance.
 - Releases are immutable inputs to workstation automation. Consumers install a
   tested tag, never a floating branch.
-- `templates/newsroom/` is a starter that an org copies out. It writes only to a
+- `templates/teams/opinion-gallery/` is a starter that an org copies out. It writes only to a
   drafts directory and GitHub Issues; publishing is a human act. The only org
   contract shipped here is the public `emergentlabs` example, built from
   `brand/`; feed lists, reviewers and private knowledge stay in the org's repo.

@@ -30,7 +30,7 @@ tests/run.sh
 pre-commit run --all-files
 ```
 
-`tests/run.sh` includes the `templates/newsroom` pytest suite when `uv` is on
+`tests/run.sh` includes the `templates/teams/opinion-gallery` pytest suite when `uv` is on
 PATH and prints a skip otherwise; a skip is not a pass.
 
 Run `actionlint .github/workflows/ci.yml` when changing CI. Run
