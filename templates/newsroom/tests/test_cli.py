@@ -73,3 +73,15 @@ def test_provider_override_lets_bench_run_offline(tmp_path, capsys):
     c = write_contract(tmp_path, overrides={"provider": {"kind": "openai", "model": "m", "api_key_env": "UNSET_KEY"}})
     code = cli.main(["bench", "--contract", str(c), "--persona", "operator", "--stories", str(FIXTURES / "stories.json"), "--fake-replies", str(FIXTURES / "fake_replies.json"), "--provider", "fake"])
     assert code == 0 and "4  BUSINESS" in capsys.readouterr().out
+
+
+def test_dotenv_is_read_without_overriding(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ALREADY", "kept")
+    monkeypatch.delenv("FROM_DOTENV", raising=False)
+    (tmp_path / ".env").write_text("# comment\nFROM_DOTENV=secret\nALREADY=overwritten\nEMPTY=\nQUOTED='q'\n")
+    cli.load_dotenv()
+    import os
+
+    assert os.environ["FROM_DOTENV"] == "secret" and os.environ["ALREADY"] == "kept" and os.environ["QUOTED"] == "q"
+    assert "EMPTY" not in os.environ

@@ -53,22 +53,27 @@ def system_prompt(contract: Contract, persona: Persona, task: str) -> str:
     return "\n\n".join(parts) + "\n"
 
 
+def fence(text: str) -> str:
+    """Untrusted text may not contain a block delimiter, so it cannot close or forge a block."""
+    return text.replace("<<<", "< < <").replace(">>>", "> > >")
+
+
 def item_block(story: Story) -> str:
     published = story.published.isoformat() if story.published else "unknown"
     return (
         "<<<ITEM\n"
         f"id: {story.id}\n"
-        f"title: {story.title}\n"
-        f"source: {story.source}\n"
+        f"title: {fence(story.title)}\n"
+        f"source: {fence(story.source)}\n"
         f"published: {published}\n"
-        f"link: {story.link}\n"
-        f"summary: {story.summary}\n"
+        f"link: {fence(story.link)}\n"
+        f"summary: {fence(story.summary)}\n"
         "ITEM>>>"
     )
 
 
 def draft_block(display_name: str, body: str) -> str:
-    return f"<<<DRAFT by {display_name}\n{body.strip()}\nDRAFT>>>"
+    return f"<<<DRAFT by {fence(display_name)}\n{fence(body.strip())}\nDRAFT>>>"
 
 
 STANCE_SCALE = (

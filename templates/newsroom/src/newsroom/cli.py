@@ -19,6 +19,20 @@ from .run import format_report, preflight, run_cycle
 EXIT_OK, EXIT_RUNTIME, EXIT_CONFIG = 0, 1, 2
 
 
+def load_dotenv(path: Path = Path(".env")) -> None:
+    """KEY=VALUE lines from .env in the working directory, never overriding a set variable."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key, value = key.strip(), value.strip().strip("'\"")
+        if key and value:
+            os.environ.setdefault(key, value)
+
+
 def _contract(path: str) -> Contract:
     try:
         return load_contract(Path(path))
@@ -211,6 +225,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv()
     args = build_parser().parse_args(argv)
     return int(args.func(args))
 

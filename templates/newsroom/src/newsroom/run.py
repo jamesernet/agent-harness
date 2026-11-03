@@ -160,25 +160,29 @@ def run_cycle(
             participants = drafts[: cfg.debate.max_participants]
             left_out = [d.persona for d in drafts[cfg.debate.max_participants :]]
             key = state_mod.debate_key(story.id, day)
-            cached = st.get(key)
-            try:
-                if cached is not None:
-                    replies = [Reply(**r) for r in cached["replies"]]
-                    merged_body = cached.get("merged_body")
-                else:
+            cached = st.get(key) or {}
+            if cached:
+                replies = [Reply(**r) for r in cached["replies"]]
+            else:
+                try:
                     replies = pipeline.debate_round(llm, contract, story, participants)
-                    merged_body = None
-                outcome = pipeline.resolve_debate(participants, replies, cfg.debate.outcome)
-                if outcome.kind == "merged":
-                    if merged_body is None:
-                        merged_body = pipeline.merge(llm, contract, story, outcome)
-                    outcome.merged_body = merged_body
-            except LLMError as e:
-                report.failures.append(f"debate on {story.id}: {e}")
-                continue
-            if cached is None:
-                st.set(key, {"replies": [r.__dict__ for r in replies], "merged_body": merged_body})
+                except LLMError as e:
+                    report.failures.append(f"debate on {story.id}: {e}")
+                    continue
+                st.set(key, {"replies": [r.__dict__ for r in replies], "merged_body": None})
                 st.save()
+            outcome = pipeline.resolve_debate(participants, replies, cfg.debate.outcome)
+            if outcome.kind == "merged":
+                merged_body = cached.get("merged_body")
+                if merged_body is None:
+                    try:
+                        merged_body = pipeline.merge(llm, contract, story, outcome)
+                    except LLMError as e:
+                        report.failures.append(f"merge on {story.id}: {e}")
+                        continue
+                    st.set(key, {"replies": [r.__dict__ for r in replies], "merged_body": merged_body})
+                    st.save()
+                outcome.merged_body = merged_body
             outcomes = [(outcome, left_out)]
 
         for outcome, left_out in outcomes:
