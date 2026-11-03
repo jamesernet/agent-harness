@@ -13,10 +13,14 @@ common_dir="$(cd "$(git rev-parse --git-common-dir)" && pwd -P)"
 if [[ "$git_dir" == "$common_dir" ]]; then
   bin/build-adapters.sh --check
 else
+  # A linked worktree builds into a throwaway HOME, which is the one place the
+  # worktree refusal in build-adapters.sh does not apply: nothing real will
+  # @import from here. Scope the override to these two commands only — exported,
+  # it reaches tests/run.sh above and the worktree-install test rightly fails.
   test_home="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-adapters.XXXXXX")"
   trap 'rm -rf "$test_home"' EXIT
-  HOME="$test_home" bin/build-adapters.sh >/dev/null
-  HOME="$test_home" bin/build-adapters.sh --check
+  HOME="$test_home" LLMCTX_ALLOW_WORKTREE_INSTALL=1 bin/build-adapters.sh >/dev/null
+  HOME="$test_home" LLMCTX_ALLOW_WORKTREE_INSTALL=1 bin/build-adapters.sh --check
 fi
 
 # Framework hooks (shellcheck, shfmt, hygiene) from .pre-commit-config.yaml.

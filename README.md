@@ -58,6 +58,7 @@ bin/llmctx account list [--json]
 bin/llmctx account add <name> <dir>
 bin/llmctx account remove <name>
 bin/llmctx skills install [--dev] [--bundle <name>] [--account <name>]
+bin/llmctx agents install [--dev] [--account <name>]
 bin/llmctx vendor check
 bin/llmctx publish sync [--check]
 ```
@@ -111,6 +112,7 @@ global/ ───────────────> <account>/CLAUDE.md
 claude/settings.json ──> <account>/settings.json (portable keys merged)
 bin/claude-hooks/ ─────> <account>/hooks/
 skills/ + vendor/ ─────> <account>/skills/ and ~/.codex/skills/
+agents/ ──────────────> <account>/agents/
 brand/ ── explicit ────> existing publication repositories
 ```
 
@@ -185,7 +187,7 @@ There is intentionally no repository-init command. `llmctx repo diff` reports mi
 
 ## Skills and provenance
 
-Owned skills live in `skills/`; third-party skills live in `vendor/`. Every installed copy contains `.llmctx-managed.json` with its source path, release or revision, and content hash. The installer updates or prunes only marked copies and known development links. An unrelated real directory is preserved as a conflict.
+Owned skills live in `skills/`; third-party skills live in `vendor/`. The catalogue — what each skill focuses on, what it adds over asking the model cold, how to use one without installing the rest, and which ones lean on tools outside this repository — is [`skills/README.md`](skills/README.md). Every installed copy contains `.llmctx-managed.json` with its source path, release or revision, and content hash. The installer updates or prunes only marked copies and known development links. An unrelated real directory is preserved as a conflict.
 
 `vendor.lock.json` records the full upstream commit, selected skills, and deterministic content digest. Vendor updates require an explicit tag or commit:
 
@@ -195,6 +197,8 @@ bin/llmctx vendor check
 ```
 
 Floating `main`, `master`, and `HEAD` are rejected.
+
+Managed subagent definitions live in `agents/` and install into every Claude account's `agents/` with the same ownership contract, recorded in a sidecar `.llmctx-managed.json` because an agent is one file rather than a directory. They give the subagents skills spawn a default model, effort and turn budget that travels with the work, which no hook can set after the fact; a caller can still override per invocation. See [`agents/README.md`](agents/README.md) for the set and the tiering. Codex has no subagent format and gets none.
 
 ## Safe multi-agent work
 
@@ -243,6 +247,7 @@ global/       portable behavioral, communication, and handoff rules
 claude/       portable Claude safety settings
 targets/      hosting-target descriptions for environment declarations
 skills/       owned skills
+agents/       managed subagent definitions (model, effort, turn budget)
 vendor/       pinned third-party skills
 brand/        intentionally public personal-brand context
 bin/          stable CLI, installers, checks, hooks, and libraries

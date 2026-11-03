@@ -53,11 +53,14 @@ is available, ask — those three change every reviewer's verdict.
 ### 2. Run three reviewers in parallel
 
 Three agents, dispatched in a single message so they run concurrently and none
-can see another's findings. Whatever your agent tool calls that — a general-purpose
-subagent, a task, a worker — each one gets the same context pack, is told to
-report rather than edit, and is given no path to the others' output. If your
-harness cannot run agents, run the three passes yourself in separate turns
-without re-reading the previous report: independence is the property that
+can see another's findings. In Claude Code use the managed `prose-reviewer`
+subagent for all three — it pins the model, the effort and the turn budget and
+carries the output contract below, so the prompt only has to supply the lens and
+the context pack. Elsewhere, whatever your agent tool calls that — a
+general-purpose subagent, a task, a worker — each one gets the same context pack,
+is told to report rather than edit, and is given no path to the others' output.
+If your harness cannot run agents, run the three passes yourself in separate
+turns without re-reading the previous report: independence is the property that
 matters, not the parallelism.
 
 **Technical editor.** Lens: precision, structure, argument integrity. Hunts claims
