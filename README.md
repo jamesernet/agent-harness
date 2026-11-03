@@ -58,6 +58,7 @@ bin/llmctx account list [--json]
 bin/llmctx account add <name> <dir>
 bin/llmctx account remove <name>
 bin/llmctx skills install [--dev] [--bundle <name>] [--account <name>]
+bin/llmctx agents install [--dev] [--account <name>]
 bin/llmctx vendor check
 bin/llmctx publish sync [--check]
 ```
@@ -111,6 +112,7 @@ global/ ───────────────> <account>/CLAUDE.md
 claude/settings.json ──> <account>/settings.json (portable keys merged)
 bin/claude-hooks/ ─────> <account>/hooks/
 skills/ + vendor/ ─────> <account>/skills/ and ~/.codex/skills/
+agents/ ──────────────> <account>/agents/
 brand/ ── explicit ────> existing publication repositories
 ```
 
@@ -196,6 +198,8 @@ bin/llmctx vendor check
 
 Floating `main`, `master`, and `HEAD` are rejected.
 
+Managed subagent definitions live in `agents/` and install into every Claude account's `agents/` with the same ownership contract, recorded in a sidecar `.llmctx-managed.json` because an agent is one file rather than a directory. They give the subagents skills spawn a default model, effort and turn budget that travels with the work, which no hook can set after the fact; a caller can still override per invocation. See [`agents/README.md`](agents/README.md) for the set and the tiering. Codex has no subagent format and gets none.
+
 ## Safe multi-agent work
 
 Never build directly on `main` or `master`. A single session may use a feature branch in its checkout. Concurrent sessions should use one worktree per branch:
@@ -243,6 +247,7 @@ global/       portable behavioral, communication, and handoff rules
 claude/       portable Claude safety settings
 targets/      hosting-target descriptions for environment declarations
 skills/       owned skills
+agents/       managed subagent definitions (model, effort, turn budget)
 vendor/       pinned third-party skills
 brand/        intentionally public personal-brand context
 bin/          stable CLI, installers, checks, hooks, and libraries

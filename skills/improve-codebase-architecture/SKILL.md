@@ -19,7 +19,7 @@ This command is _informed_ by the project's domain model and built on a shared d
 
 Read the project's domain docs (per `docs/agents/domain.md` — the `CONTEXT.md` glossary, or in an OKF repo `docs/knowledge/index.md` + `docs/architecture/domain-model.md`), any ADRs in the area you're touching, and — in OKF repos — the enforced principles in `docs/architecture/principles.md`, first.
 
-Then use the Agent tool with `subagent_type=Explore` to walk the codebase. Don't follow rigid heuristics — explore organically and note where you experience friction:
+Then walk the codebase with subagents — the managed `scout` for enumeration (module lists, call sites, test coverage per directory) and the built-in `Explore` where the walk needs to follow a thread. Don't follow rigid heuristics — explore organically and note where you experience friction:
 
 - Where does understanding one concept require bouncing between many small modules?
 - Where are modules **shallow** — interface nearly as complex as the implementation?
