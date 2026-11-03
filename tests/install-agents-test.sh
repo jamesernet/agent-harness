@@ -91,7 +91,10 @@ jq -e '.agents | has("delta") | not' "$target/.llmctx-managed.json" >/dev/null |
 rm "$target/delta.md"
 
 # Installed copies are world-readable like skills, not mktemp's 0600.
-[[ "$(stat -f %Lp "$target/alpha.md" 2>/dev/null || stat -c %a "$target/alpha.md")" == "644" ]] || fail "installed agent is not 0644"
+# GNU stat first: on Linux `stat -f` is a different command that succeeds with
+# filesystem data, so the BSD form cannot be the one tried first.
+perms="$(stat -c %a "$target/alpha.md" 2>/dev/null || stat -f %Lp "$target/alpha.md")"
+[[ "$perms" == "644" ]] || fail "installed agent is not 0644 (got $perms)"
 
 # Every registered account gets the set.
 acme_dir="$home/.claude-acme"

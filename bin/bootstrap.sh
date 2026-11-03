@@ -58,9 +58,11 @@ while [[ "$#" -gt 0 ]]; do
   esac
   shift
 done
-set -- "${bootstrap_args[@]}"
+# ${arr[@]+"${arr[@]}"}: an empty array is an unbound variable under set -u in
+# bash 3.2, which is what macOS ships and the CI runner uses.
+set -- ${bootstrap_args[@]+"${bootstrap_args[@]}"}
 agents_status=0
-"$SCRIPT_DIR/install-agents.sh" "${agent_args[@]}" || agents_status=$?
+"$SCRIPT_DIR/install-agents.sh" ${agent_args[@]+"${agent_args[@]}"} || agents_status=$?
 
 adapter_status=0
 "$SCRIPT_DIR/build-adapters.sh" "$@" || adapter_status=$?
