@@ -363,6 +363,53 @@ else
   add_check claude-agents FAIL "managed agents could not be inventoried" "$SRC/bin/llmctx agents install"
 fi
 
+# Account routes feed hooks/account-guard.sh. A route naming an account that is
+# not registered makes the guard silent — it cannot judge what it cannot name —
+# so that is the state to report, not an empty route list.
+routes="$(git config --global --get-all llmctx.accountRoute 2>/dev/null || true)"
+if [[ -z "$routes" ]]; then
+  add_check account-routes PASS "no account routes configured" ""
+elif [[ -n "$accounts_error" ]]; then
+  # The registry is already reported as broken; a second failure with a
+  # different remedy for the same cause would only mislead.
+  add_check account-routes PASS "routes not checked: account registry unreadable" ""
+else
+  # Check against the FULL registry, not the --account-filtered list, or
+  # `doctor --account acme` fails a valid default= route with a remedy
+  # (register default) that the registry refuses.
+  all_accounts="$(llmctx_accounts 2>/dev/null || true)"
+  bad_routes=""
+  relative_routes=""
+  route_summary=""
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    route_name="${entry%%=*}"
+    route_path="${entry#*=}"
+    known=0
+    while IFS=$'\t' read -r account_name _; do
+      [[ "$account_name" == "$route_name" ]] && known=1
+    done <<<"$all_accounts"
+    [[ "$known" -eq 1 ]] || bad_routes="$bad_routes $entry"
+    # The tilde is held in a variable: shellcheck reads a quoted literal `~` as
+    # a failed expansion (SC2088), but this matches text typed into git config.
+    tilde="~"
+    case "$route_path" in
+      /* | "$tilde" | "$tilde"/*) ;;
+      *) relative_routes="$relative_routes $entry" ;;
+    esac
+    route_summary="$route_summary, $route_path -> $route_name"
+  done <<<"$routes"
+  if [[ -n "$bad_routes" ]]; then
+    add_check account-routes FAIL "route(s) name an unregistered account:$bad_routes" \
+      "llmctx account add <name> <dir>, or git config --global --unset llmctx.accountRoute <entry>"
+  elif [[ -n "$relative_routes" ]]; then
+    add_check account-routes FAIL "route path(s) are not absolute and will never match:$relative_routes" \
+      "git config --global --unset llmctx.accountRoute <entry>; re-add with an absolute or ~/ path"
+  else
+    add_check account-routes PASS "routes:${route_summary#, }" ""
+  fi
+fi
+
 if [[ "$quiet" -eq 0 ]]; then
   if [[ "$output_json" -eq 1 ]]; then
     jq -s --argjson healthy "$([[ "$failures" -eq 0 ]] && echo true || echo false)" \
