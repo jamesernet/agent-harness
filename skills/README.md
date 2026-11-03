@@ -33,9 +33,10 @@ class of project gets; see the bundles section below.
 
 ## Start here
 
-The five that get used most. The count is a grep over ten weeks of Claude
-Code's local session logs for explicit skill loads; the logs are not published,
-the method is in each skill's git history.
+The five that get used most. The count is a grep over Claude Code's local
+session logs for explicit skill loads, late August to early November 2026; the
+logs are not published. docs-drift-audit arrived in September, so its count
+covers a shorter window than the others.
 
 | skill | invoke | reach for it when |
 |---|---|---|
@@ -56,12 +57,13 @@ that should not happen because a sentence sounded like it; `setup-skills`,
 `handoff` and `improve-codebase-architecture` are slash-only because each is a
 deliberate session-level act rather than a reaction to a phrase.
 
-Four skills pin an `effort` floor so they never run below it whatever the
-session is set to: `threat-model`, `tech-due-diligence` and
-`money-movement-review` at `xhigh`, `site-visual-baseline` at `medium`. Two
-name a managed subagent for their fan-out work so the model and turn budget of
-that work is config rather than luck: `review-prose` and
-`improve-codebase-architecture`. The agents live in
+Five skills pin an `effort` level. It is an override, not a floor: the skill
+runs at that level whatever the session is set to, up or down. `threat-model`,
+`tech-due-diligence`, `money-movement-review` and `shopify-storefront-review`
+pin `xhigh`; `site-visual-baseline` pins `medium`, deliberately cheaper than
+most sessions. Two name a managed subagent for their fan-out work so the model
+and turn budget of that work has a default that travels with the skill:
+`review-prose` and `improve-codebase-architecture`. The agents live in
 [`../agents/`](../agents/README.md).
 
 ## The catalogue
@@ -101,7 +103,8 @@ writes, so they never hardcode where a repo keeps its tracker, labels or briefs.
 ### Website audit
 
 For anything people look at. Four measure, one compiles, one reviews the
-words. `web-perf` (vendored, Cloudflare) is the performance leg.
+words. `web-perf` (vendored, Cloudflare) is the performance leg and installs
+with this bundle.
 
 | skill | invoke | focus | what it adds |
 |---|---|---|---|
@@ -149,6 +152,8 @@ Everything else is self-contained.
   private repository. The procedure stands without them.
 - **shopify-storefront-review** hands the machine layer to Site Scan, another
   Emergent Labs tool. `metadata-audit` and `web-perf` cover the same ground.
+- **tech-due-diligence** also names the repository those playbooks live in; the
+  name is the owner's own site, not a client.
 - **The intake pipeline** assumes a tracker the `gh` or `glab` CLI can reach, or
   local markdown; `/setup-skills` asks which.
 
