@@ -1,8 +1,8 @@
 # The offer register, and the invariants it is checked against
 
 The register is the deliverable that makes every other finding checkable. A
-store without one cannot answer "where did this customer's 15% come from", and
-the answer "we have four codes" is usually off by a factor of five.
+store without one cannot answer "where did this customer's discount come
+from", and the answer "we have a few codes" is usually off by a multiple.
 
 ## Register columns
 
@@ -20,6 +20,7 @@ the register is checked against.
 | usage limit | total cap, or none |
 | per-customer limit | one per customer, or none |
 | customer eligibility | all, segments, named customers |
+| requires selling plan | subscription-only products have no one-time price; carry the flag |
 | start / end | end date, or none |
 | combines with | product, order, shipping discounts; or nothing |
 | uses · sales | redemptions and revenue to date |
@@ -36,8 +37,8 @@ Numbered so a report can cite them and a later check script can encode them.
   subscription.
 - **INV-P2, critical.** No active discount above the agreed ceiling (default
   50%) lacks both a usage cap and a customer restriction. A 100% code
-  restricted to three named laboratory customers is fine; a 100% code open to
-  everyone with 72 redemptions is the largest number in the report.
+  restricted to a few named customers is fine; a 100% code open to everyone
+  with dozens of redemptions is the largest number in the report.
 - **INV-P3, high.** Every active discount appears in the register with an
   owner and a campaign.
 - **INV-P4, high.** No reachable stacking path exceeds the agreed cap, measured
@@ -45,14 +46,14 @@ Numbered so a report can cite them and a later check script can encode them.
   someone says off what (the parts, or the bundle's own list price).
 - **INV-P5, medium.** Every rate displayed in theme copy or a plan name is
   within one point of the plan or discount that grants it. Truncation and
-  rounding produce "save 4%" beside "5% discount" for the same 4.99%.
+  rounding produce "save 4%" beside "5% discount" for the same rate.
 - **INV-P6, critical.** Every discount code named in a live email, form, popup
   or partner page applies to a real cart. A dead code in an abandonment email is
   worse than an unplanned discount: it is an unplanned discount that does not
   work, sent to people who already hesitated once.
 - **INV-P7, high.** No two live offers give the same value for the same
-  situation unless that is a decision. Five separate 15% codes is why nobody
-  could say which one a customer had.
+  situation unless that is a decision. Several unrelated codes at the same
+  percentage is why nobody could say which one a customer had.
 - **INV-P8, medium.** A first order has a reason to choose the path the store
   wants chosen. If the welcome code and the subscription both give 15%, a
   first-time buyer is indifferent, and the store has paid for nothing.

@@ -14,6 +14,15 @@ set -euo pipefail
 #
 # A missing allocation is printed as "-" and is a fact to report, not an error:
 # a product with no selling plan cannot be subscribed to, whatever the page says.
+# A prepaid plan's per_delivery_price is the whole prepaid amount, so no rate
+# is derivable from it; it is printed as "prepaid" rather than as a negative
+# percentage that would read as a finding. requires_selling_plan is carried
+# through: a subscription-only product has no purchasable one-time price.
+#
+# Redirects are followed (-L). A host that is not a Shopify storefront answers
+# 404 for every handle, exactly like a wrong handle; when no row at all could
+# be read the script exits 4 and says so, so an empty table is never mistaken
+# for "no selling plans".
 #
 # Rate limits: on /discount/ the source audit saw Shopify answer a burst with
 # HTTP 429 and an empty body, which a careless reader turned into "no discount"
@@ -48,30 +57,46 @@ rows='[]'
 for handle in "$@"; do
   url="https://$host/products/$handle.js"
   body="$(mktemp)"
-  code="$(curl -sS --max-time 20 -o "$body" -w '%{http_code}' -A 'storefront-prices (read-only audit)' "$url" || echo 000)"
+  code="$(curl -sSL --max-time 20 -o "$body" -w '%{http_code}' -A 'storefront-prices/1 (read-only pricing audit; github.com/jamesernet/agent-harness)' "$url" 2>/dev/null || true)"
+  code="${code:-000}"
   if [[ "$code" == "429" ]]; then
     echo "error: HTTP 429 on $url — rate limited. Stop, wait, re-run; do not read an empty body as 'no plans'." >&2
     rm -f "$body"
     exit 3
   fi
   if [[ "$code" != "200" ]]; then
-    echo "warning: HTTP $code on $url — skipped (a 404 means the handle is wrong or the product is unpublished)" >&2
+    case "$code" in
+      404) why="wrong handle, unpublished product, or not a Shopify storefront" ;;
+      403) why="refused — bot protection or a WAF; this is a fact for the report, not an absence of plans" ;;
+      000) why="no response (DNS, TLS or timeout)" ;;
+      *) why="unexpected status" ;;
+    esac
+    echo "warning: HTTP $code on $url — skipped ($why)" >&2
+    rm -f "$body"
+    continue
+  fi
+  if ! jq -e '.variants' "$body" >/dev/null 2>&1; then
+    echo "warning: $url did not return a Shopify product document — not a Shopify storefront?" >&2
     rm -f "$body"
     continue
   fi
   row="$(jq -c --arg handle "$handle" '
-    def money: (. / 100) | tostring;
+    def money: if . == null then null else
+      ((. / 100 | floor | tostring) + "." + ((. % 100) | if . < 10 then "0" + tostring else tostring end)) end;
+    .requires_selling_plan as $rsp |
     .variants[] | .price as $vp | {
       handle: $handle,
       variant: .title,
       variant_id: .id,
       one_time: ($vp | money),
-      compare_at: (if .compare_at_price then (.compare_at_price | money) else null end),
+      requires_selling_plan: ($rsp // false),
+      compare_at: (.compare_at_price | money),
       plans: [ .selling_plan_allocations[]? | {
         plan_id: .selling_plan_id,
-        plan: .selling_plan_group_id,
-        per_delivery: (if .per_delivery_price then (.per_delivery_price | money) else null end),
-        rate_pct: (if .per_delivery_price and $vp > 0
+        group_id: .selling_plan_group_id,
+        per_delivery: (.per_delivery_price | money),
+        prepaid: (.per_delivery_price != null and .per_delivery_price > $vp),
+        rate_pct: (if .per_delivery_price and $vp > 0 and .per_delivery_price <= $vp
                    then (((1 - (.per_delivery_price / $vp)) * 10000 | round) / 100)
                    else null end)
       } ]
@@ -84,6 +109,11 @@ for handle in "$@"; do
   rm -f "$body"
 done
 
+if [[ "$(jq 'length' <<<"$rows")" == "0" ]]; then
+  echo "error: no product could be read from $host — wrong handles, a blocked fetch, or not a Shopify storefront. Nothing here says anything about selling plans." >&2
+  exit 4
+fi
+
 if [[ "$json" -eq 1 ]]; then
   jq . <<<"$rows"
   exit 0
@@ -91,11 +121,17 @@ fi
 
 printf '%-34s %-14s %10s %10s %10s %8s  %s\n' handle variant one_time compare_at subscribed rate plan
 jq -r '.[] | . as $v |
+  ($v.one_time + (if $v.requires_selling_plan then "*" else "" end)) as $ot |
   if ($v.plans | length) == 0 then
-    [$v.handle, $v.variant, $v.one_time, ($v.compare_at // "-"), "-", "-", "(no selling plan)"] | @tsv
+    [$v.handle, $v.variant, $ot, ($v.compare_at // "-"), "-", "-", "(no selling plan)"] | @tsv
   else
-    $v.plans[] | [$v.handle, $v.variant, $v.one_time, ($v.compare_at // "-"), .per_delivery, ((.rate_pct|tostring) + "%"), (.plan_name // "-")] | @tsv
+    $v.plans[] | [$v.handle, $v.variant, $ot, ($v.compare_at // "-"), (.per_delivery // "-"),
+      (if .prepaid then "prepaid" elif .rate_pct == null then "-" else ((.rate_pct|tostring) + "%") end),
+      (.plan_name // "-")] | @tsv
   end' <<<"$rows" |
   while IFS=$'\t' read -r h v o c s r p; do
     printf '%-34s %-14s %10s %10s %10s %8s  %s\n' "${h:0:34}" "${v:0:14}" "$o" "$c" "$s" "$r" "$p"
   done
+if jq -e 'any(.[]; .requires_selling_plan)' <<<"$rows" >/dev/null; then
+  echo "* subscription-only product: the one-time price is not purchasable"
+fi

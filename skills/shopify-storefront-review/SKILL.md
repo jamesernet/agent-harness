@@ -1,28 +1,34 @@
 ---
 name: shopify-storefront-review
-description: Review a Shopify storefront's money and offer logic — every live discount, automatic discount, selling-plan rate, partner and affiliate code, bundle price and the email flows that publish them — against what the pages, emails and docs claim. Builds the offer register the store usually lacks, measures prices and stacking at a real cart, finds dead codes in live emails, and reports decisions separately from defects. Use when a Shopify, Recharge, Klaviyo, GoAffPro or similar store needs a pricing, promo code, discount, subscription, bundle, partner-code, abandoned-cart, welcome-offer, cart-drawer or checkout-path review, when a customer received a discount nobody can account for, when prices or percentages on pages disagree, or before changing any rate. Theme copy is in scope wherever it states a price or rate; crawlability, structured data and performance are not — hand those to sitescan, metadata-audit and web-perf.
-effort: high
+description: Review a Shopify storefront's money and offer logic — every live discount, automatic discount, selling-plan rate, partner and affiliate code, bundle price and the email flows that publish them — against what the pages, emails and docs claim. Builds the offer register the store usually lacks, measures prices and stacking at a real cart, finds dead codes in live emails, and reports decisions separately from defects. Use when a Shopify, Recharge, Klaviyo, GoAffPro or similar store needs a pricing, promo code, discount, subscription, bundle, partner-code, abandoned-cart, welcome-offer, cart-drawer or checkout-path review, when a customer received a discount nobody can account for, when prices or percentages on pages disagree, or before changing any rate. Theme copy is in scope wherever it states a price or rate; crawlability, structured data and performance are not — hand those to Site Scan, metadata-audit and web-perf.
+effort: xhigh
 ---
 
 # Shopify Storefront Review
 
-Read-only. The store is a client's business and its Admin is production: no
-order is placed, nothing is submitted for payment, no discount, flow, product or
-setting is created, edited or disabled. Changes are a worklist the owner signs
-off, applied by a person, verified afterwards.
+No Admin writes. The store is a client's business and its Admin is production:
+no order is placed, nothing is submitted for payment, no discount, flow, product
+or setting is created, edited or disabled. The one state this review does
+create is storefront carts, built to measure what a path charges; use a session
+with no customer identification, and state in the report's Method line how many
+were built. Changes are a worklist the owner signs off, applied by a person,
+verified afterwards.
+
+If `/products/<handle>.js` on the host does not return JSON, this is not a
+Shopify storefront and the procedure below does not apply: say so and stop.
 
 The output is a report in the shape of [report-template.md](references/report-template.md)
 and, underneath it, the **offer register** described in
 [register-and-invariants.md](references/register-and-invariants.md). The
 register is the deliverable that makes everything else checkable, and the store
-almost never has one: the case this skill is distilled from documented four
-discounts and had twenty-seven.
+almost never has one: the case this skill is distilled from documented a
+handful of discounts and had an order of magnitude more.
 
 ## What this is not
 
 The machine layer and speed are measured by other tools and must not be
-re-measured here: `sitescan` for crawlability, structured data, contrast and
-alt text on commerce sites; `metadata-audit` for the head and robots layer;
+re-measured here: Site Scan (an external tool) for crawlability, structured data,
+contrast and alt text on commerce sites; `metadata-audit` for the head and robots layer;
 `web-perf` or a Lighthouse snapshot for load times. Quote their numbers, with
 their dates, in one section of the report. Theme hygiene (Liquid, sections,
 settings) is in scope only where a surface states a price or rate.
@@ -31,7 +37,9 @@ settings) is in scope only where a surface states a price or rate.
 
 1. **Shopify Admin · Discounts** — the list, then every detail page. Or a
    read-only `discountNodes` export from a Custom App with `read_discounts`.
-   This is the only source that can enumerate what exists.
+   This is the only source that can enumerate what exists. Admin can write;
+   the agent does not hold that session. A person logs in and reads, or hands
+   over the export — ask.
 2. **The product endpoints** — `/products/<handle>.js` for every product and
    bundle: one-time price, `compare_at_price`, and the selling-plan allocations
    a subscription app (Recharge, Shopify Subscriptions, Skio…) attaches. Run
@@ -66,8 +74,8 @@ the report's corrections section when broken.
   one-time single-item cart.
 - **The storefront probe measures codes you know about; it cannot enumerate.**
   Only Admin or the discount export says what exists. A report of "three live
-  codes" from probing a list copied out of the repo was off by a factor of
-  eight.
+  codes" from probing a list copied out of the repo was off by nearly an order of
+  magnitude.
 - **A 429 reads as "no discount applied."** Shopify rate-limits `/discount/`
   and answers with an empty body. Re-run the control after any batch; if the
   control fails, the batch is void.
@@ -145,7 +153,7 @@ and record what every retired URL does today.
 
 Template order, verdict first. Findings cite the invariant they break.
 Decisions the owner must make are a separate section from defects: whether a
-100% code with 72 redemptions is a sampling programme or a leak is not something
+100% code with dozens of redemptions is a sampling programme or a leak is not something
 a screen can tell you. Keep every correction, including to this report's own
 earlier revision, with how the method produced the error.
 
