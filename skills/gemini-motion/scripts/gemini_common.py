@@ -45,6 +45,11 @@ server already accepted, so cutting a paid render short risks being billed
 for a clip that is never collected.
 """
 
+MIN_ATTEMPT_S = 20
+"""Below this there is no point starting another model: generation of a real
+brief has not been observed finishing faster, so a shorter slice just burns
+the remaining budget and reports the same failure later."""
+
 MAX_CLIP_SECONDS = 10
 """One Omni call tops out here; longer needs --previous-id to extend."""
 

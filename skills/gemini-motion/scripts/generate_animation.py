@@ -28,6 +28,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gemini_common import (  # noqa: E402
     DEFAULT_TIMEOUT_S,
+    MIN_ATTEMPT_S,
     MODELS,
     RETRY_STATUSES,
     Timeout,
@@ -98,7 +99,7 @@ def main() -> int:
     ap.add_argument("--thinking", choices=("low", "medium", "high"), default="medium")
     ap.add_argument("--previous-id", help="iterate on an earlier result (keeps Gemini's context)")
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S["text"],
-                    help="seconds to wait for the API before giving up "
+                    help="total seconds to wait across every model tried, not per model "
                          f"(default {DEFAULT_TIMEOUT_S['text']}); the SDK sets none, so without this a stall hangs forever")
     ap.add_argument("--json", action="store_true", help="print a JSON summary only")
     args = ap.parse_args()
@@ -150,13 +151,21 @@ def main() -> int:
         kwargs["previous_interaction_id"] = args.previous_id
 
     t0 = time.time()
+    # The timeout is a budget for the whole call, not per model. Per-model it
+    # multiplies: a three-model chain on a bad day burns three full timeouts
+    # before it reports, which is not what anyone means by "give up after 90s".
+    deadline = t0 + args.timeout
     interaction = None
     for i, model in enumerate(chain):
+        remaining = deadline - time.time()
+        if remaining < MIN_ATTEMPT_S:
+            die(f"out of time after {time.time() - t0:.0f}s; tried {', '.join(chain[:i]) or 'nothing'}. "
+                f"Raise --timeout or pass --model to pick one directly.")
         if not args.json:
             note = "" if i == 0 else f"  (falling back from {chain[i - 1]})"
             print(f"asking {model} for {fmt['label']} ...{note}", flush=True)
         try:
-            interaction = create(client, args.timeout, model=model, **kwargs)
+            interaction = create(client, remaining, model=model, **kwargs)
             break
         except Exception as e:  # noqa: BLE001
             status = getattr(e, "status_code", None)

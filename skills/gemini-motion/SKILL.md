@@ -80,6 +80,10 @@ are the method.
 1. **Write the brief** to `motion/<name>-brief.md`: purpose, canvas, duration
    and loop behaviour, elements, a numbered timeline, easing, constraints, a
    "do not" list. Pull colours/sizes from the user's project if one exists.
+   Give geometry in the output format's own terms (`<rect x= y= width=
+   height=>`), never as centres to be converted — that conversion is where
+   positional defects come from. Anything over ~10 s should be a set of
+   scenes; see `references/animation-brief.md`.
 2. **Assets.** Existing images → `--asset path` (Gemini sees them; the script
    inlines them as data URIs). Missing illustration → `generate_image.py`
    first.
@@ -111,8 +115,25 @@ are the method.
 - **Don't promise what Omni can't do:** >10 s in one shot, exact dialogue
   edits, voice changes, prepending/mid-clip edits, real-person likenesses,
   minors, precise frame-accurate sync. Say so early and offer the nearest thing.
-- **Keep the thread.** Chaining `--previous-id` is cheaper and more
-  consistent than regenerating. Keep `.gemini-motion/runs.jsonl` out of git.
+- **Keep the thread, but don't depend on it.** Chaining `--previous-id` is
+  far cheaper than regenerating — 28 s against 150 s in one measured case,
+  and it edits surgically instead of reinterpreting the whole brief. But it
+  pins you to the model that started the thread, so when that model degrades
+  iteration is simply unavailable. The brief is the recovery path; keep it.
+  Keep `.gemini-motion/runs.jsonl` out of git.
+- **Never pass `--model` on a fresh generation.** An explicit model is
+  honoured literally and disables the fallback chain, which turns a
+  recoverable 503 into a dead run. Pin the model only when continuing a
+  thread with `--previous-id`, where it is required.
+- **Expect the direction to be wrong, not the generation.** Across a dozen
+  generations in one project the model produced exactly what each brief
+  specified every time, including faithfully executing the bad ones. Every
+  defect in the output traced to the brief. Budget accordingly: the time goes
+  into specifying and verifying, not into fighting the generator.
+- **Verify by rendering.** Grep the output for forbidden content and required
+  tunables, then settle every positional question with a captured frame.
+  Source checks say a value exists; only the render says where it landed.
+  See `references/animation-brief.md` for the full ordering.
 - **Safety filters return no video and a polite text.** Rephrase; don't
   retry the same prompt.
 - **Scripts over ad-hoc code.** The scripts handle key loading, file upload,
