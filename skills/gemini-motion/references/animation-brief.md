@@ -73,10 +73,17 @@ Then open the frame PNGs with the Read tool and check against the brief:
 
 - [ ] Right elements, nothing extra (no surprise gradients, text, shadows).
 - [ ] Timing matches the timeline (frame at 2 s should be the peak, etc.).
-- [ ] Loop is seamless: last frame visually equals first frame.
+- [ ] Loop is seamless. Don't eyeball this — `--frames N` over `--duration D`
+      captures t=0 and t=D inclusive, so the first and last PNG must be
+      byte-identical if the loop closes: `md5 -r frames/*.png` (macOS) or
+      `md5sum frames/*.png` (Linux) and compare the first and last hash.
+      Different hashes mean a visible snap, even when the frames look alike.
 - [ ] Colours/sizes match the project's values.
 - [ ] Reduced-motion branch exists (`@media (prefers-reduced-motion: reduce)`).
-- [ ] No external URLs (`grep -n "http" motion/hero.html` should show none).
+- [ ] No external URLs. Grepping for `http` alone gives a false positive on
+      every SVG, whose namespace is literally `http://www.w3.org/2000/svg`.
+      Match what actually fetches:
+      `grep -nE '(src|href)="https?://|@import|@font-face' motion/hero.html`
 - [ ] File opens with no console errors (snapshot will usually surface a
       blank frame if the script crashed; check `.gemini-motion/last_raw.txt`
       if the output looks truncated).
