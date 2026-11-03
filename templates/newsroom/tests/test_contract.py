@@ -97,3 +97,13 @@ def test_bad_provider_kind():
     raw["provider"]["kind"] = "gemini"
     with pytest.raises(ConfigError, match="provider.kind"):
         parse_config(raw)
+
+
+def test_emergentlabs_example_is_filled_except_the_private_values():
+    c = load_contract(STARTER.parent / "emergentlabs")
+    assert [p.name for p in c.enabled_personas()] == ["operator", "skeptic", "builder", "strategist"]
+    assert c.persona_blanks() == []
+    assert c.guardrails_match_shipped
+    assert sorted(c.config.blanks()) == ["feed.sources[0].name", "feed.sources[0].url", "output.github.repo", "review.reviewers[0]"]
+    assert {p.display_name for p in c.enabled_personas()} == {"Monday", "Evidence First", "In the Open", "Long View"}
+    assert all(p.weight("LOCAL") == 0 for p in c.enabled_personas())
