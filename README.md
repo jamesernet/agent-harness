@@ -187,7 +187,7 @@ There is intentionally no repository-init command. `llmctx repo diff` reports mi
 
 ## Skills and provenance
 
-Owned skills live in `skills/`; third-party skills live in `vendor/`. Every installed copy contains `.llmctx-managed.json` with its source path, release or revision, and content hash. The installer updates or prunes only marked copies and known development links. An unrelated real directory is preserved as a conflict.
+Owned skills live in `skills/`; third-party skills live in `vendor/`. The catalogue — what each skill focuses on, what it adds over asking the model cold, how to use one without installing the rest, and which ones lean on tools outside this repository — is [`skills/README.md`](skills/README.md). Every installed copy contains `.llmctx-managed.json` with its source path, release or revision, and content hash. The installer updates or prunes only marked copies and known development links. An unrelated real directory is preserved as a conflict.
 
 `vendor.lock.json` records the full upstream commit, selected skills, and deterministic content digest. Vendor updates require an explicit tag or commit:
 
