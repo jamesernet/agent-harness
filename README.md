@@ -234,7 +234,7 @@ Two ideas carry most of the value:
 
 Resolution order is preset → client → repo-local git config, mirroring git's own `includeIf` layering.
 
-**Status: schema and documentation only — there is no generator.** The profile is currently a structured onboarding checklist. A generator should emit files (`config-<slug>`, `includeIf` entries, `.envrc`, AWS blocks) with a `--check` drift mode, exactly like `build-adapters.sh` — but it should be written against two real clients rather than an imagined schema, or it will grow fields nobody uses.
+**Status: schema and documentation, plus one executable slice.** `bin/llmctx client apply <profile.toml> [--check]` renders the `[ai]` model policy — `account`, `models`, `max_effort` — into that account's `settings.json` as `availableModels`, `enforceAvailableModels` and `maxEffortLevel`, touching nothing else, with a drift check. The rest of the profile is still a structured onboarding checklist. The remaining generator should emit files (`config-<slug>`, `includeIf` entries, `.envrc`, AWS blocks) with a `--check` drift mode, exactly like `build-adapters.sh` — but it should be written against two real clients rather than an imagined schema, or it will grow fields nobody uses.
 
 ## Layout
 

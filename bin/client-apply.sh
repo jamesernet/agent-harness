@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Render a client profile's model policy into that client's Claude account.
+#
+#   llmctx client apply <profile.toml>            write
+#   llmctx client apply <profile.toml> --check    report drift, change nothing
+#
+# This is the first slice of the generator templates/client-profile.example.toml
+# describes, deliberately narrow: it reads only the [ai] table's `account`,
+# `models` and `max_effort`, and writes only the three settings keys they map
+# to — availableModels, enforceAvailableModels, maxEffortLevel — into
+# <account>/settings.json. Every other key in that file is preserved, which is
+# the same contract build-adapters.sh keeps for the portable keys.
+#
+# Why these three and nothing else yet: "which models ran against this client's
+# code, and how hard" is the contract-shaped question nothing on the machine
+# answered. The rest of the profile (identity, SSO, kube) waits for a second
+# real client, as the template says.
+#
+# The TOML read is a flat-key awk over one table, not a parser. The [ai] keys
+# are scalars and one string array by design; anything fancier belongs in a
+# real parser, and this tool should fail loudly rather than guess.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/lib/accounts.sh
+source "$SCRIPT_DIR/lib/accounts.sh"
+
+usage() {
+  echo "usage: llmctx client apply <profile.toml> [--check]" >&2
+  exit 2
+}
+
+profile=""
+check=0
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --check) check=1 ;;
+    -*) usage ;;
+    *)
+      [[ -z "$profile" ]] || usage
+      profile="$1"
+      ;;
+  esac
+  shift
+done
+[[ -n "$profile" ]] || usage
+[[ -f "$profile" ]] || {
+  echo "error: no such profile: $profile" >&2
+  exit 1
+}
+command -v jq >/dev/null 2>&1 || {
+  echo "error: jq is required" >&2
+  exit 1
+}
+
+# One table, flat keys. Comments after a value are stripped; quoted strings and
+# a one-line string array are the only shapes accepted.
+ai_key() {
+  awk -v key="$1" '
+    /^[[:space:]]*\[/ { in_ai = ($0 ~ /^[[:space:]]*\[ai\][[:space:]]*(#.*)?$/); next }
+    in_ai && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+      sub("^[[:space:]]*" key "[[:space:]]*=[[:space:]]*", "")
+      sub(/[[:space:]]*#.*$/, "")
+      print; exit
+    }' "$profile"
+}
+unquote() { printf '%s' "$1" | sed -E 's/^"(.*)"$/\1/'; }
+
+slug="$(awk '/^[[:space:]]*\[/ {in_c = ($0 ~ /^[[:space:]]*\[client\]/); next} in_c && /^[[:space:]]*slug[[:space:]]*=/ {sub(/^[^=]*=[[:space:]]*/, ""); sub(/[[:space:]]*#.*$/, ""); gsub(/"/, ""); print; exit}' "$profile")"
+account_raw="$(ai_key account)"
+models_raw="$(ai_key models)"
+effort_raw="$(ai_key max_effort)"
+
+[[ -n "$account_raw" ]] || {
+  echo "error: [ai].account is not set in $profile — the policy needs a Claude account to land in" >&2
+  exit 1
+}
+account="$(unquote "$account_raw")"
+
+policy='{}'
+if [[ -n "$models_raw" ]]; then
+  case "$models_raw" in
+    \[*\]) ;;
+    *)
+      echo "error: [ai].models must be a one-line string array, e.g. [\"opus\", \"sonnet\"]" >&2
+      exit 1
+      ;;
+  esac
+  models_json="$(printf '%s' "$models_raw" | tr -d ' ' | sed -E 's/,\]/]/')"
+  jq -e 'type == "array" and length > 0 and all(.[]; type == "string" and test("^(sonnet|opus|haiku|fable|inherit|claude-[a-z0-9.-]+)$"))' \
+    <<<"$models_json" >/dev/null 2>&1 || {
+    echo "error: [ai].models must be a non-empty array of model aliases or claude-* ids: $models_raw" >&2
+    exit 1
+  }
+  policy="$(jq -c --argjson m "$models_json" '. + {availableModels: $m, enforceAvailableModels: true}' <<<"$policy")"
+fi
+if [[ -n "$effort_raw" ]]; then
+  effort="$(unquote "$effort_raw")"
+  case "$effort" in
+    low | medium | high | xhigh | max) ;;
+    *)
+      echo "error: [ai].max_effort must be low|medium|high|xhigh|max, got \"$effort\"" >&2
+      exit 1
+      ;;
+  esac
+  policy="$(jq -c --arg e "$effort" '. + {maxEffortLevel: $e}' <<<"$policy")"
+fi
+[[ "$policy" != '{}' ]] || {
+  echo "error: [ai] declares neither models nor max_effort in $profile — nothing to apply" >&2
+  exit 1
+}
+
+# The account must be one this machine knows, or the policy lands nowhere.
+account_dir=""
+while IFS=$'\t' read -r name dir; do
+  [[ "$name" == "$account" ]] && account_dir="$dir" && break
+done < <(llmctx_accounts)
+[[ -n "$account_dir" ]] || {
+  echo "error: Claude account \"$account\" is not registered on this machine (llmctx account list)" >&2
+  exit 1
+}
+settings="$account_dir/settings.json"
+
+current='{}'
+[[ -f "$settings" ]] && current="$(cat "$settings")"
+managed_keys="$(jq -c 'keys' <<<"$policy")"
+live_subset="$(jq -c --argjson k "$managed_keys" 'with_entries(select(.key as $x | $k | index($x)))' <<<"$current")"
+label="${slug:-$(basename "$profile")} -> $account ($settings)"
+
+if [[ "$check" -eq 1 ]]; then
+  if [[ "$(jq -S . <<<"$live_subset")" == "$(jq -S . <<<"$policy")" ]]; then
+    echo "current: $label"
+    exit 0
+  fi
+  echo "drift: $label"
+  echo "  expected: $policy"
+  echo "  actual:   $live_subset"
+  exit 1
+fi
+
+mkdir -p "$account_dir"
+tmp="$(mktemp "$account_dir/.llmctx-client.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+jq --argjson p "$policy" '. * $p' <<<"$current" >"$tmp"
+mv "$tmp" "$settings"
+trap - EXIT
+echo "applied: $label"
+echo "  $policy"
