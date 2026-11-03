@@ -31,7 +31,9 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gemini_common import (  # noqa: E402
+    MAX_CLIP_SECONDS,
     MODELS,
+    VIDEO_RATES_USD,
     die,
     create_with_retry,
     get_client,
@@ -122,6 +124,8 @@ def main() -> int:
     ap.add_argument("--task", choices=TASKS, help="force a mode; normally the prompt is enough")
     ap.add_argument("--uri", action="store_true", help="force URI delivery (auto for 1080p/4k)")
     ap.add_argument("--no-store", action="store_true", help="faster, but the result cannot be edited later")
+    ap.add_argument("--approve", type=int, metavar="SECONDS",
+                    help="the seconds of video you agreed to pay for; must equal what this\nrender will bill, so a plan that changed since you looked stops here")
     ap.add_argument("--json", action="store_true", help="print a JSON summary only")
     args = ap.parse_args()
 
@@ -130,6 +134,22 @@ def main() -> int:
     out = Path(args.out) if args.out else default_out(prompt)
     if out.suffix.lower() != ".mp4":
         out = out.with_suffix(".mp4")
+
+    # The approval is the seconds the user agreed to pay for. Without --duration
+    # the model picks the length, so the only honest number to approve against is
+    # the worst case. A mismatch means something changed after they looked.
+    billable = args.duration or MAX_CLIP_SECONDS
+    estimate = billable * VIDEO_RATES_USD[resolution]
+    if args.approve is None:
+        print(f"this render bills {billable}s at {resolution}, about ${estimate:.2f}")
+        if not args.duration:
+            print(f"  length is unset, so the model chooses it; {MAX_CLIP_SECONDS}s is the worst case.")
+            print("  pass --duration 3..10 to pin it and approve a smaller number.")
+        print(f"approve with: --approve {billable}")
+        return 2
+    if args.approve != billable:
+        die(f"this render bills {billable}s but --approve says {args.approve}s; "
+            "re-check the settings and confirm again")
 
     client = get_client()
     inp = build_input(args, client, prompt)
@@ -187,6 +207,8 @@ def main() -> int:
         "resolution": resolution,
         "aspect": args.aspect or "16:9",
         "duration": f"{args.duration}s" if args.duration else None,
+        "billed_seconds": billable,
+        "estimate_usd": round(estimate, 2),
         "previous_id": args.previous_id,
         "seconds": elapsed,
         "usage": usage_summary(interaction),

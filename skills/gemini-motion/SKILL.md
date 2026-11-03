@@ -51,9 +51,14 @@ recipe and limits there are what separate a usable clip from a generic one.
    `generate_image.py` for a first frame or reference, then pass it with
    `--first-frame` / `--image`. The user's own images are fine too (not real
    people's likenesses, not minors).
-3. **Draft cheap.**
+3. **Draft cheap.** Run it once without `--approve`: it prints what the render
+   will bill and refuses. Show the user that line, get a real yes, then re-run
+   with the number it gave you. `--duration` pins the length so the approval is
+   for the seconds you meant rather than the 10 s worst case.
    ```bash
-   python <skill>/scripts/generate_video.py --prompt-file motion/x-prompt.txt --draft --aspect 9:16 --out motion/x-draft.mp4
+   python <skill>/scripts/generate_video.py --prompt-file motion/x-prompt.txt --draft --aspect 9:16 --duration 6 --out motion/x-draft.mp4
+   # -> this render bills 6s at 360p, about $0.18 / approve with: --approve 6
+   python <skill>/scripts/generate_video.py --prompt-file motion/x-prompt.txt --draft --aspect 9:16 --duration 6 --approve 6 --out motion/x-draft.mp4
    ```
    Watch it (Read the file or send it to the user). Judge: subject right,
    motion right, single shot if asked, audio as specified, no stray text.
@@ -99,7 +104,9 @@ are the method.
 - **Don't write the animation yourself and call it the skill.** The point is
   delegating the generation to Gemini and spending the effort on the brief and
   the review. Hand-edits are for the last 10%.
-- **Don't spend on video until the user knows it's paid.** Draft at 360p; the
+- **Don't spend on video until the user knows it's paid.** The `--approve`
+  gate enforces this rather than trusting you to remember: a render refuses
+  until the seconds it will bill are confirmed back to it. Draft at 360p; the
   first 720p render should be the one you expect to keep.
 - **Don't promise what Omni can't do:** >10 s in one shot, exact dialogue
   edits, voice changes, prepending/mid-clip edits, real-person likenesses,

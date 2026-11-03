@@ -31,6 +31,19 @@ MODELS = {
     "ping": "gemini-3.5-flash-lite",
 }
 
+MAX_CLIP_SECONDS = 10
+"""One Omni call tops out here; longer needs --previous-id to extend."""
+
+VIDEO_RATES_USD = {"360p": 0.03, "720p": 0.10, "1080p": 0.15, "4k": 0.30}
+"""USD per second of OUTPUT video, by resolution.
+
+Published list prices as of late 2026, kept here rather than in each script so
+there is one copy to correct. They do move: check
+https://ai.google.dev/gemini-api/docs/pricing before quoting a figure that
+matters.
+"""
+
+
 LOG_DIR_NAME = ".gemini-motion"
 LOG_FILE_NAME = "runs.jsonl"
 
