@@ -85,3 +85,10 @@ def test_dotenv_is_read_without_overriding(tmp_path, monkeypatch):
 
     assert os.environ["FROM_DOTENV"] == "secret" and os.environ["ALREADY"] == "kept" and os.environ["QUOTED"] == "q"
     assert "EMPTY" not in os.environ
+
+
+def test_check_names_the_credential_source_when_no_variable_is_given(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "/usr/bin/gh")
+    c = write_contract(tmp_path, overrides={"provider": {"kind": "anthropic", "model": "claude-opus-5", "api_key_env": ""}})
+    assert cli.main(["check", "--contract", str(c)]) == 0
+    assert "ant auth login" in capsys.readouterr().out

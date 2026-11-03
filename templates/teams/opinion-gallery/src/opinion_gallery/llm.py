@@ -54,11 +54,10 @@ class OpenAICompatLLM:
         self.model = model
         self.json_mode = json_mode
         self.sleep = sleep
-        self.client = httpx.Client(
-            timeout=timeout_s,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            transport=transport,
-        )
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        self.client = httpx.Client(timeout=timeout_s, headers=headers, transport=transport)
 
     def complete(self, system: str, user: str, *, schema: dict | None = None, max_tokens: int = 4096) -> str:
         body: dict[str, Any] = {
@@ -97,7 +96,9 @@ class AnthropicLLM:
                 import anthropic
             except ImportError:
                 raise LLMError("provider.kind is anthropic but the SDK is not installed; run `uv sync --extra anthropic`") from None
-            kwargs: dict[str, Any] = {"api_key": api_key, "timeout": timeout_s}
+            kwargs: dict[str, Any] = {"timeout": timeout_s}
+            if api_key:
+                kwargs["api_key"] = api_key  # omitted entirely so the SDK resolves its own credentials
             if base_url:
                 kwargs["base_url"] = base_url
             client = anthropic.Anthropic(**kwargs)

@@ -134,12 +134,19 @@ class Config:
         return out
 
     def api_key(self, env: Mapping[str, str]) -> str:
-        """The key the provider needs, or an empty string for `fake`."""
+        """The key the provider needs.
+
+        An empty `api_key_env` means this contract supplies no key: the Anthropic
+        SDK then resolves credentials itself, from its own environment variables or
+        an `ant auth login` profile, and an OpenAI-compatible call goes out with no
+        Authorization header, which is what a local endpoint wants. Naming a
+        variable and leaving it unset is still a mistake, and still an error.
+        """
         if self.provider.kind == "fake":
             return ""
         name = self.provider.api_key_env
         if not name:
-            raise ConfigError("provider.api_key_env is empty")
+            return ""
         value = env.get(name, "")
         if not value:
             raise ConfigError(f"environment variable {name} (provider.api_key_env) is not set")

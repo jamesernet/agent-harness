@@ -135,3 +135,36 @@ def test_build_llm_picks_adapter():
 
     assert isinstance(llm_mod.build_llm(ProviderConfig(kind="fake"), ""), FakeLLM)
     assert isinstance(llm_mod.build_llm(ProviderConfig(kind="openai", model="m"), "k"), OpenAICompatLLM)
+
+
+def test_openai_compat_sends_no_auth_header_without_a_key():
+    seen = []
+
+    def handler(request):
+        seen.append({k.lower(): v for k, v in request.headers.items()})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    _openai(handler).complete("s", "u")
+    assert "authorization" in seen[0] and seen[0]["authorization"] == "Bearer key"
+    OpenAICompatLLM("http://local.test/v1", "", "m", transport=httpx.MockTransport(handler), sleep=lambda s: None).complete("s", "u")
+    assert "authorization" not in seen[1]
+
+
+def test_anthropic_omits_api_key_so_the_sdk_resolves_its_own(monkeypatch):
+    anthropic = pytest.importorskip("anthropic")
+    seen = {}
+
+    class Stub:
+        def __init__(self, **kwargs):
+            seen.clear()
+            seen.update(kwargs)
+            self.messages = self
+
+        def create(self, **kwargs):
+            return _Response([_Block("text", "x")])
+
+    monkeypatch.setattr(anthropic, "Anthropic", Stub)
+    AnthropicLLM("", "claude-opus-5")
+    assert "api_key" not in seen and seen["timeout"] == 120
+    AnthropicLLM("k", "claude-opus-5", base_url="https://proxy.test")
+    assert seen["api_key"] == "k" and seen["base_url"] == "https://proxy.test"

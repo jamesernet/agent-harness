@@ -107,3 +107,12 @@ def test_emergentlabs_example_is_filled_except_the_private_values():
     assert sorted(c.config.blanks()) == ["feed.sources[0].name", "feed.sources[0].url", "output.github.repo", "review.reviewers[0]"]
     assert {p.display_name for p in c.enabled_personas()} == {"Monday", "Evidence First", "In the Open", "Long View"}
     assert all(p.weight("LOCAL") == 0 for p in c.enabled_personas())
+
+
+def test_empty_api_key_env_means_no_key_from_this_contract():
+    cfg = parse_config(_raw())
+    cfg.provider.api_key_env = ""
+    assert cfg.api_key({}) == ""  # the SDK or a local endpoint takes it from here
+    cfg.provider.api_key_env = "NAMED_BUT_UNSET"
+    with pytest.raises(ConfigError, match="NAMED_BUT_UNSET"):
+        cfg.api_key({})

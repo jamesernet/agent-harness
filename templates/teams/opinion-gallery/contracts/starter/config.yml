@@ -28,7 +28,10 @@ provider:
   kind: openai # openai (any OpenAI-compatible endpoint) | anthropic | fake
   base_url: https://api.openai.com/v1 # e.g. http://localhost:11434/v1 for Ollama
   model: << model id >>
-  api_key_env: OPENAI_API_KEY # the NAME of the env var that holds the key, never the key
+  api_key_env: OPENAI_API_KEY # the NAME of the env var that holds the key, never the key.
+  # Leave it empty to supply no key: a local endpoint needs none, and the
+  # Anthropic SDK then resolves its own, including an `ant auth login` profile.
+  # Naming a variable you have not set is an error, not a fallback.
   json_mode: false # openai kind only: also send response_format json_object
   timeout_s: 120
   max_tokens:

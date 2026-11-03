@@ -103,12 +103,15 @@ provider:
   kind: openai
   base_url: http://localhost:11434/v1
   model: llama3.1
-  api_key_env: OLLAMA_API_KEY   # any non-empty value; Ollama ignores it
+  api_key_env: ""               # a local endpoint needs no key
 ```
 
 `provider.kind: anthropic` uses the Anthropic SDK (`uv sync --extra
-anthropic`). `provider.kind: fake` replays `fixtures/fake_replies.json` and is
-what the tests use.
+anthropic`). Leave `api_key_env` empty there and the SDK resolves credentials
+itself, so an `ant auth login` profile works and no key file is needed. Name a
+variable instead and it must be set, or the run stops before any call.
+`provider.kind: fake` replays `fixtures/fake_replies.json` and is what the
+tests use.
 
 Small local models sometimes fail the triage JSON. Lower `feed.max_stories`
 first. A failed persona is logged and skipped; the run continues.

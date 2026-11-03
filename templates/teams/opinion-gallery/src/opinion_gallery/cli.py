@@ -78,6 +78,11 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"blank: {b}")
     for p in problems:
         print(f"problem: {p}")
+    if cfg.provider.kind != "fake" and not cfg.provider.api_key_env:
+        source = "the Anthropic SDK's own resolution (its environment variables, or an `ant auth login` profile)"
+        if cfg.provider.kind != "anthropic":
+            source = "no Authorization header, which suits a local endpoint"
+        print(f"note: provider.api_key_env is empty, so credentials come from {source}")
     enabled = ", ".join(p.name for p in contract.enabled_personas())
     print(f"contract {contract.name}: personas on: {enabled or 'none'}; provider {cfg.provider.kind} {cfg.provider.model}")
     if cfg.github_repo(os.environ) and not shutil.which("gh"):
