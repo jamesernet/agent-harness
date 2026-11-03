@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""Ask Gemini to write a small code-based animation from a motion brief.
+
+Output is ONE self-contained file: an .html (CSS/JS animation, the default),
+a standalone .svg, or a Lottie .json. Nothing external is loaded, so the file
+can be opened directly, dropped into a page, or handed to someone else.
+
+  generate_animation.py --brief-file brief.md --out hero.html
+  generate_animation.py "a 3s looping pulse on a circle, teal on white" --format svg --out pulse.svg
+  generate_animation.py "slow the fade to 1.5s" --previous-id v1_abc --out hero.html   # iterate
+
+Images the animation should use go in with --asset; they are inlined as data
+URIs so the result stays a single file. The interaction id is printed and
+logged to ./.gemini-motion/runs.jsonl for follow-up turns.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import re
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gemini_common import (  # noqa: E402
+    MODELS,
+    die,
+    extract_code,
+    get_client,
+    guess_mime,
+    log_run,
+    read_text_arg,
+    usage_summary,
+)
+
+FORMATS = {
+    "html": {"ext": ".html", "fences": ("html",), "label": "a single HTML document"},
+    "svg": {"ext": ".svg", "fences": ("svg", "xml"), "label": "a standalone SVG document"},
+    "lottie": {"ext": ".json", "fences": ("json",), "label": "a Lottie animation JSON (bodymovin schema)"},
+}
+
+SYSTEM_INSTRUCTION = """\
+You are a motion designer who writes production-quality animation code.
+You will receive a motion brief. Produce exactly one deliverable: {label}.
+
+Hard requirements (they make the output usable without further work):
+- Self-contained: no external scripts, stylesheets, fonts, images or network calls.
+  Any asset the brief lists is referenced by its exact filename; nothing else.
+- Deterministic: no randomness unless the brief asks for it (then seed it).
+- Honour the brief's canvas size, duration, loop behaviour and easing. If the
+  brief omits one, choose a sensible value and keep it in one obvious place.
+- Expose tunables (colours, duration, sizes) as named constants at the top
+  (CSS custom properties on :root for HTML/SVG; a comment block for Lottie)
+  so a human can adjust without reading the whole file.
+- HTML/SVG: respect prefers-reduced-motion by reducing or pausing motion.
+- HTML: a transparent body background unless a background is requested;
+  the animation starts on load; sized with CSS so it scales to its container.
+- Keep it small and readable: prefer CSS keyframes or SVG animation over
+  JavaScript, and JavaScript over libraries. No frameworks.
+- Lottie: valid JSON only, schema version 5.x, 24 fps unless told otherwise.
+
+Reply with ONLY the code in one fenced code block tagged ```{fence}```.
+No explanation before or after the block.
+"""
+
+
+def inline_assets(code: str, assets: list[Path]) -> str:
+    """Replace references to each asset's basename with a data URI."""
+    for p in assets:
+        mime = guess_mime(p, "application/octet-stream")
+        data = base64.b64encode(p.read_bytes()).decode("ascii")
+        uri = f"data:{mime};base64,{data}"
+        # match src="name", url(name), href="name", xlink:href="name", with or without ./
+        pattern = re.compile(r"(?<=[\"'(])(?:\./)?" + re.escape(p.name) + r"(?=[\"')])")
+        code = pattern.sub(uri, code)
+    return code
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("brief", nargs="?", help="the motion brief (or use --brief-file)")
+    ap.add_argument("--brief-file", help="read the brief from a file (see references/animation-brief.md)")
+    ap.add_argument("--out", help="output path; extension follows --format if omitted")
+    ap.add_argument("--format", choices=FORMATS, default="html")
+    ap.add_argument("--asset", action="append", help="image file the animation should use (repeatable)")
+    ap.add_argument("--no-inline", action="store_true", help="keep asset references as filenames")
+    ap.add_argument("--model", default=MODELS["code"], help=f"default {MODELS['code']}")
+    ap.add_argument("--thinking", choices=("low", "medium", "high"), default="medium")
+    ap.add_argument("--previous-id", help="iterate on an earlier result (keeps Gemini's context)")
+    ap.add_argument("--json", action="store_true", help="print a JSON summary only")
+    args = ap.parse_args()
+
+    brief = read_text_arg(args.brief, args.brief_file, "brief")
+    fmt = FORMATS[args.format]
+    out = Path(args.out) if args.out else Path("motion") / f"animation-{time.strftime('%Y%m%d-%H%M%S')}{fmt['ext']}"
+    if out.suffix.lower() != fmt["ext"]:
+        out = out.with_suffix(fmt["ext"])
+
+    assets = [Path(a) for a in (args.asset or [])]
+    for a in assets:
+        if not a.is_file():
+            die(f"asset not found: {a}")
+
+    user_text = brief
+    if assets:
+        names = ", ".join(a.name for a in assets)
+        user_text += f"\n\nAssets available (reference by exact filename): {names}"
+
+    # Send the asset images too, so Gemini can see what it is animating.
+    inp: list[dict] | str = user_text
+    if assets:
+        blocks = []
+        for a in assets:
+            mime = guess_mime(a, "image/png")
+            if mime.startswith("image/"):
+                blocks.append({"type": "image", "data": base64.b64encode(a.read_bytes()).decode("ascii"), "mime_type": mime})
+        blocks.append({"type": "text", "text": user_text})
+        inp = blocks
+
+    client = get_client()
+    kwargs: dict = {
+        "model": args.model,
+        "input": inp,
+        "system_instruction": SYSTEM_INSTRUCTION.format(label=fmt["label"], fence=fmt["fences"][0]),
+        "generation_config": {"thinking_level": args.thinking},
+    }
+    if args.previous_id:
+        kwargs["previous_interaction_id"] = args.previous_id
+
+    if not args.json:
+        print(f"asking {args.model} for {fmt['label']} ...", flush=True)
+    t0 = time.time()
+    try:
+        interaction = client.interactions.create(**kwargs)
+    except Exception as e:  # noqa: BLE001
+        die(f"{type(e).__name__}: {e}")
+
+    raw = interaction.output_text or ""
+    if not raw.strip():
+        die(f"empty reply (status={getattr(interaction, 'status', '?')})")
+
+    code, lang = extract_code(raw, prefer=fmt["fences"])
+    if args.format == "lottie":
+        try:
+            json.loads(code)
+        except json.JSONDecodeError as e:
+            die(f"Lottie output is not valid JSON ({e}); raw reply saved to .gemini-motion/last_raw.txt")
+    if assets and not args.no_inline:
+        code = inline_assets(code, assets)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(code, encoding="utf-8")
+    raw_path = Path(".gemini-motion") / "last_raw.txt"
+    raw_path.parent.mkdir(exist_ok=True)
+    raw_path.write_text(raw, encoding="utf-8")
+
+    elapsed = round(time.time() - t0, 1)
+    summary = {
+        "out": str(out),
+        "format": args.format,
+        "interaction_id": interaction.id,
+        "model": args.model,
+        "previous_id": args.previous_id,
+        "bytes": len(code.encode("utf-8")),
+        "seconds": elapsed,
+        "usage": usage_summary(interaction),
+    }
+    log_run("animation", brief=brief[:2000], **summary)
+
+    if args.json:
+        print(json.dumps(summary))
+    else:
+        print(f"saved {out}  ({summary['bytes']} bytes, {elapsed}s)")
+        print(f"interaction id: {interaction.id}   <- pass as --previous-id to revise")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
