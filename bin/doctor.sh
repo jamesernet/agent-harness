@@ -299,6 +299,34 @@ else
     add_check codex-skills FAIL "managed skills could not be inventoried" "$SRC/bin/llmctx skills install"
 fi
 
+# Account routes feed hooks/account-guard.sh. A route naming an account that is
+# not registered makes the guard silent — it cannot judge what it cannot name —
+# so that is the state to report, not an empty route list.
+routes="$(git config --global --get-all llmctx.accountRoute 2>/dev/null || true)"
+if [[ -z "$routes" ]]; then
+  add_check account-routes PASS "no account routes configured" ""
+else
+  bad_routes=""
+  route_summary=""
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    route_name="${entry%%=*}"
+    route_path="${entry#*=}"
+    known=0
+    while IFS=$'\t' read -r account_name _; do
+      [[ "$account_name" == "$route_name" ]] && known=1
+    done <<<"$accounts"
+    [[ "$known" -eq 1 ]] || bad_routes="$bad_routes $entry"
+    route_summary="$route_summary, $route_path -> $route_name"
+  done <<<"$routes"
+  if [[ -n "$bad_routes" ]]; then
+    add_check account-routes FAIL "route(s) name an unregistered account:$bad_routes" \
+      "llmctx account add <name> <dir>, or git config --global --unset llmctx.accountRoute <entry>"
+  else
+    add_check account-routes PASS "routes:${route_summary#, }" ""
+  fi
+fi
+
 if [[ "$quiet" -eq 0 ]]; then
   if [[ "$output_json" -eq 1 ]]; then
     jq -s --argjson healthy "$([[ "$failures" -eq 0 ]] && echo true || echo false)" \

@@ -103,6 +103,14 @@ export CLAUDE_CONFIG_DIR="$HOME/.claude-acme"
 
 A repository with its own `.envrc` needs `source_up_if_exists` as its first line, or it shadows the parent entirely — silently, with no error — and the routing does not apply there. Confirm with `/status` in a live session; it names the account and org.
 
+**The backstop for that routing** is `hooks/account-guard.sh`, installed into every account like the branch guard. Declare which tree belongs to which account, once, in global git config:
+
+```sh
+git config --global --add llmctx.accountRoute acme=~/repos/github.com/acme
+```
+
+A write under a routed path from any other account is refused at the first tool call, with the fix in the message. Routes-only and symmetric: an unrouted path is nobody's business, so the client account can still edit a personal repo. It fails fast rather than early — quota is consumed by model calls and a hook runs after the first one — so it is a tripwire, not a billing boundary. Suspend it deliberately with `touch <config-dir>/.allow-cross-account`; `llmctx doctor` reports the routes and refuses one that names an unregistered account.
+
 ## Data flow
 
 ```text

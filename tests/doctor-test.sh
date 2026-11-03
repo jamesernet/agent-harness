@@ -35,7 +35,7 @@ jq -e '.healthy == false and any(.checks[]; .id == "adapters" and .status == "FA
   fail "missing adapters were not reported"
 
 HOME="$test_home" "$copy/install.sh" >/dev/null
-jq -e '.permissions.allow == ["Private(example)"] and .theme == "dark" and (.hooks.PreToolUse | length) == 1' \
+jq -e '.permissions.allow == ["Private(example)"] and .theme == "dark" and (.hooks.PreToolUse | length) == 2' \
   "$test_home/.claude/settings.json" >/dev/null || fail "private Claude settings were not preserved"
 HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/healthy.json" ||
   fail "installed machine was reported unhealthy"
