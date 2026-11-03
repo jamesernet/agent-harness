@@ -23,6 +23,11 @@ MODELS = {
     "image": "gemini-nano-banana-2.1",
     "code": "gemini-3.8-flash",
     "code_cheap": "gemini-3.5-flash-lite",
+    # Tried in order when "code" is unavailable. A 503 on a Gemini text model is
+    # a shared-capacity outage, not a key problem: it hits paid Standard-tier
+    # projects too and has run for a day at a time, so backoff alone cannot
+    # outlast it. Each entry is a separate capacity pool on the same key.
+    "code_fallbacks": ("gemini-3.6-flash", "gemini-3.5-flash-lite"),
     "ping": "gemini-3.5-flash-lite",
 }
 
@@ -51,6 +56,45 @@ def get_client():
             "  then:  export GEMINI_API_KEY=\"...\"   (see references/setup.md)"
         )
     return genai.Client(api_key=key)
+
+
+RETRY_STATUSES = (429, 503)
+"""Only these are retried.
+
+A 503 (model overloaded) and a 429 (rate limit) both mean the request was
+refused before any generation happened, so re-sending cannot double-charge.
+Timeouts and connection errors are deliberately NOT retried: the request may
+have been accepted and a paid video may already be generating, and a blind
+retry would bill for it twice. Those surface to the caller instead.
+"""
+
+
+def create_with_retry(client, attempts: int = 4, base_delay: float = 5.0, **kwargs):
+    """client.interactions.create, retried with exponential backoff on 429/503.
+
+    gemini-3.8-flash in particular returns 503 "experiencing high demand" in
+    bursts; without this a transient spike ends the run and loses the brief's
+    place in the workflow.
+    """
+    last = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return client.interactions.create(**kwargs)
+        except Exception as e:  # noqa: BLE001
+            status = getattr(e, "status_code", None)
+            if status is None:
+                text = str(e)
+                status = next((c for c in RETRY_STATUSES if str(c) in text), None)
+            if status not in RETRY_STATUSES or attempt == attempts:
+                raise
+            last = e
+            delay = base_delay * (2 ** (attempt - 1))
+            print(
+                f"  {status} from the API (attempt {attempt}/{attempts}); retrying in {delay:.0f}s",
+                file=sys.stderr, flush=True,
+            )
+            time.sleep(delay)
+    raise last  # unreachable
 
 
 def guess_mime(path: Path, default: str = "application/octet-stream") -> str:

@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gemini_common import (  # noqa: E402
     MODELS,
     die,
+    create_with_retry,
     get_client,
     image_block,
     log_run,
@@ -158,7 +159,7 @@ def main() -> int:
 
     t0 = time.time()
     try:
-        interaction = client.interactions.create(**kwargs)
+        interaction = create_with_retry(client, **kwargs)
     except Exception as e:  # noqa: BLE001
         die(f"{type(e).__name__}: {e}")
 

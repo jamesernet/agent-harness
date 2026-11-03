@@ -30,6 +30,7 @@ from gemini_common import (  # noqa: E402
     MODELS,
     die,
     extract_code,
+    create_with_retry,
     get_client,
     guess_mime,
     log_run,
@@ -88,13 +89,23 @@ def main() -> int:
     ap.add_argument("--format", choices=FORMATS, default="html")
     ap.add_argument("--asset", action="append", help="image file the animation should use (repeatable)")
     ap.add_argument("--no-inline", action="store_true", help="keep asset references as filenames")
-    ap.add_argument("--model", default=MODELS["code"], help=f"default {MODELS['code']}")
+    ap.add_argument("--model", help=f"default {MODELS['code']}; an explicit choice disables fallback")
+    ap.add_argument("--no-fallback", action="store_true",
+                    help="fail instead of trying the fallback models on a 503")
     ap.add_argument("--thinking", choices=("low", "medium", "high"), default="medium")
     ap.add_argument("--previous-id", help="iterate on an earlier result (keeps Gemini's context)")
     ap.add_argument("--json", action="store_true", help="print a JSON summary only")
     args = ap.parse_args()
 
     brief = read_text_arg(args.brief, args.brief_file, "brief")
+    # An explicit --model is taken literally; the default fans out to the
+    # fallback pools, because a 503 here is a capacity outage, not a bad request.
+    if args.model:
+        chain = [args.model]
+    elif args.no_fallback:
+        chain = [MODELS["code"]]
+    else:
+        chain = [MODELS["code"], *MODELS["code_fallbacks"]]
     fmt = FORMATS[args.format]
     out = Path(args.out) if args.out else Path("motion") / f"animation-{time.strftime('%Y%m%d-%H%M%S')}{fmt['ext']}"
     if out.suffix.lower() != fmt["ext"]:
@@ -123,7 +134,6 @@ def main() -> int:
 
     client = get_client()
     kwargs: dict = {
-        "model": args.model,
         "input": inp,
         "system_instruction": SYSTEM_INSTRUCTION.format(label=fmt["label"], fence=fmt["fences"][0]),
         "generation_config": {"thinking_level": args.thinking},
@@ -131,13 +141,25 @@ def main() -> int:
     if args.previous_id:
         kwargs["previous_interaction_id"] = args.previous_id
 
-    if not args.json:
-        print(f"asking {args.model} for {fmt['label']} ...", flush=True)
     t0 = time.time()
-    try:
-        interaction = client.interactions.create(**kwargs)
-    except Exception as e:  # noqa: BLE001
-        die(f"{type(e).__name__}: {e}")
+    interaction = None
+    for i, model in enumerate(chain):
+        if not args.json:
+            note = "" if i == 0 else f"  (falling back from {chain[i - 1]})"
+            print(f"asking {model} for {fmt['label']} ...{note}", flush=True)
+        try:
+            interaction = create_with_retry(client, model=model, **kwargs)
+            break
+        except Exception as e:  # noqa: BLE001
+            status = getattr(e, "status_code", None)
+            if status is None:
+                status = next((c for c in RETRY_STATUSES if str(c) in str(e)), None)
+            # Only a capacity failure is worth trying a different model for; a bad
+            # request will fail identically everywhere.
+            if status not in RETRY_STATUSES or i == len(chain) - 1:
+                die(f"{type(e).__name__}: {e}")
+            print(f"  {model} unavailable; trying {chain[i + 1]}", file=sys.stderr, flush=True)
+    model_used = model
 
     raw = interaction.output_text or ""
     if not raw.strip():
@@ -162,8 +184,8 @@ def main() -> int:
     summary = {
         "out": str(out),
         "format": args.format,
+        "model": model_used,
         "interaction_id": interaction.id,
-        "model": args.model,
         "previous_id": args.previous_id,
         "bytes": len(code.encode("utf-8")),
         "seconds": elapsed,
