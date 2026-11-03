@@ -10,9 +10,11 @@ subagent format, so nothing is installed there.
 
 A skill that spawns subagents otherwise spawns them on the session model at the
 session effort. Three reviewers for one essay on the largest model at the
-highest effort is the kind of spend nothing decides on purpose. Pinning the
-model, effort and turn budget in an agent file is the only enforceable control:
-hooks can observe a subagent start but cannot change its model.
+highest effort is the kind of spend nothing decides on purpose. An agent file
+is where the model, effort and turn budget get a default that travels with the
+work: hooks can observe a subagent start but cannot change its model. A caller
+can still override these per invocation, so this is a default, not a cap; a
+hard cap belongs in managed settings and is a follow-up.
 
 | agent | model | effort | turns | job |
 |---|---|---|---|---|
@@ -29,10 +31,12 @@ produces three similar designs instead of three different ones.
 
 - `review-prose` names `prose-reviewer` for its three parallel passes.
 - `improve-codebase-architecture` names `scout` for the exploration walk.
-- Skills that are judgment end to end declare `effort:` in their frontmatter so
-  they never run below it whatever the session is set to: `threat-model`,
-  `tech-due-diligence`, `money-movement-review` at `xhigh`. Procedure-shaped
-  work declares a lower floor: `site-visual-baseline` at `medium`.
+- Skills that are judgment end to end declare `effort:` in their frontmatter.
+  It is an override, not a floor: the skill runs at that level whatever the
+  session is set to, up or down. `threat-model`, `tech-due-diligence` and
+  `money-movement-review` pin `xhigh`, the highest level settings can hold;
+  procedure-shaped `site-visual-baseline` pins `medium`, deliberately cheaper
+  than most sessions.
 
 A skill that should run entirely inside a subagent uses `context: fork` plus
 `agent: <name>` in its frontmatter. None do today: every skill in this set has a
