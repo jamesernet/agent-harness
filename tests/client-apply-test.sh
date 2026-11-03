@@ -63,10 +63,29 @@ jq -e '.maxEffortLevel == "max"' "$s" >/dev/null || fail "--check modified the f
 "$SRC/bin/llmctx" client apply "$profile" >/dev/null
 jq -e '.maxEffortLevel == "high"' "$s" >/dev/null || fail "re-apply did not restore the policy"
 
-# Only declared keys are managed: a profile with max_effort alone leaves models alone.
+# All three keys are managed: dropping models from the profile lifts the restriction.
 sed -i.bak '/^models/d' "$profile" && rm -f "$profile.bak"
+if "$SRC/bin/llmctx" client apply "$profile" --check >/dev/null 2>&1; then
+  fail "--check reported current while a stale allowlist was still enforced"
+fi
 "$SRC/bin/llmctx" client apply "$profile" >/dev/null || fail "effort-only profile failed"
-jq -e '.availableModels == ["opus","sonnet"]' "$s" >/dev/null || fail "undeclared key was removed"
+jq -e '(has("availableModels") | not) and (has("enforceAvailableModels") | not) and .maxEffortLevel == "high"' "$s" >/dev/null ||
+  fail "dropping models did not lift the restriction"
+"$SRC/bin/llmctx" client apply "$profile" --check >/dev/null || fail "--check not current after lifting the restriction"
+
+# An empty settings file used to make apply a silent no-op that reported
+# success; it is now treated as {} and becomes a valid object.
+: >"$s"
+"$SRC/bin/llmctx" client apply "$profile" >/dev/null || fail "apply onto an empty file failed"
+jq -e 'type == "object" and .maxEffortLevel == "high"' "$s" >/dev/null || fail "empty file did not become a valid settings object"
+printf '%s\n' '[]' >"$s"
+"$SRC/bin/llmctx" client apply "$profile" >/dev/null 2>&1 && fail "non-object settings were accepted"
+printf '%s\n' '{}' >"$s"
+
+# Claude Code's own aliases, with a context suffix, are expressible.
+bad="$tmp/bad.toml"
+printf '[ai]\naccount = "acme"\nmodels = ["opusplan", "sonnet[1m]", "default"]\n' >"$bad"
+"$SRC/bin/llmctx" client apply "$bad" >/dev/null || fail "real model aliases were refused"
 
 # Validation refuses rather than guesses.
 bad="$tmp/bad.toml"

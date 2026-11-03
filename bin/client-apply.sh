@@ -88,13 +88,22 @@ if [[ -n "$models_raw" ]]; then
       ;;
   esac
   models_json="$(printf '%s' "$models_raw" | tr -d ' ' | sed -E 's/,\]/]/')"
-  jq -e 'type == "array" and length > 0 and all(.[]; type == "string" and test("^(sonnet|opus|haiku|fable|inherit|claude-[a-z0-9.-]+)$"))' \
+  # Aliases Claude Code's own /model accepts, with an optional context suffix
+  # such as sonnet[1m]; or a full claude-* id.
+  jq -e 'type == "array" and length > 0 and all(.[]; type == "string" and test("^((sonnet|opus|haiku|fable|default|opusplan)(\\[[0-9]+m\\])?|claude-[a-z0-9.-]+)$"))' \
     <<<"$models_json" >/dev/null 2>&1 || {
     echo "error: [ai].models must be a non-empty array of model aliases or claude-* ids: $models_raw" >&2
     exit 1
   }
   policy="$(jq -c --argjson m "$models_json" '. + {availableModels: $m, enforceAvailableModels: true}' <<<"$policy")"
 fi
+# All three keys are always managed. A profile that drops `models` means "no
+# restriction", so the restriction is removed; a stale allowlist that
+# drift-checks clean is the wrong default for a tool whose job is to say which
+# models may run against a client's code.
+remove='[]'
+[[ -n "$models_raw" ]] || remove="$(jq -c '. + ["availableModels","enforceAvailableModels"]' <<<"$remove")"
+[[ -n "$effort_raw" ]] || remove="$(jq -c '. + ["maxEffortLevel"]' <<<"$remove")"
 if [[ -n "$effort_raw" ]]; then
   effort="$(unquote "$effort_raw")"
   case "$effort" in
@@ -123,8 +132,14 @@ done < <(llmctx_accounts)
 settings="$account_dir/settings.json"
 
 current='{}'
-[[ -f "$settings" ]] && current="$(cat "$settings")"
-managed_keys="$(jq -c 'keys' <<<"$policy")"
+# -s, not -f: an empty file passed the existence test, jq then produced no
+# output for it, and apply reported success while writing nothing.
+[[ -s "$settings" ]] && current="$(cat "$settings")"
+jq -e 'type == "object"' <<<"$current" >/dev/null 2>&1 || {
+  echo "error: $settings is not a JSON object; not touching it" >&2
+  exit 1
+}
+managed_keys='["availableModels","enforceAvailableModels","maxEffortLevel"]'
 live_subset="$(jq -c --argjson k "$managed_keys" 'with_entries(select(.key as $x | $k | index($x)))' <<<"$current")"
 label="${slug:-$(basename "$profile")} -> $account ($settings)"
 
@@ -142,7 +157,8 @@ fi
 mkdir -p "$account_dir"
 tmp="$(mktemp "$account_dir/.llmctx-client.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT
-jq --argjson p "$policy" '. * $p' <<<"$current" >"$tmp"
+jq --argjson p "$policy" --argjson r "$remove" '. * $p | delpaths($r | map([.]))' <<<"$current" >"$tmp"
+chmod 0644 "$tmp"
 mv "$tmp" "$settings"
 trap - EXIT
 echo "applied: $label"
