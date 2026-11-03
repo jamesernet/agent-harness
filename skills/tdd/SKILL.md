@@ -87,12 +87,15 @@ Rules:
 
 ### 4. Refactor
 
-After all tests pass, look for [refactor candidates](refactoring.md):
+After all tests pass, look for refactor candidates:
 
-- [ ] Extract duplication
-- [ ] Deepen modules (move complexity behind simple interfaces)
+- [ ] Duplication → extract a function or class
+- [ ] Long methods → break into private helpers (keep tests on the public interface)
+- [ ] Shallow modules → combine or deepen (move complexity behind a simple interface)
+- [ ] Feature envy → move logic to where the data lives
+- [ ] Primitive obsession → introduce value objects
 - [ ] Apply SOLID principles where natural
-- [ ] Consider what new code reveals about existing code
+- [ ] Existing code the new code reveals as problematic
 - [ ] Run tests after each refactor step
 
 **Never refactor while RED.** Get to GREEN first.

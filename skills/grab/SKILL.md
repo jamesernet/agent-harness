@@ -29,7 +29,7 @@ session per worktree.
    `docs/agents/workflow.md` names where `setup-skills` has been run here (the
    repo's CLAUDE.md/AGENTS.md otherwise). `scripts/new-worktree.sh <branch>` and
    its equivalents encode that repo's base branch, location convention and
-   pre-flight — core-api's fetches `origin/main` first, because a stale base is
+   pre-flight — a helper that fetches `origin/main` first, because a stale base is
    how you author a migration chaining off a superseded head. Fall back to
    `agent-harness/bin/worktree.sh new <branch>` only where the repo ships nothing.
    All subsequent work happens inside that worktree, leaving the main checkout
