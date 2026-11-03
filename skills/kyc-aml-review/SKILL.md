@@ -68,4 +68,4 @@ through disposition (or SAR). The gaps show up in the traces, not the docs.
   ordinary support staff.
 
 ## Related
-- [data-privacy-review](../data-privacy-review/) · [payment-flow-review](../payment-flow-review/) · [tech-due-diligence](../tech-due-diligence/)
+- [data-privacy-review](../data-privacy-review/) · [money-movement-review](../money-movement-review/) · [tech-due-diligence](../tech-due-diligence/)

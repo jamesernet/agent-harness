@@ -299,6 +299,70 @@ else
     add_check codex-skills FAIL "managed skills could not be inventoried" "$SRC/bin/llmctx skills install"
 fi
 
+# Managed agents: one file per definition, ownership recorded in the target
+# directory's sidecar manifest. The same four verdicts as skills — current,
+# needing attention, mixed modes, nothing shipped — so a machine whose agents
+# were never installed cannot read as healthy.
+check_agent_target() {
+  local target="$1" id="$2" manifest issues="" expected=0 copies=0 links=0
+  local name source_file destination
+  manifest="$target/$LLMCTX_SKILL_MARKER_NAME"
+  for source_file in "$SRC"/agents/*.md; do
+    [[ -f "$source_file" ]] || continue
+    name="$(basename "$source_file" .md)"
+    [[ "$name" == README ]] && continue
+    expected=$((expected + 1))
+    destination="$target/$name.md"
+    if [[ -L "$destination" ]]; then
+      case "$(readlink "$destination")" in
+        "$SRC"/agents/*)
+          links=$((links + 1))
+          continue
+          ;;
+      esac
+      issues="$issues $name"
+      continue
+    fi
+    if [[ ! -f "$destination" ]] || [[ ! -f "$manifest" ]] ||
+      ! jq -e --arg n "$name" '.agents | has($n)' "$manifest" >/dev/null 2>&1 ||
+      [[ "$(llmctx_skill_hash_file "$destination")" != "$(llmctx_skill_hash_file "$source_file")" ]]; then
+      issues="$issues $name"
+      continue
+    fi
+    copies=$((copies + 1))
+  done
+  if [[ -f "$manifest" ]]; then
+    while IFS= read -r name; do
+      [[ -n "$name" ]] || continue
+      [[ -f "$SRC/agents/$name.md" ]] || issues="$issues $name(retired)"
+    done < <(jq -r '.agents // {} | keys[]' "$manifest" 2>/dev/null)
+  fi
+  if [[ -n "$issues" ]]; then
+    add_check "$id" FAIL "agents needing attention:$issues" "$SRC/bin/llmctx agents install"
+  elif [[ "$expected" -eq 0 ]]; then
+    add_check "$id" PASS "no agents shipped" ""
+  elif [[ "$links" -gt 0 && "$copies" -gt 0 ]]; then
+    add_check "$id" FAIL "managed agents mix copy and development modes" "$SRC/bin/llmctx agents install"
+  elif [[ "$links" -eq "$expected" ]]; then
+    add_check "$id" PASS "$links development links are current" ""
+  else
+    add_check "$id" PASS "$copies managed agents are current" ""
+  fi
+}
+
+if [[ "$hash_available" -eq 1 ]] && [[ -n "$accounts" ]]; then
+  while IFS=$'\t' read -r account_name account_dir; do
+    [[ -n "$account_name" ]] || continue
+    if [[ "$account_name" == "$LLMCTX_ACCOUNT_DEFAULT_NAME" ]]; then
+      check_agent_target "$account_dir/agents" claude-agents
+    else
+      check_agent_target "$account_dir/agents" "claude-agents[$account_name]"
+    fi
+  done <<<"$accounts"
+else
+  add_check claude-agents FAIL "managed agents could not be inventoried" "$SRC/bin/llmctx agents install"
+fi
+
 # Account routes feed hooks/account-guard.sh. A route naming an account that is
 # not registered makes the guard silent — it cannot judge what it cannot name —
 # so that is the state to report, not an empty route list.

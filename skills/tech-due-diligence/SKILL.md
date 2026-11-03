@@ -1,6 +1,7 @@
 ---
 name: tech-due-diligence
 description: Run a technical due-diligence pass on a codebase/company — architecture, team, risk, security/compliance posture, scalability, roadmap credibility. Use for investor/M&A diligence or pre-engagement situation reviews.
+effort: xhigh
 ---
 
 # Technical Due Diligence

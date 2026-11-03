@@ -1,13 +1,26 @@
 ---
-name: payment-flow-review
-description: Review a payment flow for correctness and resilience — auth/capture/settlement/refund/chargeback states, idempotency, retries, webhooks, reconciliation. Use when designing or reviewing a payment integration (Stripe, Adyen, PayPal, or any PSP), checkout, billing, subscriptions, payouts, refunds, or any money-movement path.
+name: money-movement-review
+description: Review or design a money-movement path end to end — the payment flow (auth/capture/settlement/refund/chargeback states, idempotency, retries, webhooks), the money representation behind it (minor units, decimals, currency, rounding, allocation, FX), and the ledger that records it (double-entry integrity, immutability, balance derivation, settlement matching, break workflows). Use when designing or reviewing a PSP integration (Stripe, Adyen, PayPal, or any PSP), checkout, billing, subscriptions, payouts, refunds, wallets, balances, statements, or reconciliation jobs, or when code, schemas, APIs, or DB columns carry monetary amounts, prices, fees, invoices, discounts, taxes, or currency conversion.
+effort: xhigh
 ---
 
-# Payment Flow Review
+# Money Movement Review
 
 How I pressure-test a money-movement path — a PSP integration, payout
 pipeline, refund flow, or internal transfer. Output: a findings list ranked
 by severity with evidence, plus the state diagram if one doesn't exist yet.
+
+The procedure below is the payment-flow pass. Two rule sets travel with it:
+
+- [MONEY.md](MONEY.md) — how amounts are represented and computed: minor
+  units, currency, rounding, allocation, FX. Read it when the review touches
+  amounts, prices, fees, or conversion, or when designing new money-handling code.
+- [LEDGER.md](LEDGER.md) — how movements are recorded: double-entry,
+  immutability, derived balances, reconciliation, trial balance. Read it when the
+  review reaches a ledger, balance, wallet, payout, or statement.
+
+A payment review that skips the two rule sets is incomplete; a pricing column or
+ledger schema can be reviewed against a rule set alone.
 
 ## Procedure
 
@@ -65,7 +78,7 @@ diagram rendered before relying on it.
 ### 4. Failure modes — walk each one explicitly
 - Timeout-then-success: the request timed out client-side but succeeded at the PSP.
 - Double-submit: the user clicked twice.
-- Partial capture / partial refund arithmetic (see money-modeling allocation).
+- Partial capture / partial refund arithmetic (see allocation in [MONEY.md](MONEY.md)).
 - Stuck pending: what watches for payments that never resolve, and what's the SLA?
 - PSP outage: queue, fail, or degrade — a deliberate choice, not an accident.
 
@@ -73,7 +86,7 @@ diagram rendered before relying on it.
 - Every state change writes a record matchable to the PSP's reports: their
   id, amount, currency, timestamp.
 - Fees are recorded per transaction, not discovered monthly in the invoice.
-- The ledger side lives in ledger-and-reconciliation; this review just
+- The ledger side lives in [LEDGER.md](LEDGER.md); this review just
   confirms the raw material exists.
 
 ### 6. User-visible consistency
@@ -85,7 +98,7 @@ diagram rendered before relying on it.
 - Status driven by the API response alone with webhooks ignored, or the
   reverse, with no reconciliation between the two sources.
 - Refund logic that recomputes amounts instead of referencing the original charge.
-- Amounts crossing the PSP boundary as floats (→ money-modeling).
+- Amounts crossing the PSP boundary as floats (→ [MONEY.md](MONEY.md)).
 - Webhook signing secrets hardcoded (stop and flag per global safety rules).
 - No local/test story for webhooks. Untested webhook handling is broken
   webhook handling.
@@ -98,4 +111,4 @@ diagram rendered before relying on it.
 - Retry storm on a mutating endpoint with one idempotency key: one effect.
 
 ## Related
-- [money-modeling](../money-modeling/) · [ledger-and-reconciliation](../ledger-and-reconciliation/) · [threat-model](../threat-model/) (payment flows are always security-sensitive)
+- [threat-model](../threat-model/) (payment flows are always security-sensitive) · [pci-dss-scoping](../pci-dss-scoping/) · [kyc-aml-review](../kyc-aml-review/)

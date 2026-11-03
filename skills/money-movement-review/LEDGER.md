@@ -1,11 +1,10 @@
----
-name: ledger-and-reconciliation
-description: Review or design a financial ledger and its reconciliation — double-entry integrity, immutability, balance derivation, settlement matching, break workflows. Use when building or reviewing ledgers, balances, wallets, payouts, statements, or reconciliation jobs.
----
-
 # Ledger & Reconciliation
 
-My standard for trustworthy money records. Two uses: design rules for new
+Rule set for trustworthy money records. Loaded by
+[money-movement-review](SKILL.md); read it whenever ledgers, balances,
+wallets, payouts, statements, or reconciliation jobs are in the code under review.
+
+Two uses: design rules for new
 ledger work, and a review procedure for existing systems. Findings ranked by
 severity with evidence.
 
@@ -18,7 +17,7 @@ severity with evidence.
   transaction with one leg is a bug the database should reject.
 - Accounts have a type (asset/liability/income/expense/equity or your
   domain's equivalent) and exactly one currency. Cross-currency moves are
-  two transactions joined by an FX event (see money-modeling), never one
+  two transactions joined by an FX event (see [MONEY.md](MONEY.md)), never one
   posting with an implicit rate.
 
 ### Immutability
@@ -42,7 +41,7 @@ severity with evidence.
 - Internal ledger ↔ external truth (PSP reports, bank statements,
   settlement files) on a schedule matching the money's velocity.
 - Match on the external party's id + amount + currency; every internal
-  entry must be matchable (see payment-flow-review's reconciliation hooks).
+  entry must be matchable (see the reconciliation hooks in [SKILL.md](SKILL.md)).
 - Breaks (unmatched items) go to a suspense account with an aging clock and
   an owner — a break older than N days pages a human. Suspense trending to
   zero is the health metric.
@@ -75,4 +74,4 @@ severity with evidence.
 - Reconciliation with a mutated external file: break detected, aged, surfaced.
 
 ## Related
-- [money-modeling](../money-modeling/) · [payment-flow-review](../payment-flow-review/)
+- [MONEY.md](MONEY.md) · [SKILL.md](SKILL.md) (the review procedure)
