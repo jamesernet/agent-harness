@@ -19,6 +19,11 @@
 # Registration is purely additive. A list that could omit the primary would
 # reintroduce the failure this exists to fix: an install that silently skips a
 # config directory and reports success.
+#
+# This file also owns resolution of the `@import` targets inside an account's
+# generated CLAUDE.md, because that is the same subject matter — an account's
+# config directory and the path forms it is written in — and the tilde
+# expansion the resolver needs already lives here.
 
 LLMCTX_ACCOUNT_KEY="llmctx.claudeAccount"
 LLMCTX_ACCOUNT_DEFAULT_NAME="default"
@@ -124,4 +129,92 @@ llmctx_account_home_path() {
     "$HOME"/*) printf '$HOME/%s\n' "${dir#"$HOME"/}" ;;
     *) printf '%s\n' "$dir" ;;
   esac
+}
+
+# Direct `@import` targets in an account's CLAUDE.md that will not resolve when
+# Claude Code reads it. An unresolved target produces NO error: the session
+# simply runs without those rules, and nothing connects the loss to its cause.
+#
+# This is narrower than it looks, and the narrowness is the point. The paths
+# render_claude writes are derived from the RUNNING script's own location, so a
+# moved checkout, a pruned worktree or a hand edit all make the installed file
+# differ from a fresh render and are already caught as adapter drift. What is
+# byte-identical to a correct render and still broken is a global/ source that
+# has been deleted, made unreadable or left dangling while the checkout sits
+# where the installed file says it does — render_claude writes those paths
+# without ever reading them. The other half of the value is diagnostic: drift
+# says "missing or stale", this says which path is dead.
+#
+# One level only. A target may import further files, and walking the whole graph
+# needs cycle detection for a case this repository does not generate — every
+# global/*.md is import-free. Callers say "direct" rather than imply
+# completeness.
+#
+# Prints one line per import, "<status>\t<lineno>\t<raw-target>\t<resolved-path>",
+# status being ok, missing, unreadable or unsupported. Every import is reported
+# rather than only the broken ones, so a caller can say how many resolve without
+# parsing the file a second time. Exits 0 even with findings, because both
+# callers run under `set -euo pipefail` and read this through a command
+# substitution, where a non-zero return would abort the script: findings are
+# data, not status. Exits 2, printing nothing, when the file itself cannot be
+# read.
+llmctx_unresolved_imports() {
+  local file="$1" base line lineno=0 target resolved fenced=0
+
+  [[ -f "$file" && -r "$file" ]] || return 2
+  base="$(dirname "$file")"
+
+  # Redirected rather than piped: a pipeline runs the loop in a subshell and
+  # loses $lineno. The `|| [[ -n "$line" ]]` keeps a final line with no
+  # trailing newline, which a hand-edited file routinely has.
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
+
+    # A fenced block is documentation. The generated adapter has none, but this
+    # also reads hand-edited files, where an example `@path` inside a fence must
+    # not read as a broken import.
+    case "$line" in '```'*) fenced=$((1 - fenced)) ;; esac
+    [[ "$fenced" -eq 0 ]] || continue
+
+    # Whole-line imports only, matching what render_claude emits. An inline
+    # mid-sentence `@` would turn every prose mention into a finding.
+    case "$line" in '@'?*) ;; *) continue ;; esac
+
+    target="${line#@}"
+    # Trailing whitespace, and the CR of a file edited on Windows, are not path.
+    target="${target%"${target##*[![:space:]$'\r']}"}"
+    [[ -n "$target" ]] || continue
+
+    # Reported, not judged. Claude Code does not expand shell variables, so such
+    # a line is probably already broken — but calling it missing would mean
+    # printing a path we invented by expanding $HOME ourselves, which is a
+    # different file from the one the resolver looks for, and the one-line
+    # remediation is wrong for a hand edit. A path carrying whitespace is the
+    # same situation. The generated adapter emits neither form.
+    case "$target" in
+      '$HOME'* | '${HOME}'* | *[[:space:]]*)
+        printf 'unsupported\t%s\t%s\t\n' "$lineno" "$target"
+        continue
+        ;;
+    esac
+
+    # `~` IS expanded by Claude Code, and this file already owns that expansion.
+    # shellcheck disable=SC2088  # matching a LITERAL tilde is the point here
+    case "$target" in
+      '~' | '~/'*) resolved="$(llmctx_account_expand_dir "$target")" ;;
+      /*) resolved="$target" ;;
+      *) resolved="$base/$target" ;;
+    esac
+
+    # -f rather than -e: a directory is not importable and a dangling symlink
+    # correctly fails. Neither needs canonicalising — the kernel resolves `..`,
+    # `.` and symlinks here, and realpath is absent on stock macOS.
+    if [[ ! -f "$resolved" ]]; then
+      printf 'missing\t%s\t%s\t%s\n' "$lineno" "$target" "$resolved"
+    elif [[ ! -r "$resolved" ]]; then
+      printf 'unreadable\t%s\t%s\t%s\n' "$lineno" "$target" "$resolved"
+    else
+      printf 'ok\t%s\t%s\t%s\n' "$lineno" "$target" "$resolved"
+    fi
+  done <"$file"
 }

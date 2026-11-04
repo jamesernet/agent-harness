@@ -44,6 +44,50 @@ jq -e '.healthy == true and all(.checks[]; .status == "PASS")' "$tmp/healthy.jso
 HOME="$test_home" "$copy/bin/llmctx" doctor --quiet || fail "quiet check failed"
 [[ -z "$(HOME="$test_home" "$copy/bin/llmctx" doctor --quiet)" ]] || fail "quiet check produced output"
 
+# An unresolved @import is SILENT in a session: the rules simply do not load.
+# The installed file is byte-identical to a correct render, because render_claude
+# names these paths without ever reading them -- so under --account, where
+# render_codex is skipped, the adapters diff passes and this is the only check
+# that fires. Asserting on the filename matters: a FAIL that does not name the
+# dead path is already the status quo.
+mv "$copy/global/handoff-and-briefs.md" "$tmp/handoff-and-briefs.md"
+if HOME="$test_home" "$copy/bin/llmctx" doctor --json --account default >"$tmp/imports.json"; then
+  fail "an unresolvable @import target was reported healthy"
+fi
+jq -e 'any(.checks[]; .id == "adapters" and .status == "PASS")' "$tmp/imports.json" >/dev/null ||
+  fail "the adapters check caught this, so the import check is no longer the only witness"
+jq -e 'any(.checks[]; .id == "claude-imports" and .status == "FAIL" and (.detail | contains("handoff-and-briefs.md")))' \
+  "$tmp/imports.json" >/dev/null || fail "the dead @import target was not named"
+mv "$tmp/handoff-and-briefs.md" "$copy/global/handoff-and-briefs.md"
+
+# The hand-edited row of the table in #30. Any hand edit is also adapter drift,
+# so assert on this check's id alone, never on all(.checks[]; ...).
+printf '@%s\n' "$copy/global/typo-does-not-exist.md" >>"$test_home/.claude/CLAUDE.md"
+if HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/imports-typo.json"; then
+  fail "a hand-edited dead @import line was reported healthy"
+fi
+jq -e 'any(.checks[]; .id == "claude-imports" and .status == "FAIL")' \
+  "$tmp/imports-typo.json" >/dev/null || fail "a typo'd @ line was not reported"
+HOME="$test_home" "$copy/install.sh" >/dev/null
+
+# Claude Code does not expand shell variables, so this form is reported as a
+# visible skip rather than asserted broken -- the only way decision (c) in #30
+# is observable.
+# Appending the line is adapter drift too, so doctor exits non-zero either way;
+# the claim under test is this check's verdict, not the overall exit.
+printf '@$HOME/nope.md\n' >>"$test_home/.claude/CLAUDE.md"
+HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/imports-unsupported.json" || true
+jq -e 'any(.checks[]; .id == "claude-imports" and .status == "PASS" and (.detail | contains("skipped")))' \
+  "$tmp/imports-unsupported.json" >/dev/null || fail "the unsupported path form was not reported as a skip"
+HOME="$test_home" "$copy/install.sh" >/dev/null
+
+# "direct" is the one-level limit disclosing itself on the line a reader trusts.
+# Pinning the word stops the wording quietly becoming a claim of completeness.
+HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/imports-ok.json" ||
+  fail "a correct install was reported unhealthy by the import check"
+jq -e 'any(.checks[]; .id == "claude-imports" and .status == "PASS" and (.detail | contains("direct")))' \
+  "$tmp/imports-ok.json" >/dev/null || fail "resolving imports were not reported as direct-only"
+
 HOME="$test_home" "$copy/bin/llmctx" skills install --dev >/dev/null
 HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/development.json" ||
   fail "development skill install was reported unhealthy"
