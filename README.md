@@ -248,6 +248,18 @@ Resolution order is preset → client → repo-local git config, mirroring git's
 
 **Status: schema and documentation, plus one executable slice.** `bin/llmctx client apply <profile.toml> [--check]` renders the `[ai]` model policy — `account`, `models`, `max_effort` — into that account's `settings.json` as `availableModels`, `enforceAvailableModels` and `maxEffortLevel`, touching nothing else, with a drift check. The rest of the profile is still a structured onboarding checklist. The remaining generator should emit files (`config-<slug>`, `includeIf` entries, `.envrc`, AWS blocks) with a `--check` drift mode, exactly like `build-adapters.sh` — but it should be written against two real clients rather than an imagined schema, or it will grow fields nobody uses.
 
+## Teams
+
+`templates/teams/` holds copyable multi-persona packs with their own runtime, as
+against the single-file profiles in `templates/agents/`. The first is
+`templates/teams/opinion-gallery/`: four or five AI personas read a
+news feed on an org's behalf, stay quiet by default, draft when one has a
+strong opinion, debate once when two flag the same story, and hand the result
+to a person as a drafts directory and a GitHub Issue. It is model-agnostic
+(any OpenAI-compatible endpoint, a local model, or the Anthropic SDK) and it
+never publishes. The pattern lives here; a real org's contract lives in its
+own repo. See `templates/teams/opinion-gallery/README.md`.
+
 ## Layout
 
 ```text
@@ -257,6 +269,7 @@ targets/      hosting-target descriptions for environment declarations
 skills/       owned skills
 agents/       managed subagent definitions (model, effort, turn budget)
 vendor/       pinned third-party skills
+templates/    copy-into-project starters: agent profiles, client profile, teams
 brand/        intentionally public personal-brand context
 bin/          stable CLI, installers, checks, hooks, and libraries
 tests/        deterministic shell tests and portable runner
