@@ -238,9 +238,9 @@ duplicate_names="$(LC_ALL=C sort "$available" | uniq -d)"
   exit 1
 }
 
-# One skills directory per registered Claude account, because the alternative
-# is a machine where `llmctx skills install` reports success and one account
-# has no skills at all — which is the state this replaced.
+# One skills directory per registered provider account, because the alternative
+# is a machine where `llmctx skills install` reports success and one login has
+# no skills at all — which is the state this replaced.
 accounts="$(llmctx_accounts_selected "$account")" || exit 1
 targets=()
 target_accounts=()
@@ -249,12 +249,17 @@ while IFS=$'\t' read -r account_name account_dir; do
   targets+=("$account_dir/skills")
   target_accounts+=("$account_name")
 done <<<"$accounts"
-# Codex has no config-directory switching, so it gets one copy — and a run
-# narrowed to a single Claude account is not about Codex at all. It has no
-# account of its own, so it follows the global key.
+# A run narrowed to one Claude account remains Claude-only for compatibility.
+# A normal run covers every registered Codex home. Codex homes follow the
+# global bundle: account-specific bundle keys predate provider-qualified names
+# and silently sharing that namespace would let a Claude choice narrow Codex.
 if [[ -z "$account" ]]; then
-  targets+=("$HOME/.codex/skills")
-  target_accounts+=("")
+  codex_accounts="$(llmctx_accounts codex)" || exit 1
+  while IFS=$'\t' read -r account_name account_dir; do
+    [[ -n "$account_name" ]] || continue
+    targets+=("$account_dir/skills")
+    target_accounts+=("")
+  done <<<"$codex_accounts"
 fi
 
 # Validate every target's bundle up front: a typo on the second account must

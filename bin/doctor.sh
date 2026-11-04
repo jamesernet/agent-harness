@@ -104,6 +104,21 @@ else
     "Claude accounts: $(printf '%s\n' "$accounts" | cut -f1 | tr '\n' ' ' | sed 's/ $//')" ""
 fi
 
+codex_accounts=""
+codex_accounts_error=""
+if [[ -z "$account" ]]; then
+  if ! codex_accounts="$(llmctx_accounts codex 2>&1)"; then
+    codex_accounts_error="$codex_accounts"
+    codex_accounts=""
+  fi
+  if [[ -n "$codex_accounts_error" ]]; then
+    add_check codex-accounts FAIL "$codex_accounts_error" "llmctx account list --provider codex"
+  else
+    add_check codex-accounts PASS \
+      "Codex accounts: $(printf '%s\n' "$codex_accounts" | cut -f1 | tr '\n' ' ' | sed 's/ $//')" ""
+  fi
+fi
+
 adapter_check=("$SCRIPT_DIR/build-adapters.sh" --check)
 [[ -z "$account" ]] || adapter_check+=(--account "$account")
 if "${adapter_check[@]}" >/dev/null 2>&1; then
@@ -256,8 +271,17 @@ if [[ "$hash_available" -eq 1 ]] && [[ -n "$accounts" ]] && build_skill_catalog;
       check_skill_target "$account_dir/skills" "claude-skills[$account_name]" "$account_bundle"
     fi
   done <<<"$accounts"
-  [[ -n "$account" ]] ||
-    check_skill_target "$HOME/.codex/skills" codex-skills "$(doctor_bundle_for_account "")"
+  if [[ -z "$account" && -z "$codex_accounts_error" ]]; then
+    while IFS=$'\t' read -r codex_account_name codex_account_dir; do
+      [[ -n "$codex_account_name" ]] || continue
+      if [[ "$codex_account_name" == "$LLMCTX_ACCOUNT_DEFAULT_NAME" ]]; then
+        check_skill_target "$codex_account_dir/skills" codex-skills "$(doctor_bundle_for_account "")"
+      else
+        check_skill_target "$codex_account_dir/skills" "codex-skills[$codex_account_name]" \
+          "$(doctor_bundle_for_account "")"
+      fi
+    done <<<"$codex_accounts"
+  fi
 
   # Report the active bundle. `all` is the default and needs no comment; a
   # narrowed one does, because the whole point of narrowing is that some skills
