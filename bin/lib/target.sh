@@ -45,6 +45,37 @@ llmctx_target_expand_home() {
   esac
 }
 
+llmctx_target_strip_slashes() {
+  local p="$1"
+  while [[ "$p" == */ && "$p" != "/" ]]; do p="${p%/}"; done
+  printf '%s\n' "$p"
+}
+
+# Resolve symlinks and `..` through the deepest ancestor that EXISTS, then
+# re-append the part that does not yet (a new file's parent may be new).
+#
+# Any caller comparing two paths needs this, and comparing paths is what every
+# consumer of this library does: `/var` and `/private/var` are the same
+# directory on macOS, so a prefix test between an uncanonicalised path and a
+# `git rev-parse --show-toplevel` result is wrong in whichever direction the
+# symlink was not followed. That is not a hypothetical — it is the first thing
+# that fails when you write a test with mktemp on a Mac.
+llmctx_target_canonical() {
+  local p="$1" rest="" dir
+  p="$(llmctx_target_strip_slashes "$p")"
+  dir="$p"
+  while [[ ! -d "$dir" && "$dir" != "/" && -n "$dir" ]]; do
+    rest="/$(basename "$dir")$rest"
+    dir="$(dirname "$dir")"
+  done
+  if [[ -d "$dir" ]]; then
+    dir="$(cd "$dir" 2>/dev/null && pwd -P)" || dir="$p"
+    printf '%s\n' "$(llmctx_target_strip_slashes "$dir$rest")"
+  else
+    printf '%s\n' "$p"
+  fi
+}
+
 # Command substitutions are removed FIRST. A `cd` inside `$( )` or backticks
 # runs in a subshell whose directory never reaches the outer command, so
 # honouring it would scope a guard to a directory the write never touches —

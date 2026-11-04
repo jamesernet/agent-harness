@@ -57,28 +57,9 @@ source "$TARGET_LIB"
 # wrapped under the shorter local name rather than spelled out at each of the
 # seven call sites.
 expand_home() { llmctx_target_expand_home "$1"; }
-strip_slashes() {
-  local p="$1"
-  while [[ "$p" == */ && "$p" != "/" ]]; do p="${p%/}"; done
-  printf '%s\n' "$p"
-}
-# Resolve symlinks and `..` through the deepest ancestor that exists, then
-# re-append the part that does not exist yet (a new file's parent may be new).
-canonical() {
-  local p="$1" rest="" dir
-  p="$(strip_slashes "$p")"
-  dir="$p"
-  while [[ ! -d "$dir" && "$dir" != "/" && -n "$dir" ]]; do
-    rest="/$(basename "$dir")$rest"
-    dir="$(dirname "$dir")"
-  done
-  if [[ -d "$dir" ]]; then
-    dir="$(cd "$dir" 2>/dev/null && pwd -P)" || dir="$p"
-    printf '%s\n' "$(strip_slashes "$dir$rest")"
-  else
-    printf '%s\n' "$p"
-  fi
-}
+# Path canonicalisation has one implementation, in the library, for the same
+# reason tilde expansion does: a third consumer now needs it.
+canonical() { llmctx_target_canonical "$1"; }
 
 # No routes, no work. This is the common case on a machine without clients, and
 # it must cost nothing.
