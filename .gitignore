@@ -5,3 +5,8 @@
 *.local
 *.tmp
 __pycache__/
+
+# templates/teams/opinion-gallery run output and tooling; in an org's own repo the drafts are the product
+templates/teams/opinion-gallery/opinion-gallery/
+.venv/
+.pytest_cache/

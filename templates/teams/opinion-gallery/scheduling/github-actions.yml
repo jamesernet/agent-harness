@@ -1,0 +1,46 @@
+# Copy to .github/workflows/opinion gallery.yml in the org's repo, where the gallery
+# directory and the contract live. Adjust the contract path and the secret
+# name to match provider.api_key_env in config.yml.
+#
+# What this does on each run: fetch, triage, draft, debate, write drafts/ and
+# the state file, open one issue per piece from the runner's own token, then
+# commit the drafts and state back. The state file must be committed because
+# the runner is ephemeral; without it a rerun the same day repeats every call.
+#
+# If main is protected, push to a `opinion-gallery` branch and open a pull request
+# instead of pushing to the default branch.
+name: opinion-gallery
+on:
+  schedule:
+    - cron: "0 6 * * 1-5" # weekday mornings, UTC
+  workflow_dispatch:
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: opinion-gallery
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Run the gallery
+        working-directory: opinion gallery
+        run: uv run --locked --extra anthropic opinion-gallery run --contract contracts/<org>
+        env:
+          # whichever of these provider.api_key_env names
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ github.token }} # gh is preinstalled on runners and reads this
+          OPINION_GALLERY_GITHUB_REPO: ${{ github.repository }}
+      - name: Commit drafts and state
+        run: |
+          git config user.name "opinion-gallery"
+          git config user.email "opinion-gallery@users.noreply.github.com"
+          git add opinion-gallery/opinion gallery
+          git diff --cached --quiet || git commit -m "opinion-gallery: drafts for $(date -u +%F)"
+          git push
