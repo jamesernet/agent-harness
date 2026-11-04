@@ -409,6 +409,7 @@ accounts="$(llmctx_accounts_selected "$account")" || exit 1
 
 if [[ "$check_only" -eq 1 ]]; then
   drift=0
+  unresolved=0
   while IFS=$'\t' read -r account_name account_dir; do
     [[ -n "$account_name" ]] || continue
     use_account "$account_dir" "$account_name"
@@ -416,6 +417,21 @@ if [[ "$check_only" -eq 1 ]]; then
       echo "drift: $CLAUDE_MD"
       drift=1
     }
+    # NOT drift, and the distinction is the whole point. `drift` means the
+    # installed file differs from what would be generated; an unresolvable
+    # @import is the case where the file IS in sync and still wrong, so
+    # reporting it as drift would be a false diagnosis and the generic remedy
+    # would be wrong too -- for a deleted global/ source, re-running the builder
+    # fails with "missing source:" rather than fixing anything. Guarded on the
+    # file existing so a missing CLAUDE.md reports drift once instead of drift
+    # plus an import flood.
+    if [[ -f "$CLAUDE_MD" ]]; then
+      while IFS=$'\t' read -r kind lineno raw resolved; do
+        case "$kind" in missing | unreadable) ;; *) continue ;; esac
+        echo "$kind import: $CLAUDE_MD:$lineno -> ${resolved:-$raw}"
+        unresolved=1
+      done < <(llmctx_unresolved_imports "$CLAUDE_MD" || true)
+    fi
     # Compare only the keys this repo declares. A local `theme` is not drift.
     diff <(render_settings_src | jq -S .) <(managed_subset | jq -S .) >/dev/null 2>&1 ||
       {
@@ -445,8 +461,18 @@ if [[ "$check_only" -eq 1 ]]; then
     }
   fi
 
+  # Both summaries print before exiting: a run with drift AND a dead import has
+  # two separate things wrong and two different remedies. The exit code stays 1
+  # for either, because doctor's adapters check consumes only the status, and a
+  # third code would be a private protocol between two scripts.
+  if [[ "$unresolved" -ne 0 ]]; then
+    echo "an @import target does not resolve; those rules load as nothing, silently." >&2
+    echo "re-run bin/build-adapters.sh from the primary checkout to repair the paths." >&2
+  fi
   if [[ "$drift" -ne 0 ]]; then
     echo "local adapters out of sync. run bin/build-adapters.sh to fix." >&2
+  fi
+  if [[ "$drift" -ne 0 || "$unresolved" -ne 0 ]]; then
     exit 1
   fi
   echo "all local adapters in sync."

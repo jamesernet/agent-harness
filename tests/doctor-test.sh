@@ -46,18 +46,21 @@ HOME="$test_home" "$copy/bin/llmctx" doctor --quiet || fail "quiet check failed"
 
 # An unresolved @import is SILENT in a session: the rules simply do not load.
 # The installed file is byte-identical to a correct render, because render_claude
-# names these paths without ever reading them -- so under --account, where
-# render_codex is skipped, the adapters diff passes and this is the only check
-# that fires. Asserting on the filename matters: a FAIL that does not name the
-# dead path is already the status quo.
+# names these paths without ever reading them.
+#
+# adapters FAILs here too, now that --check runs the same scan -- it did not
+# before, and that gap under --account is what justified this check. What
+# adapters still cannot do is say WHICH path died: its detail is "missing or
+# stale" and its remedy is install.sh. So the assertion is on the filename, not
+# on being the only witness.
 mv "$copy/global/handoff-and-briefs.md" "$tmp/handoff-and-briefs.md"
 if HOME="$test_home" "$copy/bin/llmctx" doctor --json --account default >"$tmp/imports.json"; then
   fail "an unresolvable @import target was reported healthy"
 fi
-jq -e 'any(.checks[]; .id == "adapters" and .status == "PASS")' "$tmp/imports.json" >/dev/null ||
-  fail "the adapters check caught this, so the import check is no longer the only witness"
 jq -e 'any(.checks[]; .id == "claude-imports" and .status == "FAIL" and (.detail | contains("handoff-and-briefs.md")))' \
   "$tmp/imports.json" >/dev/null || fail "the dead @import target was not named"
+jq -e 'any(.checks[]; .id == "adapters" and (.detail | contains("handoff-and-briefs.md")) | not)' \
+  "$tmp/imports.json" >/dev/null || fail "adapters named the dead path, so this check adds nothing"
 mv "$tmp/handoff-and-briefs.md" "$copy/global/handoff-and-briefs.md"
 
 # The hand-edited row of the table in #30. Any hand edit is also adapter drift,
