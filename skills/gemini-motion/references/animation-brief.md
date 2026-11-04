@@ -51,12 +51,22 @@ Every positional defect in this skill's history came from a brief that made
 the model convert something. Give coordinates in the output format's own
 terms and there is nothing to get wrong.
 
+- **Specify what must match; expect what you leave out to move.** Measured
+  over nine generations of the same briefs against one pinned model: every
+  coordinate stated explicitly came back identical every time. What varied was
+  what the brief did not pin — derived positions by 1-2px, and once the
+  structure itself, where one run emitted 18 rects for a layout another run
+  did in 15. A 20-line brief with four elements produced byte-identical
+  geometry six times out of six; an 85-line brief with a dozen elements
+  differed in some respect on all three runs. Variance scales with what you
+  leave to the model, not with luck.
 - **SVG rects are positioned by top-left, so say that.**
   `<rect x="225" y="202" width="150" height="96">` has one reading.
-  "Centred at (300,250), 150x96" has two, and both are internally consistent
-  — which is why it passes review. Measured: the same brief run twice put the
-  card at y=202 once and y=250 the other time, a 48px drift that only showed
-  when two scenes were stitched together.
+  "Centred at (300,250), 150x96" has two, and both are internally consistent —
+  which is why it passes review. This is a clarity argument, not a drift one:
+  tested directly, the "centred at" phrasing produced correct and identical
+  coordinates three runs out of three. Prefer the native form because the next
+  reader does not have to redo the arithmetic to check it.
 - **Forbid group transforms when you give absolute baselines.** A model that
   wraps a panel in `<g transform="translate(93,150)">` *and* uses your
   `y="182"` baseline pushes every line 150px down, outside its own panel. The
@@ -169,6 +179,15 @@ Then open the frame PNGs with the Read tool and check against the brief:
       if the output looks truncated).
 
 
+**An edit that cannot fail is an edit you cannot trust.** When you change a
+brief or a file programmatically, assert that the anchor matched before
+writing. A string replace whose anchor is absent is a silent no-op, and a
+script that prints "done" regardless will have you reasoning about a change
+that never happened. This cost a wrong conclusion here: an edit meant to pin
+one brief's geometry targeted an anchor that file did not contain, printed
+success, and the next two hours were spent explaining a difference in terms of
+a fix that was never applied.
+
 **Grep first, but never grep last.** Source checks tell you a string is
 present or absent — they are good for forbidden content and required
 tunables, and useless for position. In one project, loose substring greps
@@ -235,9 +254,15 @@ re-runnable.
   for the payoff lets the viewer recognise the frame and read what changed,
   instead of parsing a new picture. It is the cheapest way to make an ending
   land, and it only works if the coordinates are literally identical.
-- **Regeneration is not idempotent.** The same brief can produce different
-  geometry on a different run. If you regenerate one scene, re-audit all of
-  them against the shared anchors — and audit by rendering, not by grepping.
+- **Regenerating one scene means re-auditing all of them.** Not because
+  regeneration is wildly unstable — pinned coordinates held across every run
+  measured — but because anything the brief leaves implicit can come back
+  different, and in a stitched set that shows up as a seam rather than as an
+  obviously wrong frame. Audit by rendering, not by grepping. One structural
+  drift of 48px was observed in this project and did NOT reproduce in three
+  further runs of the same brief, so treat large drift as rare rather than
+  expected — and catch it with an audit rather than by trusting it cannot
+  happen.
 - **Stitch with the mp4 export**, then `ffmpeg -f concat`. Verified: duration
   and frame count come out exact, so seams land where the arithmetic says.
 

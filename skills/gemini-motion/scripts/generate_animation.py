@@ -107,6 +107,14 @@ def main() -> int:
     brief = read_text_arg(args.brief, args.brief_file, "brief")
     # An explicit --model is taken literally; the default fans out to the
     # fallback pools, because a 503 here is a capacity outage, not a bad request.
+    if args.previous_id and not args.model:
+        # A thread belongs to the model that started it, so there is nothing to
+        # fall back to — reusing the id against a second model sends one
+        # conversation to a model that never had it. Which model owns this
+        # thread is in .gemini-motion/runs.jsonl; the caller has to say.
+        die("--previous-id needs --model: a thread belongs to the model that "
+            "started it, and this cannot guess which. The model is recorded "
+            "beside the interaction id in .gemini-motion/runs.jsonl.")
     if args.model:
         chain = [args.model]
     elif args.no_fallback:
@@ -158,6 +166,11 @@ def main() -> int:
     interaction = None
     for i, model in enumerate(chain):
         remaining = deadline - time.time()
+        # Fair-share, not first-come. A total budget alone lets a model that
+        # hangs consume all of it and the chain never gets tried — observed:
+        # a dead first model ate a 100s budget whole and the two behind it
+        # never ran. Each attempt gets at most its share of what is left.
+        share = remaining / (len(chain) - i)
         if remaining < MIN_ATTEMPT_S:
             die(f"out of time after {time.time() - t0:.0f}s; tried {', '.join(chain[:i]) or 'nothing'}. "
                 f"Raise --timeout or pass --model to pick one directly.")
@@ -165,7 +178,7 @@ def main() -> int:
             note = "" if i == 0 else f"  (falling back from {chain[i - 1]})"
             print(f"asking {model} for {fmt['label']} ...{note}", flush=True)
         try:
-            interaction = create(client, remaining, model=model, **kwargs)
+            interaction = create(client, share, model=model, **kwargs)
             break
         except Exception as e:  # noqa: BLE001
             status = getattr(e, "status_code", None)
