@@ -40,3 +40,7 @@ it, and a mid-flight handoff is a comment on that issue. This repository
 declares `"briefs": "tracker"` in `.llmctx.json`, so there is deliberately no
 mirror in the tree — do not create one. Working notes stay local and
 uncommitted.
+
+Architecture decisions follow the same rule: an ADR is an issue titled
+`ADR-NNN: <decision>`, not a file under `docs/`. Cite one by linking to it, so
+the citation resolves for a reader who only has the published repository.
