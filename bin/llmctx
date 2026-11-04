@@ -9,7 +9,7 @@ usage:
   llmctx install [--account <name>]
   llmctx version [--json]
   llmctx doctor [--json|--quiet] [--account <name>]
-  llmctx explain <profile|branchPolicy|protectedBranches> [repo]
+  llmctx explain <profile|branchPolicy|irreversiblePolicy|protectedBranches> [repo]
   llmctx account list [--json]
   llmctx account add <name> <dir>
   llmctx account remove <name>

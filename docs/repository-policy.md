@@ -9,6 +9,7 @@
   "schemaVersion": 1,
   "profile": "personal",
   "branchPolicy": "remind",
+  "irreversiblePolicy": "ask",
   "protectedBranches": ["main", "master"],
   "briefs": "tree",
   "claudeImport": true
@@ -16,6 +17,10 @@
 ```
 
 All fields except `schemaVersion` are optional. Profiles are `personal` or `client`. Branch policies are `off`, `remind`, `ask`, or `deny`. `protectedBranches` must be a non-empty array of non-empty strings.
+
+`irreversiblePolicy` takes the same four values and governs actions that cannot be undone rather than the branch they happen on: force push, hard reset, history rewrite, force branch deletion, remote branch deletion, and a recursive delete whose target resolves outside the repository. Two things differ from `branchPolicy` on purpose. Its built-in default is `ask` for **both** profiles, because "stop and confirm before destroying something" is the same answer in a personal repository and a client engagement, where branch strictness genuinely is a dial. And `remind` is treated as `ask`, because reminding once that a destructive command is destructive and then allowing every one that follows protects nothing.
+
+What it does not check is as deliberate: database drops, migrations against a non-local environment, `git rebase`, `git commit --amend`, and opening a pull request without being asked. The first two are not recognisable from a command string without guessing which connection string points where; the next two are the ordinary way to tidy a branch before review; the last has no mechanism here, since its stage is a `pre-push` hook this repository does not have.
 
 ## Declarable conventions
 

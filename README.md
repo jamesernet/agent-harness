@@ -191,6 +191,35 @@ git config llmctx.branchPolicy off
 bin/llmctx explain branchPolicy
 ```
 
+### A second tenant on the same ladder
+
+`irreversiblePolicy` takes the same four values through the same four tiers, and
+judges the **action** rather than the branch it happens on: force push, hard
+reset, history rewrite, force branch deletion, remote branch deletion, and a
+recursive delete whose target resolves outside the repository. The hook is
+`<account>/hooks/irreversible-policy.sh`.
+
+```sh
+bin/llmctx explain irreversiblePolicy
+git config llmctx.irreversiblePolicy deny
+```
+
+Two things differ from `branchPolicy`, both deliberate. The default is `ask`
+**everywhere** rather than derived from the profile, because branch strictness
+genuinely is a dial a client engagement turns up, while "stop and confirm before
+destroying something" is the same answer in every repository — and a
+profile-derived default would have made the personal case `remind`, which for a
+destructive command means warning once and allowing every one after it. For the
+same reason `remind` is treated as `ask` here.
+
+What it does not check matters as much. Database drops and migrations against a
+non-local environment are named in the guidelines and are not recognisable from
+a command string without guessing which connection string points where.
+`git rebase` and `commit --amend` are the ordinary way to tidy a branch before
+review. A push or pull request opened without being asked has no mechanism here,
+because its stage is a `pre-push` hook this repository does not have. A guard
+that is wrong on ordinary work gets switched off, and then it protects nothing.
+
 There is intentionally no repository-init command. `llmctx repo diff` reports missing conventions and exact remediation without modifying an external repository. See [repository policy](docs/repository-policy.md) for the schema, precedence, statuses, and adoption workflow.
 
 ## Skills and provenance
