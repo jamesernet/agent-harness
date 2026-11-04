@@ -58,6 +58,7 @@ bin/llmctx account list [--json]
 bin/llmctx account add <name> <dir>
 bin/llmctx account remove <name>
 bin/llmctx skills install [--dev] [--bundle <name>] [--account <name>]
+bin/llmctx agents install [--dev] [--account <name>]
 bin/llmctx vendor check
 bin/llmctx publish sync [--check]
 ```
@@ -103,6 +104,14 @@ export CLAUDE_CONFIG_DIR="$HOME/.claude-acme"
 
 A repository with its own `.envrc` needs `source_up_if_exists` as its first line, or it shadows the parent entirely — silently, with no error — and the routing does not apply there. Confirm with `/status` in a live session; it names the account and org.
 
+**The backstop for that routing** is `hooks/account-guard.sh`, installed into every account like the branch guard. Declare which tree belongs to which account, once, in global git config:
+
+```sh
+git config --global --add llmctx.accountRoute acme=~/repos/github.com/acme
+```
+
+A write under a routed path from any other account is refused at the first tool call, with the fix in the message. Routes-only and symmetric: an unrouted path is nobody's business, so the client account can still edit a personal repo. It fails fast rather than early — quota is consumed by model calls and a hook runs after the first one — so it is a tripwire, not a billing boundary. Suspend it deliberately with `touch <config-dir>/.allow-cross-account`; `llmctx doctor` reports the routes and refuses one that names an unregistered account.
+
 ## Data flow
 
 ```text
@@ -111,6 +120,7 @@ global/ ───────────────> <account>/CLAUDE.md
 claude/settings.json ──> <account>/settings.json (portable keys merged)
 bin/claude-hooks/ ─────> <account>/hooks/
 skills/ + vendor/ ─────> <account>/skills/ and ~/.codex/skills/
+agents/ ──────────────> <account>/agents/
 brand/ ── explicit ────> existing publication repositories
 ```
 
@@ -185,7 +195,7 @@ There is intentionally no repository-init command. `llmctx repo diff` reports mi
 
 ## Skills and provenance
 
-Owned skills live in `skills/`; third-party skills live in `vendor/`. Every installed copy contains `.llmctx-managed.json` with its source path, release or revision, and content hash. The installer updates or prunes only marked copies and known development links. An unrelated real directory is preserved as a conflict.
+Owned skills live in `skills/`; third-party skills live in `vendor/`. The catalogue — what each skill focuses on, what it adds over asking the model cold, how to use one without installing the rest, and which ones lean on tools outside this repository — is [`skills/README.md`](skills/README.md). Every installed copy contains `.llmctx-managed.json` with its source path, release or revision, and content hash. The installer updates or prunes only marked copies and known development links. An unrelated real directory is preserved as a conflict.
 
 `vendor.lock.json` records the full upstream commit, selected skills, and deterministic content digest. Vendor updates require an explicit tag or commit:
 
@@ -195,6 +205,8 @@ bin/llmctx vendor check
 ```
 
 Floating `main`, `master`, and `HEAD` are rejected.
+
+Managed subagent definitions live in `agents/` and install into every Claude account's `agents/` with the same ownership contract, recorded in a sidecar `.llmctx-managed.json` because an agent is one file rather than a directory. They give the subagents skills spawn a default model, effort and turn budget that travels with the work, which no hook can set after the fact; a caller can still override per invocation. See [`agents/README.md`](agents/README.md) for the set and the tiering. Codex has no subagent format and gets none.
 
 ## Safe multi-agent work
 
@@ -234,7 +246,7 @@ Two ideas carry most of the value:
 
 Resolution order is preset → client → repo-local git config, mirroring git's own `includeIf` layering.
 
-**Status: schema and documentation only — there is no generator.** The profile is currently a structured onboarding checklist. A generator should emit files (`config-<slug>`, `includeIf` entries, `.envrc`, AWS blocks) with a `--check` drift mode, exactly like `build-adapters.sh` — but it should be written against two real clients rather than an imagined schema, or it will grow fields nobody uses.
+**Status: schema and documentation, plus one executable slice.** `bin/llmctx client apply <profile.toml> [--check]` renders the `[ai]` model policy — `account`, `models`, `max_effort` — into that account's `settings.json` as `availableModels`, `enforceAvailableModels` and `maxEffortLevel`, touching nothing else, with a drift check. The rest of the profile is still a structured onboarding checklist. The remaining generator should emit files (`config-<slug>`, `includeIf` entries, `.envrc`, AWS blocks) with a `--check` drift mode, exactly like `build-adapters.sh` — but it should be written against two real clients rather than an imagined schema, or it will grow fields nobody uses.
 
 ## Teams
 
@@ -255,6 +267,7 @@ global/       portable behavioral, communication, and handoff rules
 claude/       portable Claude safety settings
 targets/      hosting-target descriptions for environment declarations
 skills/       owned skills
+agents/       managed subagent definitions (model, effort, turn budget)
 vendor/       pinned third-party skills
 templates/    copy-into-project starters: agent profiles, client profile, teams
 brand/        intentionally public personal-brand context

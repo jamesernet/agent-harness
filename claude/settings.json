@@ -10,6 +10,16 @@
             "statusMessage": "Checking branch policy..."
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/account-guard.sh",
+            "statusMessage": "Checking the Claude account for this path..."
+          }
+        ]
       }
     ]
   },
