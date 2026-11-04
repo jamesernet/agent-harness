@@ -3,7 +3,11 @@
 Four or five AI personas read a news feed on an org's behalf. They stay quiet
 by default, write a draft in their own voice when one has a strong opinion,
 debate once when two or more flag the same story, and hand everything to a
-person. Nothing publishes.
+person. It never posts to the org's own channels — but note that opening a
+GitHub Issue is itself a write to a third party, and it happens automatically
+with no human gate, so on a public repo an unreviewed draft is visible to
+anyone the moment it is written. Set `output.github.repo` blank, or pass
+`--report-only`, if that is not what you want.
 
 The shape borrows from two places: the human-written reviewer contracts in
 [agent-review-crew](https://github.com/kbennett2000/agent-review-crew) and the
@@ -170,7 +174,7 @@ call. With five personas and two drafts each the ceiling is about 25 calls.
 
 ## What it never does
 
-Publishes. Fetches a link. Writes about a tragedy. Names a private individual.
+Posts to the org's own channels. Fetches a link. Writes about a tragedy. Names a private individual.
 Gives medical, veterinary, legal or financial advice. Claims the org's
 position. Writes about the org's own live problem. Runs without a reviewer
 named in `config.yml`. Runs with an edited `guardrails.md` unless

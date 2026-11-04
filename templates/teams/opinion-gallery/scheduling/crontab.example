@@ -5,4 +5,4 @@
 # Run `gh auth login` once as this user, or put GH_TOKEN in the same .env.
 #
 # m h dom mon dow   command
-0 6 * * 1-5  cd /srv/opinion gallery && PATH=/usr/local/bin:/opt/homebrew/bin:$PATH && set -a && . ./.env && set +a && uv run --locked opinion-gallery run --contract contracts/<org> >> logs/opinion gallery.log 2>&1
+0 6 * * 1-5  cd /srv/opinion-gallery && PATH=/usr/local/bin:/opt/homebrew/bin:$PATH && set -a && . ./.env && set +a && uv run --locked opinion-gallery run --contract contracts/<org> >> logs/opinion-gallery.log 2>&1
