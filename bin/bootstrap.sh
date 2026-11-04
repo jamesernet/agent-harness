@@ -6,16 +6,17 @@ set -euo pipefail
 #   bin/bootstrap.sh --account <name>    just one Claude account
 #
 # 1. installs versioned copies of all skills (skills/ + vendor/) into
-#    <account>/skills and ~/.codex/skills
+#    every registered Claude and Codex account's skills directory
 # 2. installs the branch backstop + this repo's own pre-commit checks
 #    (lint-skills + build-adapters --check) into THIS repo's .git/hooks
 # 2b. installs managed agents into <account>/agents (a conflict is reported,
 #    not fatal)
-# 3. builds the tool adapters (<account>/CLAUDE.md, ~/.codex/AGENTS.md)
+# 3. builds the tool adapters (<claude-home>/CLAUDE.md,
+#    <codex-home>/AGENTS.md)
 #    and installs the versioned <account>/settings.json
 #
-# <account> is every registered Claude config directory, always including
-# ~/.claude. See bin/lib/accounts.sh and `llmctx account list`.
+# Default homes are always included; additional homes come from the provider
+# registries. See bin/lib/accounts.sh and `llmctx account list --provider ...`.
 #
 # ADAPTERS GO LAST, AND A FAILURE THERE DOES NOT ABORT THE REST. They used to run
 # first, under `set -e`, so build-adapters.sh refusing to install from a linked
@@ -75,7 +76,7 @@ fi
 if ((adapter_status != 0)); then
   echo "bootstrap INCOMPLETE: build-adapters.sh exited $adapter_status." >&2
   echo "  installed:     skills, the branch backstop, this repo's pre-commit.local" >&2
-  echo "  NOT installed: <account>/CLAUDE.md, <account>/settings.json, ~/.codex/AGENTS.md" >&2
+  echo "  NOT installed: Claude adapters/settings or Codex AGENTS.md files" >&2
   echo "  the adapter error above says what to do; re-run bin/build-adapters.sh to finish." >&2
   exit "$adapter_status"
 fi

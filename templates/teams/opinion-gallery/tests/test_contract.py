@@ -116,3 +116,14 @@ def test_empty_api_key_env_means_no_key_from_this_contract():
     cfg.provider.api_key_env = "NAMED_BUT_UNSET"
     with pytest.raises(ConfigError, match="NAMED_BUT_UNSET"):
         cfg.api_key({})
+
+
+def test_the_shipped_contracts_leave_room_for_a_model_that_thinks():
+    """Reasoning tokens count against max_tokens. A ceiling that fits only the
+    answer truncates the JSON a step needs, which is what 2048 did on the first
+    live run. Guards against tidying these back down."""
+    floor = 8000
+    for name in ("starter", "emergentlabs"):
+        budgets = load_contract(STARTER.parent / name).config.provider.max_tokens
+        assert set(budgets) == {"triage", "draft", "debate"}, name
+        assert all(v >= floor for v in budgets.values()), f"{name}: {budgets}"

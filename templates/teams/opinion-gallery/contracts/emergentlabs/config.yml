@@ -26,10 +26,15 @@ provider:
   api_key_env: ANTHROPIC_API_KEY
   json_mode: false
   timeout_s: 120
+  # Ceilings, not budgets: a step is billed for what it uses, not what it may use.
+  # Keep them generous. On any model that thinks by default, including Opus 5 and
+  # Sonnet 5, reasoning tokens count against these, and a ceiling that fits only
+  # the answer truncates the JSON a step needs. A 2048 triage ceiling was the
+  # first thing to break on a live feed.
   max_tokens:
-    triage: 2048
-    draft: 4096
-    debate: 4096
+    triage: 12000
+    draft: 12000
+    debate: 12000
 
 personas:
   enabled: [operator, skeptic, builder, strategist] # advocate off: the lab writes for founders, not a public it represents
