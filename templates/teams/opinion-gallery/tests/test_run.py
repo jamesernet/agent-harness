@@ -145,11 +145,12 @@ def test_failed_merge_keeps_the_debate_round(contract, fake_replies, tmp_path):
     without_merge = {k: v for k, v in fake_replies.items() if k != "merge"}
     first = FakeLLM(without_merge)
     report = run_cycle(contract, first, env=ENV, now=NOW, fetch=file_fetch, gh_runner=_gh())
-    assert any(f.startswith("merge on") for f in report.failures)
+    assert any("merge" in f for f in report.failures)
     assert {r.outcome.kind for r in report.results} == {"two-views", "single"}
-    st = State.load(tmp_path / "state.json")
-    assert any(k.startswith("debate-") and v["merged_body"] is None for k, v in st.keys.items())
+
+    # The debate is its own record, so it survives its merge failing and the
+    # rerun repeats only the merge.
     second = FakeLLM(fake_replies)
     report = run_cycle(contract, second, env=ENV, now=NOW, fetch=file_fetch, gh_runner=_gh())
-    assert [c.system.splitlines()[0] for c in second.calls] == ["<!-- opinion_gallery:task=merge persona=skeptic -->"]
+    assert len(second.calls) == 1 and "task=merge" in second.calls[0].system
     assert report.failures == [] and {r.outcome.kind for r in report.results} == {"two-views", "single", "merged"}

@@ -92,6 +92,19 @@ uv run opinion-gallery run   --contract contracts/<org> --report-only
 persona against a fixed story set and prints its stances and reasons, for
 tuning a persona file without a live feed.
 
+## What a rerun repeats
+
+A second run on the same day repeats nothing: every step is recorded against a
+key, and the recorded answer is reused. `--force` discards today's recorded
+work so the gallery judges and writes again.
+
+It never discards an issue it already opened. A model call costs tokens and can
+be repeated; an issue on someone's tracker cannot, because a second one is a
+duplicate for everyone but us. So a forced run rewrites the draft on disk and
+leaves the existing issue pointing at the story, rather than filing it twice.
+Each record says which kind it is, so this does not depend on how a key is
+spelled.
+
 ## API key or local model
 
 `provider.kind: openai` speaks the OpenAI chat-completions shape, which is what

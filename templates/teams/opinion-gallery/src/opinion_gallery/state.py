@@ -19,9 +19,16 @@ class State:
 
     @classmethod
     def load(cls, path: Path | None) -> "State":
+        """A file this version does not recognise is treated as absent, so an
+        unreadable store costs a repeat rather than the whole run."""
         if path is None or not Path(path).is_file():
             return cls(path=Path(path) if path else None)
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return cls(path=Path(path))
+        if not isinstance(data, dict) or data.get("version") != VERSION:
+            return cls(path=Path(path))
         return cls(path=Path(path), seen=dict(data.get("seen", {})), keys=dict(data.get("keys", {})))
 
     def save(self) -> None:
@@ -40,19 +47,3 @@ class State:
     def mark_seen(self, ids: list[str], today: date) -> None:
         for i in ids:
             self.seen.setdefault(i, today.isoformat())
-
-
-def triage_key(persona: str, day: date) -> str:
-    return f"triage-{persona}-{day.isoformat()}"
-
-
-def draft_key(persona: str, story: str, day: date) -> str:
-    return f"draft-{persona}-{story}-{day.isoformat()}"
-
-
-def debate_key(story: str, day: date) -> str:
-    return f"debate-{story}-{day.isoformat()}"
-
-
-def issue_key(story: str, day: date) -> str:
-    return f"issue-{story}-{day.isoformat()}"

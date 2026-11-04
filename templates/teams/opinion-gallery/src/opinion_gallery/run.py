@@ -12,7 +12,8 @@ from . import delivery, feeds, pipeline, state as state_mod
 from .config import ConfigError, is_blank
 from .contract import Contract, ContractError
 from .feeds import Fetcher, Story
-from .llm import LLM, LLMError
+from .ledger import Ledger
+from .llm import LLM
 from .pipeline import Draft, Outcome, Reply, Triage
 
 
@@ -78,7 +79,6 @@ def run_cycle(
     personas: list[str] | None = None,
     fetch: Fetcher | None = None,
     gh_runner: delivery.Runner | None = None,
-    stories: list[Story] | None = None,
 ) -> RunReport:
     cfg = contract.config
     fetch = fetch or feeds.http_fetch
@@ -86,134 +86,35 @@ def run_cycle(
     now = now or datetime.now(timezone.utc)
     day = _today(cfg.run.timezone, now)
     writing = not (report_only or triage_only)
-    st = state_mod.State.load(Path(cfg.run.state_file)) if writing else state_mod.State(path=None)
-    if force:
-        st.keys = {k: v for k, v in st.keys.items() if not k.endswith(day.isoformat())}
     report = RunReport(day=day, report_only=not writing)
 
-    # 1-3. fetch, identify, select
-    if stories is None:
-        stories, report.feed_errors = feeds.fetch_all(cfg.feed.sources, fetch=fetch, summary_chars=cfg.feed.summary_chars)
-    selected = feeds.select(
-        stories,
-        now=now,
-        lookback_hours=cfg.feed.lookback_hours,
-        seen=st.seen,
-        skip_seen_days=cfg.feed.skip_seen_days,
-        max_stories=cfg.feed.max_stories,
-    )
-    report.stories = selected
-    by_id = {s.id: s for s in selected}
+    # State is always read, so a preview selects the stories a real run would
+    # select. Only a writing run records anything.
+    st = state_mod.State.load(Path(cfg.run.state_file))
+    ledger = Ledger(state=st, day=day, failures=report.failures, writable=writing)
+    if force:
+        ledger.forget_redoable()
+
+    selected = _select(cfg, st, fetch, now, report)
     if not selected:
         return report
 
-    # 4. triage
-    enabled = [p for p in contract.enabled_personas() if personas is None or p.name in personas]
-    flags_by_story: dict[str, list[Triage]] = {}
-    for persona in enabled:
-        key = state_mod.triage_key(persona.name, day)
-        cached = st.get(key)
-        if cached is not None:
-            triages = [Triage(**row) for row in cached if row["story_id"] in by_id]
-        else:
-            try:
-                triages = pipeline.triage_persona(llm, contract, persona, selected)
-            except LLMError as e:
-                report.failures.append(f"triage {persona.name}: {e}")
-                continue
-            st.set(key, [t.__dict__ for t in triages])
-            st.save()
-        report.triages.extend(triages)
-        for t in pipeline.select_flags(triages, cfg.personas.max_drafts_per_persona):
-            flags_by_story.setdefault(t.story_id, []).append(t)
+    picks = _triage(contract, llm, ledger, selected, personas, report)
     if triage_only:
         return report
 
-    # 5-7. draft, debate, deliver, story by story in selection order
     for story in selected:
-        flags = flags_by_story.get(story.id)
+        flags = picks.get(story.id)
         if not flags:
             continue
-        drafts: list[Draft] = []
-        for t in sorted(flags, key=lambda t: (t.stance, t.weight), reverse=True):
-            persona = contract.personas[t.persona]
-            key = state_mod.draft_key(t.persona, story.id, day)
-            cached = st.get(key)
-            if cached is not None:
-                drafts.append(Draft(**cached))
-                continue
-            try:
-                d = pipeline.write_draft(llm, contract, persona, story, t)
-            except LLMError as e:
-                report.failures.append(f"draft {t.persona} on {story.id}: {e}")
-                continue
-            st.set(key, d.__dict__)
-            st.save()
-            drafts.append(d)
+        drafts = _draft(contract, llm, ledger, story, flags)
         if not drafts:
             continue
-
-        outcomes: list[tuple[Outcome, list[str]]] = []
-        if len(drafts) == 1 or not cfg.debate.enabled:
-            outcomes = [(Outcome("single", [d]), []) for d in drafts]
-        else:
-            participants = drafts[: cfg.debate.max_participants]
-            left_out = [d.persona for d in drafts[cfg.debate.max_participants :]]
-            key = state_mod.debate_key(story.id, day)
-            cached = st.get(key) or {}
-            if cached:
-                replies = [Reply(**r) for r in cached["replies"]]
-            else:
-                try:
-                    replies = pipeline.debate_round(llm, contract, story, participants)
-                except LLMError as e:
-                    report.failures.append(f"debate on {story.id}: {e}")
-                    continue
-                st.set(key, {"replies": [r.__dict__ for r in replies], "merged_body": None})
-                st.save()
-            outcome = pipeline.resolve_debate(participants, replies, cfg.debate.outcome)
-            if outcome.kind == "merged":
-                merged_body = cached.get("merged_body")
-                if merged_body is None:
-                    try:
-                        merged_body = pipeline.merge(llm, contract, story, outcome)
-                    except LLMError as e:
-                        report.failures.append(f"merge on {story.id}: {e}")
-                        continue
-                    st.set(key, {"replies": [r.__dict__ for r in replies], "merged_body": merged_body})
-                    st.save()
-                outcome.merged_body = merged_body
-            outcomes = [(outcome, left_out)]
-
-        for outcome, left_out in outcomes:
+        for outcome, left_out in _settle(contract, llm, ledger, story, drafts):
             result = StoryResult(story=story, outcome=outcome, left_out=left_out)
             report.results.append(result)
-            if outcome.kind == "none" or not writing:
-                continue
-            path = delivery.piece_path(Path(cfg.output.drafts_dir), day, story, outcome)
-            text = delivery.render(contract, story, outcome, now)
-            result.path = delivery.write_piece(path, text)
-            repo = cfg.github_repo(env)
-            if issues and repo:
-                ikey = state_mod.issue_key(story.id, day) + ("" if outcome.kind != "single" else f"-{outcome.drafts[0].persona}")
-                cached = st.get(ikey)
-                if cached is not None:
-                    result.issue = delivery.IssueRef(**cached)
-                else:
-                    try:
-                        result.issue = delivery.open_issue(
-                            gh_runner,
-                            repo=repo,
-                            title=f"[opinion-gallery {day.isoformat()}] {story.title}",
-                            body=text,
-                            labels=cfg.output.github.labels,
-                            assignees=[a for a in cfg.output.github.assignees if not is_blank(a)],
-                        )
-                    except Exception as e:  # gh missing, auth, network: the draft is on disk either way
-                        report.failures.append(f"issue for {story.id}: {e}")
-                    else:
-                        st.set(ikey, result.issue.__dict__)
-                        st.save()
+            if outcome.kind != "none" and writing:
+                _publish(contract, ledger, story, result, now, issues=issues, gh_runner=gh_runner, env=env)
 
     if writing:
         st.mark_seen([s.id for s in selected], day)
@@ -222,6 +123,143 @@ def run_cycle(
             delivery.write_piece(readme, format_report(report, contract))
         st.save()
     return report
+
+
+def _select(cfg, st: state_mod.State, fetch: Fetcher, now: datetime, report: RunReport) -> list[Story]:
+    """Every story worth reading today: recent, not recently seen, newest first."""
+    stories, report.feed_errors = feeds.fetch_all(cfg.feed.sources, fetch=fetch, summary_chars=cfg.feed.summary_chars)
+    report.stories = feeds.select(
+        stories,
+        now=now,
+        lookback_hours=cfg.feed.lookback_hours,
+        seen=st.seen,
+        skip_seen_days=cfg.feed.skip_seen_days,
+        max_stories=cfg.feed.max_stories,
+    )
+    return report.stories
+
+
+def _triage(
+    contract: Contract,
+    llm: LLM,
+    ledger: Ledger,
+    selected: list[Story],
+    personas: list[str] | None,
+    report: RunReport,
+) -> dict[str, list[Triage]]:
+    """One call per persona, and the flags it would write about, by story."""
+    by_id = {s.id: s for s in selected}
+    picks: dict[str, list[Triage]] = {}
+    for persona in contract.enabled_personas():
+        if personas is not None and persona.name not in personas:
+            continue
+        triages = ledger.once(
+            "triage",
+            persona.name,
+            produce=lambda p=persona: pipeline.triage_persona(llm, contract, p, selected),
+            decode=lambda rows: [Triage(**row) for row in rows if row["story_id"] in by_id],
+            encode=lambda ts: [t.__dict__ for t in ts],
+        )
+        if triages is None:
+            continue
+        report.triages.extend(triages)
+        for flag in pipeline.select_flags(triages, contract.config.personas.max_drafts_per_persona):
+            picks.setdefault(flag.story_id, []).append(flag)
+    return picks
+
+
+def _draft(contract: Contract, llm: LLM, ledger: Ledger, story: Story, flags: list[Triage]) -> list[Draft]:
+    """A piece from each persona that flagged this story, strongest first."""
+    drafts: list[Draft] = []
+    for flag in sorted(flags, key=lambda f: (f.stance, f.weight), reverse=True):
+        draft = ledger.once(
+            "draft",
+            flag.persona,
+            story.id,
+            produce=lambda p=contract.personas[flag.persona], f=flag: pipeline.write_draft(llm, contract, p, story, f),
+            decode=lambda value: Draft(**value),
+            encode=lambda d: d.__dict__,
+        )
+        if draft is not None:
+            drafts.append(draft)
+    return drafts
+
+
+def _settle(
+    contract: Contract, llm: LLM, ledger: Ledger, story: Story, drafts: list[Draft]
+) -> list[tuple[Outcome, list[str]]]:
+    """What gets published: one piece each, or one debate and whatever survives it."""
+    cfg = contract.config
+    if len(drafts) == 1 or not cfg.debate.enabled:
+        return [(Outcome("single", [d]), []) for d in drafts]
+
+    participants = drafts[: cfg.debate.max_participants]
+    left_out = [d.persona for d in drafts[cfg.debate.max_participants :]]
+    replies = ledger.once(
+        "debate",
+        story.id,
+        produce=lambda: pipeline.debate_round(llm, contract, story, participants),
+        decode=lambda rows: [Reply(**row) for row in rows],
+        encode=lambda rs: [r.__dict__ for r in rs],
+    )
+    if replies is None:
+        return []
+
+    outcome = pipeline.resolve_debate(participants, replies, cfg.debate.outcome)
+    if outcome.kind == "merged":
+        merged = ledger.once(
+            "merge",
+            story.id,
+            produce=lambda: pipeline.merge(llm, contract, story, outcome),
+        )
+        if merged is None:
+            return []
+        outcome.merged_body = merged
+    return [(outcome, left_out)]
+
+
+def _publish(
+    contract: Contract,
+    ledger: Ledger,
+    story: Story,
+    result: StoryResult,
+    now: datetime,
+    *,
+    issues: bool,
+    gh_runner: delivery.Runner,
+    env: Mapping[str, str],
+) -> None:
+    """The piece to disk, and at most one issue per piece, ever."""
+    cfg = contract.config
+    outcome = result.outcome
+    text = delivery.render(contract, story, outcome, now)
+    path = delivery.piece_path(Path(cfg.output.drafts_dir), ledger.day, story, outcome)
+    result.path = delivery.write_piece(path, text)
+
+    repo = cfg.github_repo(env)
+    if not (issues and repo):
+        return
+    # A single piece is named by its persona, so two personas writing separately
+    # about one story do not share a record.
+    parts = [story.id, outcome.kind]
+    if outcome.kind == "single":
+        parts.append(outcome.drafts[0].persona)
+    result.issue = ledger.once(
+        "issue",
+        *parts,
+        produce=lambda: delivery.open_issue(
+            gh_runner,
+            repo=repo,
+            title=f"[opinion-gallery {ledger.day.isoformat()}] {story.title}",
+            body=text,
+            labels=cfg.output.github.labels,
+            assignees=[a for a in cfg.output.github.assignees if not is_blank(a)],
+        ),
+        decode=lambda value: delivery.IssueRef(**value),
+        encode=lambda ref: ref.__dict__,
+        external=True,
+        catching=(Exception,),
+    )
 
 
 def format_report(report: RunReport, contract: Contract) -> str:
