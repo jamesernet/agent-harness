@@ -72,16 +72,15 @@ def render_two_views(contract: Contract, story: Story, outcome: Outcome, run_at:
         "personas": [d.persona for d in outcome.drafts],
         **_common(contract, story, run_at),
         "stances": {d.persona: d.stance for d in outcome.drafts},
-        "withdrew": outcome.withdrew,
+        "withdrew": list(outcome.withdrew),
     }
-    replies = {r.persona: r for r in outcome.replies}
     sections = []
     for i, d in enumerate(outcome.drafts):
         name = contract.personas[d.persona].display_name
         headline, body = split_headline(d.body, story.title)
         label = "Also weighing in" if i >= 2 else name
         sections.append(f"## {label}: {headline}\n\n{body}")
-        r = replies.get(d.persona)
+        r = outcome.reply_from(d.persona)
         if r and r.reply:
             sections.append(f"### {name}, after reading the other view\n\n{r.reply}")
     joined = "\n\n".join(sections)
@@ -98,7 +97,7 @@ def render_merged(contract: Contract, story: Story, outcome: Outcome, run_at: da
         "kind": "merged",
         "persona": d.persona,
         "display_name": name,
-        "merged_after_debate_with": outcome.withdrew,
+        "merged_after_debate_with": list(outcome.withdrew),
         **_common(contract, story, run_at),
         "stance": d.stance,
     }
@@ -106,7 +105,14 @@ def render_merged(contract: Contract, story: Story, outcome: Outcome, run_at: da
     return f"{_frontmatter(fm)}\n> {disclosure(contract, name)}\n\n# {headline}\n\n{body}{note}\n{_source_line(story)}"
 
 
-def render(contract: Contract, story: Story, outcome: Outcome, run_at: datetime) -> str:
+def render(contract: Contract, story: Story, outcome: Outcome, run_at: datetime) -> str | None:
+    """The piece, or None when there is nothing to publish.
+
+    Total over every kind an outcome can carry, including the one where every
+    persona withdrew. No caller has to filter first to make this safe.
+    """
+    if not outcome.publishable:
+        return None
     if outcome.kind == "two-views":
         return render_two_views(contract, story, outcome, run_at)
     if outcome.kind == "merged":

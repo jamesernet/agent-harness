@@ -113,7 +113,7 @@ def run_cycle(
         for outcome, left_out in _settle(contract, llm, ledger, story, drafts):
             result = StoryResult(story=story, outcome=outcome, left_out=left_out)
             report.results.append(result)
-            if outcome.kind != "none" and writing:
+            if writing:
                 _publish(contract, ledger, story, result, now, issues=issues, gh_runner=gh_runner, env=env)
 
     if writing:
@@ -191,7 +191,7 @@ def _settle(
     """What gets published: one piece each, or one debate and whatever survives it."""
     cfg = contract.config
     if len(drafts) == 1 or not cfg.debate.enabled:
-        return [(Outcome("single", [d]), []) for d in drafts]
+        return [(Outcome("single", (d,)), []) for d in drafts]
 
     participants = drafts[: cfg.debate.max_participants]
     left_out = [d.persona for d in drafts[cfg.debate.max_participants :]]
@@ -206,7 +206,7 @@ def _settle(
         return []
 
     outcome = pipeline.resolve_debate(participants, replies, cfg.debate.outcome)
-    if outcome.kind == "merged":
+    if outcome.needs_merge:
         merged = ledger.once(
             "merge",
             story.id,
@@ -214,7 +214,7 @@ def _settle(
         )
         if merged is None:
             return []
-        outcome.merged_body = merged
+        outcome = outcome.with_merged(merged)
     return [(outcome, left_out)]
 
 
@@ -233,6 +233,8 @@ def _publish(
     cfg = contract.config
     outcome = result.outcome
     text = delivery.render(contract, story, outcome, now)
+    if text is None:
+        return  # every persona withdrew; there is no piece
     path = delivery.piece_path(Path(cfg.output.drafts_dir), ledger.day, story, outcome)
     result.path = delivery.write_piece(path, text)
 
