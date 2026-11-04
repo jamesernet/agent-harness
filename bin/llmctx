@@ -14,6 +14,8 @@ usage:
   llmctx account add <name> <dir>
   llmctx account remove <name>
   llmctx skills install [--dev] [--bundle <name>[,<name>...]] [--account <name>]
+  llmctx agents install [--dev] [--account <name>]
+  llmctx client apply <profile.toml> [--check]
   llmctx vendor check
   llmctx repo diff [repo] [--json]
   llmctx env check [repo]
@@ -55,6 +57,22 @@ case "$command_name" in
     }
     shift 2
     exec "$SCRIPT_DIR/install-skills.sh" "$@"
+    ;;
+  agents)
+    [[ "${2:-}" == "install" ]] || {
+      usage >&2
+      exit 2
+    }
+    shift 2
+    exec "$SCRIPT_DIR/install-agents.sh" "$@"
+    ;;
+  client)
+    [[ "${2:-}" == "apply" ]] || {
+      usage >&2
+      exit 2
+    }
+    shift 2
+    exec "$SCRIPT_DIR/client-apply.sh" "$@"
     ;;
   vendor)
     [[ "${2:-}" == "check" ]] || {

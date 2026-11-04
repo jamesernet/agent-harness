@@ -14,7 +14,7 @@ Fetch tags, deliberately check out the desired release, run `install.sh`, then r
 
 ## Develop skills
 
-Run `bin/llmctx skills install --dev` to replace managed copies with links into the current checkout. Return to release-like behavior with `bin/llmctx skills install`. Both modes preserve unrelated real directories and fail on name conflicts.
+Run `bin/llmctx skills install --dev` to replace managed copies with links into the current checkout. Return to release-like behavior with `bin/llmctx skills install`. Both modes preserve unrelated real directories and fail on name conflicts. `bin/llmctx agents install --dev` does the same for `agents/`, linking single files; an agent file the installer did not write is preserved, and a source name colliding with one is a conflict.
 
 ## Publish context
 
