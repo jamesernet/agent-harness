@@ -137,6 +137,15 @@ and a test checklist.
 | [pci-dss-scoping](pci-dss-scoping/) | `/pci-dss-scoping` · auto | cardholder-data flow, CDE, SAQ | "the goal is never pass PCI": shrink the environment until compliance is small |
 | [kyc-aml-review](kyc-aml-review/) | `/kyc-aml-review` · auto | identity verification, screening, risk rating, monitoring, SAR workflow | traces one customer and one alert end to end; "screening at signup only" as the most common real finding |
 
+### Media
+
+Opt-in only, and the one family that spends money. Needs a Gemini API key, and
+the video path has no free tier.
+
+| skill | invoke | focus | what it adds |
+|---|---|---|---|
+| [gemini-motion](gemini-motion/) | `/gemini-motion` · auto | short rendered video, and code animations that ship inside a page | two paths behind one setup — Omni Flash renders mp4 with audio, Gemini 3.8 Flash writes self-contained HTML/CSS/SVG/Lottie; the effort goes into the brief and the review, and a render refuses until the seconds it will bill are confirmed back to it |
+
 ## What depends on things outside this repository
 
 Everything else is self-contained.
@@ -170,6 +179,7 @@ harness installs one per Claude account and prunes the rest.
 | `platform` | a backend other things depend on | core + threat-model, data-privacy-review |
 | `fintech` | somewhere money moves (additive) | the payments and fintech family |
 | `cloudflare` | deployed there | the vendored Cloudflare set |
+| `media` | producing video or animation (additive) | the media family; no project bundle includes it, because these skills bill a third-party API and need its key |
 
 Every skill in this directory must appear in at least one bundle;
 `bin/lint-skills.sh` enforces it.
