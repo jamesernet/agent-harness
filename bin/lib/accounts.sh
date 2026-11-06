@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Claude accounts: one Claude Code config directory per login.
+# Provider accounts: one config directory per login.
 #
 # Claude Code keys its credential store by CLAUDE_CONFIG_DIR, so a second
 # directory is a second, fully independent login rather than a swapped token.
@@ -14,8 +14,10 @@
 # config beside llmctx.skillBundle:
 #
 #   git config --global --add llmctx.claudeAccount acme=~/.claude-acme
+#   git config --global --add llmctx.codexAccount acme=~/.codex-acme
 #
-# $HOME/.claude is always installed into, as `default`, registered or not.
+# $HOME/.claude and $HOME/.codex are always installed into, as `default`,
+# registered or not.
 # Registration is purely additive. A list that could omit the primary would
 # reintroduce the failure this exists to fix: an install that silently skips a
 # config directory and reports success.
@@ -23,8 +25,32 @@
 LLMCTX_ACCOUNT_KEY="llmctx.claudeAccount"
 LLMCTX_ACCOUNT_DEFAULT_NAME="default"
 
+llmctx_account_validate_provider() {
+  case "$1" in
+    claude | codex) ;;
+    *)
+      echo "error: provider '$1' must be claude or codex" >&2
+      return 1
+      ;;
+  esac
+}
+
+llmctx_account_key() {
+  local provider="${1:-claude}"
+  llmctx_account_validate_provider "$provider" || return 1
+  case "$provider" in
+    claude) printf '%s\n' "$LLMCTX_ACCOUNT_KEY" ;;
+    codex) printf '%s\n' "llmctx.codexAccount" ;;
+  esac
+}
+
 llmctx_account_default_dir() {
-  printf '%s\n' "$HOME/.claude"
+  local provider="${1:-claude}"
+  llmctx_account_validate_provider "$provider" || return 1
+  case "$provider" in
+    claude) printf '%s\n' "$HOME/.claude" ;;
+    codex) printf '%s\n' "$HOME/.codex" ;;
+  esac
 }
 
 # Absolute, `~` expanded, no trailing slash. The directory need not exist yet —
@@ -41,13 +67,14 @@ llmctx_account_expand_dir() {
 }
 
 llmctx_account_validate_name() {
-  local name="$1"
+  local name="$1" provider="${2:-claude}" default_dir
+  default_dir="$(llmctx_account_default_dir "$provider")" || return 1
   [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || {
     echo "error: account name '$name' must be lowercase letters, digits and hyphens" >&2
     return 1
   }
   [[ "$name" != "$LLMCTX_ACCOUNT_DEFAULT_NAME" ]] || {
-    echo "error: '$LLMCTX_ACCOUNT_DEFAULT_NAME' is reserved for $HOME/.claude" >&2
+    echo "error: '$LLMCTX_ACCOUNT_DEFAULT_NAME' is reserved for $default_dir" >&2
     return 1
   }
 }
@@ -57,8 +84,9 @@ llmctx_account_validate_name() {
 # into fewer directories than asked for and still exit 0, which is the exact
 # shape of the bug that made accounts necessary.
 llmctx_accounts() {
-  local entry name dir seen_names seen_dirs default_dir
-  default_dir="$(llmctx_account_default_dir)"
+  local provider="${1:-claude}" key entry name dir seen_names seen_dirs default_dir
+  key="$(llmctx_account_key "$provider")" || return 1
+  default_dir="$(llmctx_account_default_dir "$provider")" || return 1
   printf '%s\t%s\n' "$LLMCTX_ACCOUNT_DEFAULT_NAME" "$default_dir"
   seen_names=" $LLMCTX_ACCOUNT_DEFAULT_NAME "
   seen_dirs="	$default_dir	"
@@ -66,12 +94,12 @@ llmctx_accounts() {
   while IFS= read -r entry; do
     [[ -n "$entry" ]] || continue
     [[ "$entry" == *=* ]] || {
-      echo "error: $LLMCTX_ACCOUNT_KEY entry '$entry' is not <name>=<dir>" >&2
+      echo "error: $key entry '$entry' is not <name>=<dir>" >&2
       return 1
     }
     name="${entry%%=*}"
     dir="$(llmctx_account_expand_dir "${entry#*=}")"
-    llmctx_account_validate_name "$name" || return 1
+    llmctx_account_validate_name "$name" "$provider" || return 1
     [[ "$dir" == /* ]] || {
       echo "error: account '$name' directory '$dir' is not absolute" >&2
       return 1
@@ -93,13 +121,13 @@ llmctx_accounts() {
     seen_names="$seen_names$name "
     seen_dirs="$seen_dirs$dir	"
     printf '%s\t%s\n' "$name" "$dir"
-  done < <(git config --global --get-all "$LLMCTX_ACCOUNT_KEY" 2>/dev/null || true)
+  done < <(git config --global --get-all "$key" 2>/dev/null || true)
 }
 
 # The single account named, or every account when no name is given.
 llmctx_accounts_selected() {
-  local want="${1:-}" all line
-  all="$(llmctx_accounts)" || return 1
+  local want="${1:-}" provider="${2:-claude}" all line
+  all="$(llmctx_accounts "$provider")" || return 1
   [[ -n "$want" ]] || {
     printf '%s\n' "$all"
     return 0

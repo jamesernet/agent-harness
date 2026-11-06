@@ -8,7 +8,7 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-skills-test.XXXXXX")"
 tmp="$(cd "$tmp" && pwd)"
 fixture="$tmp/source"
 mkdir -p "$fixture/bin/lib" "$fixture/skills/owned" "$fixture/vendor/vendored"
-cp "$SRC/bin/llmctx" "$SRC/bin/install-skills.sh" "$fixture/bin/"
+cp "$SRC/bin/llmctx" "$SRC/bin/account.sh" "$SRC/bin/install-skills.sh" "$fixture/bin/"
 cp "$SRC/bin/lib/skills.sh" "$SRC/bin/lib/accounts.sh" "$fixture/bin/lib/"
 printf '%s\n' '# Owned skill' >"$fixture/skills/owned/SKILL.md"
 printf '%s\n' '# Vendored skill' >"$fixture/vendor/vendored/SKILL.md"
@@ -28,6 +28,17 @@ for target in "$copy_home/.claude/skills" "$copy_home/.codex/skills"; do
   jq -e '.schemaVersion == 1 and .managedBy == "jamesernet/llm-context" and .mode == "copy" and (.contentHash | length) == 64' \
     "$target/owned/.llmctx-managed.json" >/dev/null || fail "copy metadata is invalid"
 done
+
+# Every registered Codex home receives the same managed skill contract as the
+# default home. Credentials and unmanaged files remain outside this installer.
+codex_acme="$copy_home/.codex-acme"
+HOME="$copy_home" "$fixture/bin/llmctx" account add --provider codex acme "$codex_acme" >/dev/null
+HOME="$copy_home" "$fixture/bin/llmctx" skills install >/dev/null
+[[ -d "$codex_acme/skills/owned" ]] || fail "registered Codex home received no skills"
+printf '%s\n' 'preserve me' >"$codex_acme/local.txt"
+HOME="$copy_home" "$fixture/bin/llmctx" skills install >/dev/null
+[[ "$(cat "$codex_acme/local.txt")" == "preserve me" ]] ||
+  fail "Codex install changed an unmanaged file"
 
 printf '%s\n' '# Updated owned skill' >"$fixture/skills/owned/SKILL.md"
 HOME="$copy_home" "$fixture/bin/llmctx" skills install >/dev/null

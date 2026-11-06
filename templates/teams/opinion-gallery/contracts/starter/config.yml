@@ -34,10 +34,15 @@ provider:
   # Naming a variable you have not set is an error, not a fallback.
   json_mode: false # openai kind only: also send response_format json_object
   timeout_s: 120
+  # Ceilings, not budgets: a step is billed for what it uses, not what it may use.
+  # Keep them generous. On any model that thinks by default, including Opus 5 and
+  # Sonnet 5, reasoning tokens count against these, and a ceiling that fits only
+  # the answer truncates the JSON a step needs. A 2048 triage ceiling was the
+  # first thing to break on a live feed.
   max_tokens:
-    triage: 2048
-    draft: 4096
-    debate: 4096
+    triage: 12000
+    draft: 12000
+    debate: 12000
 
 # --- Who writes, and how easily --------------------------------------------------
 personas:
