@@ -68,7 +68,6 @@ SHARED=(
 CLAUDE_MD=""
 CLAUDE_SETTINGS_DEST=""
 CLAUDE_HOOKS_DEST=""
-POLICY_LIB_DEST=""
 CLAUDE_CONFIG_PREFIX=""
 CLAUDE_CONFIG_DISPLAY=""
 CODEX_MD=""
@@ -94,7 +93,17 @@ CLAUDE_SETTINGS_SRC="$SRC/claude/settings.json"
 # was unreadable, untestable, and invisible to both lint-skills.sh and the
 # linter itself.
 CLAUDE_HOOKS_SRC="$SRC/bin/claude-hooks"
-POLICY_LIB_SRC="$SRC/bin/lib/policy.sh"
+
+# Libraries an installed hook may source. An installed hook cannot reach
+# bin/lib, so whatever it needs has to be copied next to it — and this used to
+# be one hardcoded path, which is why two hooks kept private copies of the same
+# command parsing instead of sharing a library. A hook is installed by listing
+# bin/claude-hooks (below); a library is now installed by naming it here.
+#
+#   bin/lib/<name>.sh  ->  <account>/hooks/llmctx-<name>.sh
+HOOK_LIBS=(policy target)
+hook_lib_src() { printf '%s\n' "$SRC/bin/lib/$1.sh"; }
+hook_lib_dest() { printf '%s\n' "$CLAUDE_HOOKS_DEST/llmctx-$1.sh"; }
 
 # Point every per-account destination at one config directory.
 use_account() {
@@ -106,7 +115,6 @@ use_account() {
   CLAUDE_MD="$dir/CLAUDE.md"
   CLAUDE_SETTINGS_DEST="$dir/settings.json"
   CLAUDE_HOOKS_DEST="$dir/hooks"
-  POLICY_LIB_DEST="$CLAUDE_HOOKS_DEST/llmctx-policy.sh"
   CLAUDE_CONFIG_PREFIX="$(llmctx_account_home_path "$dir")"
   # A LITERAL tilde: this one is prose inside the generated CLAUDE.md, read by a
   # human, not a path this script ever opens.
@@ -215,10 +223,19 @@ die() {
 # Fail before touching anything if an input is missing or empty. Cheaper to
 # catch here than to discover a half-rendered adapter later.
 preflight_sources() {
-  local f
+  local f lib
   for f in "${SHARED[@]}"; do
     [[ -f "$GLOBAL_DIR/$f" ]] || die "missing source: $GLOBAL_DIR/$f"
     [[ -s "$GLOBAL_DIR/$f" ]] || die "empty source: $GLOBAL_DIR/$f"
+  done
+  # A library named in HOOK_LIBS but absent from bin/lib would otherwise fail
+  # mid-install, after some accounts had been written, with `install: No such
+  # file or directory` and no mention of HOOK_LIBS. Named here, it fails before
+  # anything is written and says which library and where it was expected.
+  for lib in "${HOOK_LIBS[@]}"; do
+    f="$(hook_lib_src "$lib")"
+    [[ -f "$f" ]] || die "missing hook library: $f (named in HOOK_LIBS)"
+    [[ -s "$f" ]] || die "empty hook library: $f"
   done
 }
 
@@ -439,10 +456,12 @@ if [[ "$check_only" -eq 1 ]]; then
           drift=1
         }
     done
-    diff "$POLICY_LIB_SRC" "$POLICY_LIB_DEST" >/dev/null 2>&1 || {
-      echo "drift: $POLICY_LIB_DEST"
-      drift=1
-    }
+    for lib in "${HOOK_LIBS[@]}"; do
+      diff "$(hook_lib_src "$lib")" "$(hook_lib_dest "$lib")" >/dev/null 2>&1 || {
+        echo "drift: $(hook_lib_dest "$lib")"
+        drift=1
+      }
+    done
   done <<<"$accounts"
 
   # Codex is not a Claude account, so a run narrowed to one has nothing to say
@@ -479,8 +498,10 @@ while IFS=$'\t' read -r account_name account_dir; do
     install -m 0755 "$h" "$CLAUDE_HOOKS_DEST/$(basename "$h")"
     echo "built: $CLAUDE_HOOKS_DEST/$(basename "$h")"
   done
-  install -m 0644 "$POLICY_LIB_SRC" "$POLICY_LIB_DEST"
-  echo "built: $POLICY_LIB_DEST"
+  for lib in "${HOOK_LIBS[@]}"; do
+    install -m 0644 "$(hook_lib_src "$lib")" "$(hook_lib_dest "$lib")"
+    echo "built: $(hook_lib_dest "$lib")"
+  done
 
   # Merge, never clobber — see the comment at CLAUDE_SETTINGS_SRC. Written via a
   # temp file so an interrupted or failed jq cannot leave a truncated
