@@ -59,7 +59,7 @@ if HOME="$test_home" "$copy/bin/llmctx" doctor --json --account default >"$tmp/i
 fi
 jq -e 'any(.checks[]; .id == "claude-imports" and .status == "FAIL" and (.detail | contains("handoff-and-briefs.md")))' \
   "$tmp/imports.json" >/dev/null || fail "the dead @import target was not named"
-jq -e 'any(.checks[]; .id == "adapters" and (.detail | contains("handoff-and-briefs.md")) | not)' \
+jq -e 'any(.checks[]; .id == "adapters" and (.detail | contains("handoff-and-briefs.md"))) | not' \
   "$tmp/imports.json" >/dev/null || fail "adapters named the dead path, so this check adds nothing"
 mv "$tmp/handoff-and-briefs.md" "$copy/global/handoff-and-briefs.md"
 
@@ -83,6 +83,32 @@ HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/imports-unsupported.js
 jq -e 'any(.checks[]; .id == "claude-imports" and .status == "PASS" and (.detail | contains("skipped")))' \
   "$tmp/imports-unsupported.json" >/dev/null || fail "the unsupported path form was not reported as a skip"
 HOME="$test_home" "$copy/install.sh" >/dev/null
+
+# A checkout path containing a space used to make EVERY import "unsupported",
+# so the check reported PASS having verified nothing and #30's own headline
+# scenario stayed invisible. Nothing else in tests/ uses a space-bearing path,
+# and CI installs under mktemp -d, so this was invisible to the whole suite.
+spaced="$tmp/My Source Dir"
+mkdir -p "$spaced"
+tar -C "$copy" -cf - . | tar -C "$spaced" -xf -
+git -C "$spaced" init -q .
+spaced_home="$tmp/home-spaced"
+mkdir -p "$spaced_home"
+HOME="$spaced_home" "$spaced/install.sh" >/dev/null
+HOME="$spaced_home" "$spaced/bin/llmctx" doctor --json >"$tmp/spaced-ok.json" ||
+  fail "a space-bearing checkout was reported unhealthy"
+jq -e 'any(.checks[]; .id == "claude-imports" and .status == "PASS" and (.detail | startswith("3 direct")))' \
+  "$tmp/spaced-ok.json" >/dev/null ||
+  fail "imports under a space-bearing path were not actually checked"
+
+mv "$spaced/global/handoff-and-briefs.md" "$tmp/spaced-stash.md"
+if HOME="$spaced_home" "$spaced/bin/llmctx" doctor --json --account default >"$tmp/spaced-dead.json"; then
+  fail "a dead @import under a space-bearing path was reported healthy"
+fi
+jq -e 'any(.checks[]; .id == "claude-imports" and .status == "FAIL" and (.detail | contains("handoff-and-briefs.md")))' \
+  "$tmp/spaced-dead.json" >/dev/null ||
+  fail "the dead target under a space-bearing path was not named"
+mv "$tmp/spaced-stash.md" "$spaced/global/handoff-and-briefs.md"
 
 # "direct" is the one-level limit disclosing itself on the line a reader trusts.
 # Pinning the word stops the wording quietly becoming a claim of completeness.

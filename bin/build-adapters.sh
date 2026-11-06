@@ -427,9 +427,18 @@ if [[ "$check_only" -eq 1 ]]; then
     # plus an import flood.
     if [[ -f "$CLAUDE_MD" ]]; then
       while IFS=$'\t' read -r kind lineno raw resolved; do
-        case "$kind" in missing | unreadable) ;; *) continue ;; esac
-        echo "$kind import: $CLAUDE_MD:$lineno -> ${resolved:-$raw}"
-        unresolved=1
+        case "$kind" in
+          missing | unreadable)
+            echo "$kind import: $CLAUDE_MD:$lineno -> ${resolved:-$raw}"
+            unresolved=1
+            ;;
+          # Said rather than dropped. This is the commit-time path, so a line
+          # nothing could check is worth a word even when it is not a failure --
+          # silence here is what let a wholly unchecked file look clean.
+          unsupported)
+            echo "unsupported import, not checked: $CLAUDE_MD:$lineno -> $raw" >&2
+            ;;
+        esac
       done < <(llmctx_unresolved_imports "$CLAUDE_MD" || true)
     fi
     # Compare only the keys this repo declares. A local `theme` is not drift.

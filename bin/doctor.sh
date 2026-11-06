@@ -147,7 +147,7 @@ check_claude_imports() {
     # failure for one cause with a different remedy only misleads -- the same
     # reasoning as account-routes below. Reported as a line rather than omitted
     # so the --json shape stays stable per account.
-    add_check "$id" PASS "imports not checked: no CLAUDE.md (see the adapters check)" ""
+    add_check "$id" PASS "imports not checked: CLAUDE.md is absent or unreadable (see the adapters check)" ""
     return 0
   fi
 
@@ -182,7 +182,19 @@ check_claude_imports() {
     return 0
   fi
 
-  if [[ "$ok" -eq 0 && "$skipped" -eq 0 ]]; then
+  # Zero resolved imports is a failure however it arises. A generated CLAUDE.md
+  # always carries its three, which is what install_rendered's '^@' guard
+  # asserts on the write path; this is its read-side twin. Reporting PASS with
+  # "0 direct @imports resolve" was the bug a space-bearing checkout path hit --
+  # self-contradictory on its face, and it hid exactly the fault this check
+  # exists to find.
+  if [[ "$ok" -eq 0 ]]; then
+    if [[ "$skipped" -gt 0 ]]; then
+      add_check "$id" FAIL \
+        "no @import target could be checked ($skipped unsupported path form(s) at line${skipped_at})" \
+        "$remedy"
+      return 0
+    fi
     # A generated CLAUDE.md always carries its imports, which is what
     # install_rendered's '^@' guard asserts on the write path. Zero of them
     # makes "every target resolved" technically true and practically a lie.

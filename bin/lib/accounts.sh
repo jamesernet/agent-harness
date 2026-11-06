@@ -159,7 +159,7 @@ llmctx_account_home_path() {
 # data, not status. Exits 2, printing nothing, when the file itself cannot be
 # read.
 llmctx_unresolved_imports() {
-  local file="$1" base line lineno=0 target resolved fenced=0
+  local file="$1" base line lineno=0 target resolved fenced=0 probe partial
 
   [[ -f "$file" && -r "$file" ]] || return 2
   base="$(dirname "$file")"
@@ -189,10 +189,17 @@ llmctx_unresolved_imports() {
     # a line is probably already broken — but calling it missing would mean
     # printing a path we invented by expanding $HOME ourselves, which is a
     # different file from the one the resolver looks for, and the one-line
-    # remediation is wrong for a hand edit. A path carrying whitespace is the
-    # same situation. The generated adapter emits neither form.
+    # remediation is wrong for a hand edit. A tab would also break this
+    # function's own output format. The generated adapter emits neither.
+    #
+    # Whitespace is deliberately NOT pre-judged here. A space is an ordinary
+    # character in an already-literal path — `[[ -f "/My Dir/x.md" ]]` resolves
+    # it with nothing invented — and treating it as unsupported made EVERY
+    # import unsupported on a checkout whose path contains a space, which
+    # reported PASS while checking nothing at all. Ambiguity is decided below,
+    # by whether the literal target resolves.
     case "$target" in
-      '$HOME'* | '${HOME}'* | *[[:space:]]*)
+      '$HOME'* | '${HOME}'* | *$'\t'*)
         printf 'unsupported\t%s\t%s\t\n' "$lineno" "$target"
         continue
         ;;
@@ -209,12 +216,40 @@ llmctx_unresolved_imports() {
     # -f rather than -e: a directory is not importable and a dangling symlink
     # correctly fails. Neither needs canonicalising — the kernel resolves `..`,
     # `.` and symlinks here, and realpath is absent on stock macOS.
-    if [[ ! -f "$resolved" ]]; then
-      printf 'missing\t%s\t%s\t%s\n' "$lineno" "$target" "$resolved"
-    elif [[ ! -r "$resolved" ]]; then
-      printf 'unreadable\t%s\t%s\t%s\n' "$lineno" "$target" "$resolved"
+    if [[ -f "$resolved" ]]; then
+      if [[ -r "$resolved" ]]; then
+        printf 'ok\t%s\t%s\t%s\n' "$lineno" "$target" "$resolved"
+      else
+        printf 'unreadable\t%s\t%s\t%s\n' "$lineno" "$target" "$resolved"
+      fi
     else
-      printf 'ok\t%s\t%s\t%s\n' "$lineno" "$target" "$resolved"
+      # Resolution failed. A whitespace-bearing target is ambiguous -- in
+      # `@/path/file.md and then some prose` there is no way to know where the
+      # path ends -- but ambiguous is not the same as absent. So try each
+      # whitespace boundary: if some prefix IS a file, a real import exists
+      # under one reading and only the extent is unclear, which is a skip. If
+      # no prefix resolves, nothing is there under ANY reading, and that is
+      # missing however you cut the line. The generated adapter writes the whole
+      # line as the path, so its dead targets land in `missing` where they
+      # belong rather than hiding in a skip.
+      case "$target" in
+        *[[:space:]]*)
+          probe="$target"
+          partial=""
+          while [[ "$probe" == *[[:space:]]* ]]; do
+            probe="${probe%[[:space:]]*}"
+            [[ -f "$probe" ]] || continue
+            partial="$probe"
+            break
+          done
+          if [[ -n "$partial" ]]; then
+            printf 'unsupported\t%s\t%s\t\n' "$lineno" "$target"
+          else
+            printf 'missing\t%s\t%s\t%s\n' "$lineno" "$target" "$resolved"
+          fi
+          ;;
+        *) printf 'missing\t%s\t%s\t%s\n' "$lineno" "$target" "$resolved" ;;
+      esac
     fi
   done <"$file"
 }
