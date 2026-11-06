@@ -142,6 +142,8 @@ Default homes and every registered provider home are covered by a normal install
 
 Generated global adapters and portable managed settings are never edited as their source. Change files here, rebuild with `llmctx install`, and verify with `llmctx doctor`. Settings that identify private tools or grant personal permissions belong in a private machine configuration; the merge preserves keys this repository does not declare.
 
+Those `@import` lines are paths, not content, and Claude Code says nothing when one does not resolve — the session simply runs without those rules. `llmctx doctor` checks that every direct import exists and names the one that does not.
+
 ## Environments
 
 A project declares what it needs to run and deploy, by name, in the same
