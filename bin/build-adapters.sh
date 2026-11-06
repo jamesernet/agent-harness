@@ -70,7 +70,7 @@ CLAUDE_SETTINGS_DEST=""
 CLAUDE_HOOKS_DEST=""
 CLAUDE_CONFIG_PREFIX=""
 CLAUDE_CONFIG_DISPLAY=""
-CODEX_MD="$HOME/.codex/AGENTS.md"
+CODEX_MD=""
 
 # Versioned Claude Code settings (portable safety hooks). Source of truth for the
 # keys it DECLARES; ~/.claude/settings.json is merged from it, not overwritten.
@@ -123,6 +123,11 @@ use_account() {
     "$HOME"/*) CLAUDE_CONFIG_DISPLAY="~/${dir#"$HOME"/}" ;;
     *) CLAUDE_CONFIG_DISPLAY="$dir" ;;
   esac
+}
+
+use_codex_account() {
+  local dir="$1"
+  CODEX_MD="$dir/AGENTS.md"
 }
 
 # jq's `*` is recursive for OBJECTS only. For every other type — arrays
@@ -421,6 +426,10 @@ EOF
 # Resolved once, before anything is written. A malformed registry must stop the
 # run rather than quietly reduce it to the accounts that happened to parse.
 accounts="$(llmctx_accounts_selected "$account")" || exit 1
+codex_accounts=""
+if [[ -z "$account" ]]; then
+  codex_accounts="$(llmctx_accounts codex)" || exit 1
+fi
 
 [[ "$check_only" -eq 1 ]] || refuse_worktree_install
 
@@ -456,12 +465,16 @@ if [[ "$check_only" -eq 1 ]]; then
   done <<<"$accounts"
 
   # Codex is not a Claude account, so a run narrowed to one has nothing to say
-  # about it either way.
+  # about it either way. A normal run checks every registered Codex home.
   if [[ -z "$account" ]]; then
-    diff <(render_codex) "$CODEX_MD" >/dev/null 2>&1 || {
-      echo "drift: $CODEX_MD"
-      drift=1
-    }
+    while IFS=$'\t' read -r account_name account_dir; do
+      [[ -n "$account_name" ]] || continue
+      use_codex_account "$account_dir"
+      diff <(render_codex) "$CODEX_MD" >/dev/null 2>&1 || {
+        echo "drift: $CODEX_MD"
+        drift=1
+      }
+    done <<<"$codex_accounts"
   fi
 
   if [[ "$drift" -ne 0 ]]; then
@@ -507,5 +520,10 @@ while IFS=$'\t' read -r account_name account_dir; do
 done <<<"$accounts"
 
 if [[ -z "$account" ]]; then
-  install_rendered render_codex "$CODEX_MD" '^## Codex specifics' "$(shared_bytes)"
+  while IFS=$'\t' read -r account_name account_dir; do
+    [[ -n "$account_name" ]] || continue
+    echo "Codex account: $account_name -> $account_dir"
+    use_codex_account "$account_dir"
+    install_rendered render_codex "$CODEX_MD" '^## Codex specifics' "$(shared_bytes)"
+  done <<<"$codex_accounts"
 fi
