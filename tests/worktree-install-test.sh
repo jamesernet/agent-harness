@@ -36,9 +36,13 @@ wt="$tmp/wt"
 git clone --quiet --local --no-hardlinks "$SRC" "$clone"
 git -C "$clone" worktree add --quiet --detach "$wt" HEAD
 
-# Exercise the WORKING TREE's script, not whatever the clone's HEAD carries.
+# Exercise the WORKING TREE's script, not whatever the clone's HEAD carries —
+# including the hook libraries it installs, which the clone's HEAD may predate.
 cp "$SRC/bin/build-adapters.sh" "$clone/bin/build-adapters.sh"
 cp "$SRC/bin/build-adapters.sh" "$wt/bin/build-adapters.sh"
+mkdir -p "$clone/bin/lib" "$wt/bin/lib"
+cp "$SRC"/bin/lib/*.sh "$clone/bin/lib/"
+cp "$SRC"/bin/lib/*.sh "$wt/bin/lib/"
 
 run_wt() { "$wt/bin/build-adapters.sh" "$@" >/dev/null 2>"$tmp/err"; }
 
