@@ -48,7 +48,7 @@ Architecture decisions **extend** that rule rather than follow from it: an ADR
 is an issue titled `ADR-NNN: <decision>`, not a file under `docs/`. The two are
 not the same artifact — a brief is forward-looking and goes stale by design, an
 ADR is a durable record meant to outlive the work — so this is a separate
-decision that happens to land the same way, taken because #21 and #22 already
+decision that happens to land the same way, taken because [#21](https://github.com/jamesernet/agent-harness/issues/21) and [#22](https://github.com/jamesernet/agent-harness/issues/22) already
 carry their context, decision and consequences in full and a file would be a
 verbatim second copy.
 
