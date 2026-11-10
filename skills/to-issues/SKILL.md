@@ -90,7 +90,7 @@ Or "None - can start immediately" if no blockers.
 
 </issue-template>
 
-Do NOT close or modify any parent issue.
+Do NOT close or modify any parent issue, with one exception: step 1 publishes the PRD before the case against is argued, so if the user overrules that argument you may edit the parent once to fill in its "The case against" section. Nothing else about the parent changes.
 
 ## PRD template (parent issue)
 
