@@ -99,4 +99,30 @@ printf '%s\n' '#!/bin/sh' 'git symbolic-ref --short HEAD' >"$hp/.githooks/pre-co
 jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "UNKNOWN")' "$tmp/hp-own.json" >/dev/null ||
   fail "a foreign branch check was not distinguished from none at all"
 
+# sync-location. HOME is overridden rather than writing into the real home, and
+# the repository is created under the fake HOME so the resolved path genuinely
+# sits beneath a sync root. The OK case matters as much as the CONFLICT one: the
+# iCloud Desktop & Documents arm keys off the CloudDocs mirror directory, so
+# without that marker a repository in $HOME/Documents must NOT be flagged,
+# otherwise every Mac reports a conflict it cannot act on.
+synced_home="$tmp/fakehome"
+mkdir -p "$synced_home/Dropbox/project"
+git -C "$synced_home/Dropbox/project" init -q
+if HOME="$synced_home" "$CLI" repo diff "$synced_home/Dropbox/project" --json >"$tmp/synced.json"; then
+  fail "a repository inside Dropbox was reported compliant"
+fi
+jq -e 'any(.findings[]; .id == "sync-location" and .status == "CONFLICT")' "$tmp/synced.json" >/dev/null ||
+  fail "a repository inside a sync root was not flagged"
+
+mkdir -p "$synced_home/Documents/project"
+git -C "$synced_home/Documents/project" init -q
+HOME="$synced_home" "$CLI" repo diff "$synced_home/Documents/project" --json >"$tmp/docs-nosync.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "sync-location" and .status == "OK")' "$tmp/docs-nosync.json" >/dev/null ||
+  fail "Documents was flagged without the iCloud Desktop & Documents marker"
+
+mkdir -p "$synced_home/Library/Mobile Documents/com~apple~CloudDocs/Documents"
+HOME="$synced_home" "$CLI" repo diff "$synced_home/Documents/project" --json >"$tmp/docs-sync.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "sync-location" and .status == "CONFLICT")' "$tmp/docs-sync.json" >/dev/null ||
+  fail "Documents was not flagged once the iCloud mirror directory existed"
+
 echo "repo diff tests: passed"

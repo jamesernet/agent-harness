@@ -101,6 +101,55 @@ else
     "create and review $root/docs/briefs/README.md, or set \"briefs\": \"tracker\" in .llmctx.json"
 fi
 
+# A repository under a file-sync root is not a style question. iCloud created
+# collision-duplicate files named "<name> 2" inside .git/refs of a checkout kept
+# in ~/Documents; `git fetch` then failed with "fatal: bad object
+# refs/heads/... 2" and the checkout reported a stale origin/main for days with
+# no visible error. The same sync duplicated a tracked document, preserving a
+# superseded copy beside the corrected one, and local Terraform state sat in the
+# same tree.
+#
+# Checked per repository rather than in `doctor` because location is a property
+# of a repository, and the estate audit runs `repo diff` on each one, so this
+# covers both a single repository and the fleet.
+#
+# Matching is on the resolved path, so a symlink into a synced tree is caught.
+# ~/Documents and ~/Desktop are synced only when iCloud's Desktop & Documents
+# option is on, and the CloudDocs mirror directory is what indicates that: the
+# home directory keeps its ordinary path either way, so testing the path alone
+# would flag every Mac.
+real_root="$(cd "$root" && pwd -P)"
+sync_root=""
+sync_label=""
+for candidate in \
+  "$HOME/Library/Mobile Documents:iCloud Drive" \
+  "$HOME/Library/CloudStorage:a CloudStorage provider" \
+  "$HOME/Dropbox:Dropbox" \
+  "$HOME/Google Drive:Google Drive"; do
+  prefix="${candidate%%:*}"
+  label="${candidate##*:}"
+  # Both sides must be resolved. real_root comes from `pwd -P`, and on macOS a
+  # temporary or symlinked home resolves (/var -> /private/var), so comparing a
+  # resolved path against an unresolved prefix silently never matched.
+  [[ -d "$prefix" ]] || continue
+  prefix="$(cd "$prefix" && pwd -P)"
+  case "$real_root/" in "$prefix"/*) sync_root="$prefix" && sync_label="$label" && break ;; esac
+done
+if [[ -z "$sync_root" && -d "$HOME/Library/Mobile Documents/com~apple~CloudDocs/Documents" ]]; then
+  for prefix in "$HOME/Documents" "$HOME/Desktop"; do
+    [[ -d "$prefix" ]] || continue
+    prefix="$(cd "$prefix" && pwd -P)"
+    case "$real_root/" in "$prefix"/*) sync_root="$prefix" && sync_label="iCloud Desktop & Documents" && break ;; esac
+  done
+fi
+if [[ -n "$sync_root" ]]; then
+  add_finding sync-location CONFLICT "repository outside any file-sync root" \
+    "$real_root is under $sync_root, synced by $sync_label" filesystem \
+    "move the repository outside $sync_root, for example under ~/repos/github.com/<org>/, then run git worktree repair"
+else
+  add_finding sync-location OK "repository outside any file-sync root" "not under a known sync root" filesystem ""
+fi
+
 hooks_path="$(git -C "$root" config --get core.hooksPath || true)"
 if [[ -n "$hooks_path" ]]; then
   add_finding git-hook UNKNOWN "agent-harness branch backstop" "managed by core.hooksPath=$hooks_path" git-local "integrate the branch check through that hook framework"
