@@ -56,16 +56,32 @@ bin/llmctx explain branchPolicy
 bin/llmctx explain protectedBranches
 ```
 
+## Where a repository may live
+
+`sync-location` reports `CONFLICT` when either the working tree or the shared Git directory
+resolves beneath a file-sync root: iCloud Drive, `~/Library/CloudStorage`, Dropbox, OneDrive or
+Google Drive, including the renamed folders a second linked account produces. `~/Documents` and
+`~/Desktop` count only when iCloud's Desktop & Documents option is on.
+
+Both paths are tested because a linked worktree keeps its refs in the shared Git directory, and
+those refs are what corrupt. A sync client created collision-duplicate files named `<name> 2`
+inside `.git/refs`, `git fetch` then failed with `fatal: bad object refs/heads/... 2`, and the
+checkout reported a stale `origin/main` for days with no visible error.
+
+Moving the repository is the fix. `"syncLocation": false` in `.llmctx.json` declares that the
+owner accepts the risk, and reports `OVERRIDE` instead, on the same reasoning as `claudeImport`
+and `briefs`: a checker a mature repository must learn to ignore is a checker nobody reads.
+
 ## Adoption
 
-Run `bin/llmctx repo diff /path/to/repo`. It checks policy resolution, canonical `AGENTS.md`, the Claude import, the briefs convention, and Git-hook state. It does not create or edit anything.
+Run `bin/llmctx repo diff /path/to/repo`. It checks policy resolution, canonical `AGENTS.md`, the Claude import, the briefs convention, Git-hook state, and whether the repository sits under a file-sync root. It does not create or edit anything.
 
 Statuses are:
 
 - `OK`: matches the resolved standard;
 - `OVERRIDE`: an intentional repository-local Git override;
 - `MISSING`: a required convention is absent;
-- `CONFLICT`: policy is invalid;
+- `CONFLICT`: policy is invalid, or the repository's location is unsafe for Git;
 - `STALE`: an installed managed component differs from this release;
 - `UNKNOWN`: another hook framework or foreign component owns the seam.
 
