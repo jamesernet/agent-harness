@@ -1,4 +1,8 @@
-# Client profile — the canonical shape.
+# Client profile — compatibility example.
+#
+# New machine configuration should start from work-context.example.toml. This
+# file remains because `llmctx client apply` is a supported compatibility alias
+# for `llmctx context apply` during the migration.
 #
 # THIS FILE IS THE PATTERN. Real profiles live in the workstation repo, at
 # config/clients/<slug>.toml, and are private to that machine. This copy exists

@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Render a client profile's model policy into that client's Claude account.
+# Render a work context's Claude model policy into its registered account.
 #
-#   llmctx client apply <profile.toml>            write
-#   llmctx client apply <profile.toml> --check    report drift, change nothing
+#   llmctx context apply <profile.toml>            write
+#   llmctx context apply <profile.toml> --check    report drift, change nothing
+#   llmctx client apply ...                        compatibility alias
 #
-# This is the first slice of the generator templates/client-profile.example.toml
-# describes, deliberately narrow: it reads only the [ai] table's `account`,
-# `models` and `max_effort`, and writes only the three settings keys they map
+# This is deliberately narrow: it reads only [providers.claude] (or the legacy
+# [ai] table) and writes only the three settings keys its account, models, and
+# max_effort fields map
 # to — availableModels, enforceAvailableModels, maxEffortLevel — into
 # <account>/settings.json. Every other key in that file is preserved, which is
 # the same contract build-adapters.sh keeps for the portable keys.
@@ -27,7 +28,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/accounts.sh"
 
 usage() {
-  echo "usage: llmctx client apply <profile.toml> [--check]" >&2
+  echo "usage: llmctx context apply <profile.toml> [--check]" >&2
   exit 2
 }
 
@@ -54,26 +55,52 @@ command -v jq >/dev/null 2>&1 || {
   exit 1
 }
 
-# One table, flat keys. Comments after a value are stripped; quoted strings and
-# a one-line string array are the only shapes accepted.
-ai_key() {
+# One table, flat keys. New contexts use [providers.claude]; legacy client
+# profiles use [ai]. Comments after a value are stripped; quoted strings and a
+# one-line string array are the only shapes accepted.
+claude_key() {
   awk -v key="$1" '
-    /^[[:space:]]*\[/ { in_ai = ($0 ~ /^[[:space:]]*\[ai\][[:space:]]*(#.*)?$/); next }
-    in_ai && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+    /^[[:space:]]*\[/ {
+      in_provider = ($0 ~ /^[[:space:]]*\[providers\.claude\][[:space:]]*(#.*)?$/)
+      in_ai = ($0 ~ /^[[:space:]]*\[ai\][[:space:]]*(#.*)?$/)
+      next
+    }
+    (in_provider || in_ai) && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
       sub("^[[:space:]]*" key "[[:space:]]*=[[:space:]]*", "")
       sub(/[[:space:]]*#.*$/, "")
-      print; exit
+      if (in_provider) { found_provider = 1; print; exit }
+      legacy = $0
+    }
+    END {
+      if (!found_provider && legacy != "") print legacy
     }' "$profile"
 }
 unquote() { printf '%s' "$1" | sed -E 's/^"(.*)"$/\1/'; }
 
-slug="$(awk '/^[[:space:]]*\[/ {in_c = ($0 ~ /^[[:space:]]*\[client\]/); next} in_c && /^[[:space:]]*slug[[:space:]]*=/ {sub(/^[^=]*=[[:space:]]*/, ""); sub(/[[:space:]]*#.*$/, ""); gsub(/"/, ""); print; exit}' "$profile")"
-account_raw="$(ai_key account)"
-models_raw="$(ai_key models)"
-effort_raw="$(ai_key max_effort)"
+slug="$(awk '
+  /^[[:space:]]*\[/ {
+    in_client = ($0 ~ /^[[:space:]]*\[client\]/)
+    in_context = ($0 ~ /^[[:space:]]*\[context\]/)
+    next
+  }
+  in_client && /^[[:space:]]*slug[[:space:]]*=/ {
+    sub(/^[^=]*=[[:space:]]*/, ""); sub(/[[:space:]]*#.*$/, ""); gsub(/"/, ""); print; exit
+  }
+  in_context && /^[[:space:]]*id[[:space:]]*=/ {
+    sub(/^[^=]*=[[:space:]]*/, ""); sub(/[[:space:]]*#.*$/, ""); gsub(/"/, ""); print; exit
+  }' "$profile")"
+mode_raw="$(claude_key mode)"
+account_raw="$(claude_key account)"
+models_raw="$(claude_key models)"
+effort_raw="$(claude_key max_effort)"
+
+if [[ "$(unquote "$mode_raw")" == "disabled" ]]; then
+  echo "error: Claude is disabled in $profile — there is no account policy to apply" >&2
+  exit 1
+fi
 
 [[ -n "$account_raw" ]] || {
-  echo "error: [ai].account is not set in $profile — the policy needs a Claude account to land in" >&2
+  echo "error: Claude account is not set in $profile — the policy needs a registered home to land in" >&2
   exit 1
 }
 account="$(unquote "$account_raw")"
@@ -155,7 +182,7 @@ if [[ "$check" -eq 1 ]]; then
 fi
 
 mkdir -p "$account_dir"
-tmp="$(mktemp "$account_dir/.llmctx-client.XXXXXX")"
+tmp="$(mktemp "$account_dir/.llmctx-context.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT
 jq --argjson p "$policy" --argjson r "$remove" '. * $p | delpaths($r | map([.]))' <<<"$current" >"$tmp"
 chmod 0644 "$tmp"

@@ -1,0 +1,46 @@
+# Work context — the canonical isolation-boundary shape.
+#
+# Real profiles live in the private workstation repository. This public file
+# names identifiers and references only; credentials and authenticated sessions
+# never belong in it.
+
+[context]
+id = "acme"
+name = "Acme Financial"
+status = "active"       # active | paused | archived
+organization = "Acme Financial Ltd"
+engagement = "platform-modernization" # optional metadata, not a hierarchy
+
+# Paths are local absolute or ~-relative prefixes. The most-specific matching
+# path wins, so one repository can leave an otherwise homogeneous GitHub org.
+paths = ["~/repos/github.com/acme"]
+
+[git]
+# Public identity data, never a private key or token.
+email = "james@acme.example"
+signing_key = "ssh-ed25519 AAAA_REPLACE_WITH_PUBLIC_KEY_ONLY"
+
+[providers.claude]
+mode = "dedicated"      # dedicated | shared | disabled
+account = "acme"        # registered with: llmctx account add acme <dir>
+models = ["opus", "sonnet"]
+max_effort = "high"
+
+[providers.codex]
+mode = "dedicated"      # dedicated | shared | disabled
+account = "acme"        # registered with: llmctx account add --provider codex
+
+[[projects]]
+id = "payments-api"
+paths = ["~/repos/github.com/acme/payments-api"]
+
+[[projects.environments]]
+name = "stage"
+aws_profile = "acme-stage"
+kubeconfig = "~/.kube/configs/acme-stage.yaml"
+
+# Secret VALUES are forbidden. A workstation may resolve references at command
+# execution time, for example with `op run`; it must never write the result here.
+[projects.environments.secret_refs]
+OPENAI_API_KEY = "op://Acme/OpenAI stage/credential"
+ANTHROPIC_API_KEY = "op://Acme/Anthropic stage/credential"
