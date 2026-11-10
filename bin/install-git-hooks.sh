@@ -6,8 +6,13 @@ set -euo pipefail
 # This is the everywhere-backstop for the "branch before you build" rule — the
 # Claude PreToolUse hook only covers Claude; this covers Codex and humans too.
 #
-#   bin/install-git-hooks.sh                 install into the default REPOS below
+#   bin/install-git-hooks.sh                 install into the built-in repos
+#                                            plus every registered one
 #   bin/install-git-hooks.sh <repo> [repo…]  install into specific repos
+#
+# Registering a repo (machine state, so global config, beside llmctx.skillBundle):
+#
+#   git config --global --add llmctx.repo ~/repos/github.com/<org>/<repo>
 #
 # Middle-path install (safe for client repos):
 #   - If the repo already has a pre-commit hook that isn't ours, it's preserved
@@ -33,6 +38,35 @@ REPOS=(
   "$HOME/repos/github.com/emergentlabs/jamesernet.com"
   "$HOME/repos/github.com/emergentlabs/emergentlabs.xyz"
 )
+
+# The hook lives in .git/, which is never cloned, so a repo nothing names loses
+# the backstop the moment it is cloned fresh — silently, because a missing hook
+# looks exactly like a repo that was never meant to have one. The registry is
+# how a repo says it wants the backstop without this file having to know the
+# whole estate.
+#
+# Registration is additive, for the same reason the account registry is: a list
+# that could omit the three above would reintroduce the failure it exists to
+# prevent — an install that skips a repo and still reports success.
+while IFS= read -r registered; do
+  [ -n "$registered" ] || continue
+  # shellcheck disable=SC2088  # matching a LITERAL tilde is the point here
+  case "$registered" in
+    '~') registered="$HOME" ;;
+    '~/'*) registered="$HOME/${registered#'~/'}" ;;
+  esac
+  while [[ "$registered" == */ && "$registered" != / ]]; do registered="${registered%/}"; done
+  dup=0
+  for known in "${REPOS[@]}"; do
+    if [ "$known" = "$registered" ]; then
+      dup=1
+      break
+    fi
+  done
+  if [ "$dup" -eq 0 ]; then REPOS+=("$registered"); fi
+done < <(git config --global --get-all llmctx.repo 2>/dev/null || true)
+
+# An explicit list is exactly that: neither the built-ins nor the registry.
 if [ "$#" -gt 0 ]; then REPOS=("$@"); fi
 
 for repo in "${REPOS[@]}"; do
