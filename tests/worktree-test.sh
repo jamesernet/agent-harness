@@ -92,4 +92,18 @@ got="$(cd "$repo/sub/dir" && "$WT" path feature/other)"
 git -C "$repo" show-ref --verify --quiet refs/heads/legacy/slice ||
   fail "rm deleted the branch, which it must keep"
 
+# Outside a repository the script must fail, not invent a path. Anchoring the
+# root on --git-common-dir put the substitution inside a larger string, where
+# set -e cannot see it fail: `cd "/.."` succeeds, so the script printed
+# "///-worktrees/<slug>" and exited 0. The zsh `wt` wrapper guards on the path
+# existing, so a caller who ran this from the wrong directory got silence.
+outside="$tmp/not-a-repo"
+mkdir -p "$outside"
+status=0
+out="$(cd "$outside" && "$WT" path some/branch 2>/dev/null)" || status=$?
+[[ "$status" -ne 0 ]] ||
+  fail "path outside a repository exited 0 and printed: $out"
+[[ -z "$out" ]] ||
+  fail "path outside a repository invented a location: $out"
+
 echo "worktree tests: passed"

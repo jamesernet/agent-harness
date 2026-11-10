@@ -32,7 +32,14 @@ cmd="${1:-}"
 # worktree you are standing in, so running this from inside a worktree computed
 # a parent nested under that worktree. --git-common-dir points at the main
 # checkout's .git from any worktree, and resolves from any subdirectory.
-root="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
+# Two statements, not one. Nested inside a larger string the substitution
+# failure is invisible to set -e: outside a repository `git rev-parse` wrote
+# its fatal to stderr and nothing to stdout, the shell then ran `cd "/.."`,
+# which succeeds, and the script printed "///-worktrees/<slug>" and exited 0.
+# A bare assignment is the one form set -e does track, so this exits 128 the
+# way it did before the anchor changed.
+common_dir="$(git rev-parse --git-common-dir)"
+root="$(cd "$common_dir/.." && pwd)"
 repo="$(basename "$root")"
 wt_root="$(dirname "$root")/$repo-worktrees"
 
