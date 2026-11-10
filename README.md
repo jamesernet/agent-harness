@@ -54,11 +54,12 @@ bin/llmctx install [--account <name>]
 bin/llmctx doctor [--json|--quiet] [--account <name>]
 bin/llmctx repo diff [repo] [--json]
 bin/llmctx explain <profile|branchPolicy|protectedBranches> [repo]
-bin/llmctx account list [--json]
-bin/llmctx account add <name> <dir>
-bin/llmctx account remove <name>
+bin/llmctx account list [--provider claude|codex] [--json]
+bin/llmctx account add [--provider claude|codex] <name> <dir>
+bin/llmctx account remove [--provider claude|codex] <name>
 bin/llmctx skills install [--dev] [--bundle <name>] [--account <name>]
 bin/llmctx agents install [--dev] [--account <name>]
+bin/llmctx context apply <profile.toml> [--check]
 bin/llmctx vendor check
 bin/llmctx publish sync [--check]
 ```
@@ -71,11 +72,11 @@ Use `doctor` for machine-level state. Use `repo diff` inside a project to compar
 
 Narrowing here is the only thing that makes skill selection real. A project's own `.claude/skills/` is **additive** and cannot hide a globally installed skill, so until the global set is reduced every project sees everything. The choice persists in `git config --global llmctx.skillBundle`; without that, the next `llmctx install` would silently widen it back to `all`. `llmctx doctor` reports the active bundle, so "absent on purpose" stays distinguishable from "install went wrong".
 
-Selection is per account. `llmctx.skillBundle.<account>` overrides the global key for that account, so a machine running a regulated backend under one account and marketing sites under another does not have to share one answer — and a plain `llmctx install` no longer re-applies one account's choice to the others. Codex has no account of its own and follows the global key.
+Selection is per Claude account. `llmctx.skillBundle.<account>` overrides the global key for that account, so a machine running a regulated backend under one account and marketing sites under another does not have to share one answer — and a plain `llmctx install` no longer re-applies one account's choice to the others. Registered Codex homes follow the global key; the older bundle-key namespace is not provider-qualified, so sharing Claude overrides would be ambiguous.
 
 An unknown bundle name is refused and changes nothing — resolving it to the empty set would prune every installed skill over one missing letter.
 
-## Claude accounts
+## Provider accounts
 
 Claude Code keys its credential store by `CLAUDE_CONFIG_DIR`, so a second config directory is a second, fully independent login rather than a swapped token — which is how one machine works across two organizations while connectors and Remote Control keep working in both.
 
@@ -87,13 +88,24 @@ bin/llmctx install
 bin/llmctx doctor
 ```
 
-`~/.claude` is always installed into, as `default`, and cannot be unregistered. Registration is purely additive, because a list that could omit the primary would reintroduce exactly the failure this exists to prevent: an install that skips a config directory and still reports success. `--account <name>` narrows a run to one; `doctor` reports each account separately, so "this account is behind" cannot hide behind an aggregate PASS.
+Codex homes use the same registry shape with an explicit provider:
+
+```sh
+bin/llmctx account add --provider codex acme ~/.codex-acme
+```
+
+This makes installation and drift checks cover that home without copying its
+credentials or authenticated session. `CODEX_HOME` selects the home at launch;
+authentication isolation must still be proven with independent real logins on
+the adopting machine before relying on it as a security boundary.
+
+`~/.claude` and `~/.codex` are always installed into as `default` for their provider and cannot be unregistered. Registration is purely additive, because a list that could omit the primary would reintroduce exactly the failure this exists to prevent: an install that skips a config directory and still reports success. `--account <name>` remains a Claude-only narrowing flag for compatibility; a normal run checks every registered home.
 
 Each account gets its own `hooks/`, so no account depends on another's directory surviving. An account created by copying another arrives holding the original's hook paths; `install` re-points them rather than leaving both wired.
 
 `account remove` unregisters a directory. It never deletes one — dropping a credential store as a side effect of a config change is not a trade this tool makes for you.
 
-**`account` is not `profile`.** A *profile* (`personal` / `client`, see below) describes a repository's policy. An *account* describes which Claude login a session runs on. Different axis, deliberately different word.
+**`account` is not `profile` or `context`.** A *profile* (`personal` / `client`) describes repository policy. A *context* describes a work identity and security boundary. An *account* describes which provider login a session runs on. Different axes, deliberately different words.
 
 **Routing a repository to an account** is direnv's job, not this tool's, since it is the shell that has to carry `CLAUDE_CONFIG_DIR` into `claude`. Put the `.envrc` one level ABOVE the repositories so it covers all of them:
 
@@ -115,16 +127,16 @@ A write under a routed path from any other account is refused at the first tool 
 ## Data flow
 
 ```text
-global/ ───────────────> <account>/CLAUDE.md
-       └───────────────> ~/.codex/AGENTS.md
-claude/settings.json ──> <account>/settings.json (portable keys merged)
-bin/claude-hooks/ ─────> <account>/hooks/
-skills/ + vendor/ ─────> <account>/skills/ and ~/.codex/skills/
-agents/ ──────────────> <account>/agents/
+global/ ───────────────> <claude-home>/CLAUDE.md
+       └───────────────> <codex-home>/AGENTS.md
+claude/settings.json ──> <claude-home>/settings.json (portable keys merged)
+bin/claude-hooks/ ─────> <claude-home>/hooks/
+skills/ + vendor/ ─────> <claude-home>/skills/ and <codex-home>/skills/
+agents/ ──────────────> <claude-home>/agents/
 brand/ ── explicit ────> existing publication repositories
 ```
 
-`<account>` is every registered Claude config directory, always including `~/.claude`.
+Default homes and every registered provider home are covered by a normal install.
 
 `AGENTS.md` is the canonical project instruction file. A project's `CLAUDE.md` should import it with `@AGENTS.md`, avoiding two drifting project rule sets.
 
@@ -233,20 +245,32 @@ bin/llmctx publish sync --check
 
 Normal sync skips consumer repositories that are not cloned and never creates repository roots. Check mode treats missing repositories and marker-block drift as failures. Content intended to remain private does not belong in `global/`, `brand/`, or any published target.
 
-## Client profiles
+## Work-context profiles
 
-`templates/client-profile.example.toml` is the canonical shape for describing a client engagement: identity, AWS SSO, enforcement level, collaboration etiquette, and AI/egress policy in one file.
+`templates/work-context.example.toml` is the canonical shape for an identity and security boundary. It supports path precedence, public Git identity, explicit provider bindings, projects, environments, and secret-manager references. `templates/client-profile.example.toml` remains as a compatibility example.
 
-**The pattern lives here; the instances live in `workstation`** (`config/clients/<slug>.toml`, private to that machine). Same split as everything else in this repo — agent-harness owns the reusable form, the consuming repo owns the content.
+**The pattern lives here; the instances live in `workstation`** (`config/contexts/<id>.toml`, private to that machine). Same split as everything else in this repo — agent-harness owns the reusable form, the consuming repo owns the content.
 
 Two ideas carry most of the value:
 
 - **One enforcement dial.** `level = "low" | "standard" | "high"` expands into branch policy, signing, secret scanning and push policy, because that is how the decision is actually made — "this client has real auditors", not twelve independent switches. Explicit keys still override it.
 - **An `[ai]` section.** `agents_allowed` and `allow_code_egress` record whether you are contractually permitted to run an agent against a client's code. That question has real consequences in regulated work, and nothing else on the machine encodes the answer.
 
-Resolution order is preset → client → repo-local git config, mirroring git's own `includeIf` layering.
+Path resolution uses longest-match precedence, so an organization default can be overridden by one repository without changing the context ID later.
 
-**Status: schema and documentation, plus one executable slice.** `bin/llmctx client apply <profile.toml> [--check]` renders the `[ai]` model policy — `account`, `models`, `max_effort` — into that account's `settings.json` as `availableModels`, `enforceAvailableModels` and `maxEffortLevel`, touching nothing else, with a drift check. The rest of the profile is still a structured onboarding checklist. The remaining generator should emit files (`config-<slug>`, `includeIf` entries, `.envrc`, AWS blocks) with a `--check` drift mode, exactly like `build-adapters.sh` — but it should be written against two real clients rather than an imagined schema, or it will grow fields nobody uses.
+**Executable slice.** `bin/llmctx context apply <profile.toml> [--check]` renders the `[providers.claude]` model policy — `account`, `models`, `max_effort` — into that account's `settings.json` as `availableModels`, `enforceAvailableModels` and `maxEffortLevel`, touching nothing else, with a drift check. `client apply` accepts the older `[ai]` shape as a compatibility alias. WorkStation owns generation of identities, path indexes, and provider registries.
+
+## Teams
+
+`templates/teams/` holds copyable multi-persona packs with their own runtime, as
+against the single-file profiles in `templates/agents/`. The first is
+`templates/teams/opinion-gallery/`: four or five AI personas read a
+news feed on an org's behalf, stay quiet by default, draft when one has a
+strong opinion, debate once when two flag the same story, and hand the result
+to a person as a drafts directory and a GitHub Issue. It is model-agnostic
+(any OpenAI-compatible endpoint, a local model, or the Anthropic SDK) and it
+never publishes. The pattern lives here; a real org's contract lives in its
+own repo. See `templates/teams/opinion-gallery/README.md`.
 
 ## Layout
 
@@ -257,6 +281,7 @@ targets/      hosting-target descriptions for environment declarations
 skills/       owned skills
 agents/       managed subagent definitions (model, effort, turn budget)
 vendor/       pinned third-party skills
+templates/    copy-into-project starters: agents, work contexts, teams
 brand/        intentionally public personal-brand context
 bin/          stable CLI, installers, checks, hooks, and libraries
 tests/        deterministic shell tests and portable runner

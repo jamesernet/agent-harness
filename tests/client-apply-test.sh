@@ -15,12 +15,34 @@ fail() {
   exit 1
 }
 
-# The shipped example profile parses: with no account registered yet it must
-# fail on exactly that, not on the TOML.
-out="$("$SRC/bin/llmctx" client apply "$SRC/templates/client-profile.example.toml" 2>&1 || true)"
+# The shipped work-context example parses: with no account registered yet it
+# must fail on exactly that, not on the TOML.
+out="$("$SRC/bin/llmctx" context apply "$SRC/templates/work-context.example.toml" 2>&1 || true)"
 grep -q 'not registered' <<<"$out" || fail "example profile did not reach the account check: $out"
 
 git config --global --add llmctx.claudeAccount "acme=$HOME/.claude-acme"
+
+context_profile="$tmp/context.toml"
+cat >"$context_profile" <<'TOML'
+[context]
+id = "acme"
+name = "Acme work context"
+
+[providers.claude]
+mode = "dedicated"
+account = "acme"
+models = ["haiku"]
+max_effort = "medium"
+TOML
+"$SRC/bin/llmctx" context apply "$context_profile" >/dev/null ||
+  fail "context apply failed"
+jq -e '.availableModels == ["haiku"] and .maxEffortLevel == "medium"' \
+  "$HOME/.claude-acme/settings.json" >/dev/null ||
+  fail "context apply did not write its policy"
+
+printf '[context]\nid = "off"\n[providers.claude]\nmode = "disabled"\n' >"$context_profile"
+"$SRC/bin/llmctx" context apply "$context_profile" >/dev/null 2>&1 &&
+  fail "disabled Claude provider was applied"
 
 profile="$tmp/acme.toml"
 cat >"$profile" <<'TOML'

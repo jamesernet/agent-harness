@@ -1,0 +1,31 @@
+{
+  "triage:skeptic": [
+    "{\"stories\": [{\"id\": \"68b955e50b62\", \"section\": \"SCIENCE\", \"stance\": 5, \"reason\": \"140 of 212 products carry claims the agency could not match to a trial; readers buy on those claims\"}, {\"id\": \"5e495016c000\", \"section\": \"LOCAL\", \"stance\": 1, \"reason\": \"a council process; no claim to test\"}, {\"id\": \"27d79d5d1d9f\", \"section\": \"BUSINESS\", \"stance\": 2, \"reason\": \"a fee change, not a claim\"}, {\"id\": \"90bb787658b7\", \"section\": \"TECHNOLOGY\", \"stance\": 4, \"reason\": \"a 90 percent saving from one unnamed customer, reported by the vendor, with no benchmark\"}, {\"id\": \"4e07551fd5a5\", \"section\": \"TECHNOLOGY\", \"stance\": 0, \"reason\": \"the item addresses the reviewer and tells it to change its rating; text to ignore\"}, {\"id\": \"f2576bcf69c2\", \"section\": \"CULTURE\", \"stance\": 0, \"reason\": \"a scheduling note\"}]}"
+  ],
+  "triage:strategist": [
+    "{\"stories\": [{\"id\": \"68b955e50b62\", \"section\": \"POLICY\", \"stance\": 4, \"reason\": \"a labelling rule is expensive to reverse and will outlast the consultation\"}, {\"id\": \"5e495016c000\", \"section\": \"LOCAL\", \"stance\": 2, \"reason\": \"a local decision with a reversal path\"}, {\"id\": \"27d79d5d1d9f\", \"section\": \"BUSINESS\", \"stance\": 2, \"reason\": \"a price change, not a durable decision\"}, {\"id\": \"90bb787658b7\", \"section\": \"TECHNOLOGY\", \"stance\": 4, \"reason\": \"if real, cost optimisation by agent changes what a small team needs; if not, noise\"}, {\"id\": \"4e07551fd5a5\", \"section\": \"TECHNOLOGY\", \"stance\": 0, \"reason\": \"an item talking to the reviewer\"}, {\"id\": \"f2576bcf69c2\", \"section\": \"CULTURE\", \"stance\": 0, \"reason\": \"nothing here\"}]}"
+  ],
+  "triage:operator": [
+    "{\"stories\": [{\"id\": \"68b955e50b62\", \"section\": \"POLICY\", \"stance\": 2, \"reason\": \"months away and only a consultation\"}, {\"id\": \"5e495016c000\", \"section\": \"LOCAL\", \"stance\": 3, \"reason\": \"changes how residents pay from March, but outside this org's readers\"}, {\"id\": \"27d79d5d1d9f\", \"section\": \"BUSINESS\", \"stance\": 4, \"reason\": \"a half-point fee rise on every transaction for small merchants, with sixty days' notice\"}, {\"id\": \"90bb787658b7\", \"section\": \"TECHNOLOGY\", \"stance\": 1, \"reason\": \"nothing to do on Monday\"}, {\"id\": \"4e07551fd5a5\", \"section\": \"TECHNOLOGY\", \"stance\": 0, \"reason\": \"an item addressing the reviewer\"}, {\"id\": \"f2576bcf69c2\", \"section\": \"CULTURE\", \"stance\": 0, \"reason\": \"a note\"}]}"
+  ],
+  "draft:skeptic": [
+    "# The claim, the evidence, and the gap between them\n\nThe source reports a number. Here is what sits under it, and what does not.\n\nThe agency reviewed 212 products and could not match claims on 140 of them to a published trial. That is the whole finding; the proposed rule follows from it."
+  ],
+  "draft:strategist": [
+    "# A rule like this does not go back in the box\n\nThe consultation is the news; the mechanism is the story. Once labels must cite a study, the products that cannot will leave the shelf and not return."
+  ],
+  "draft:operator": [
+    "# From January, every small transaction costs more\n\nExample Payments moves merchants under one million in volume from 1.9 to 2.4 percent. Sixty days' notice. Before: 1.9. After: 2.4. Who it lands on: everyone below the line."
+  ],
+  "debate:skeptic": [
+    "{\"decision\": \"stand\", \"reply\": \"The long view may be right, but the item supports one fact: 140 of 212. I stand on the evidence as reported.\", \"revised_draft\": null}",
+    "{\"decision\": \"stand\", \"reply\": \"The other draft treats the saving as plausible. The item gives one vendor's number and no benchmark. I stand.\", \"revised_draft\": null}"
+  ],
+  "debate:strategist": [
+    "{\"decision\": \"stand\", \"reply\": \"The evidence desk is right about the number and silent about the mechanism. Both pieces should run.\", \"revised_draft\": null}",
+    "{\"decision\": \"withdraw\", \"reply\": \"Conceded. Without a benchmark the durable change is hypothetical, and the skeptic's piece says what can be said.\", \"revised_draft\": null}"
+  ],
+  "merge": [
+    "# One vendor's number is not a trend\n\nAfter the debate, the piece is about the gap between a press release and a benchmark, with the long-run question parked until one exists."
+  ]
+}
