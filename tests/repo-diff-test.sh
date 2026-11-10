@@ -162,6 +162,40 @@ for variant in "Dropbox (Personal)" "OneDrive - Example Org"; do
     fail "a repository under '$variant' was not flagged"
 done
 
+# A directory that merely STARTS with a vendor name is nobody's sync folder. A
+# bare trailing glob flagged ~/Dropbox-notes as CONFLICT with "synced by
+# Dropbox-notes", which fails `repo diff` for a repository whose location is
+# fine — the false positive that teaches an owner to ignore this check.
+prefix_home="$tmp/prefixhome"
+for ordinary in "Dropbox-notes" "OneDriveBackup"; do
+  mkdir -p "$prefix_home/$ordinary/project"
+  git -C "$prefix_home/$ordinary/project" init -q
+  HOME="$prefix_home" "$CLI" repo diff "$prefix_home/$ordinary/project" --json >"$tmp/prefix.json" 2>/dev/null || true
+  jq -e 'any(.findings[]; .id == "sync-location" and .status == "OK")' "$tmp/prefix.json" >/dev/null ||
+    fail "'$ordinary' is an ordinary directory and was flagged as a sync root"
+done
+
+# The vendor spellings a client really creates must still be caught, so the
+# anchoring above cannot be mistaken for switching the check off.
+mkdir -p "$prefix_home/Dropbox/project" "$prefix_home/Google Drive/project"
+for real in "Dropbox" "Google Drive"; do
+  git -C "$prefix_home/$real/project" init -q
+  HOME="$prefix_home" "$CLI" repo diff "$prefix_home/$real/project" --json >"$tmp/realvendor.json" 2>/dev/null || true
+  jq -e 'any(.findings[]; .id == "sync-location" and .status == "CONFLICT")' "$tmp/realvendor.json" >/dev/null ||
+    fail "a repository under '$real' was not flagged"
+done
+
+# A literal pipe in the path must not truncate the reported path. The prefix
+# list was moved to parallel arrays for this reason; the checked paths were
+# still packed into one string and split on "|", so the finding named a
+# directory that was not the one tested.
+pipe_home="$tmp/pipehome"
+mkdir -p "$pipe_home/Dropbox/weird|name/project"
+git -C "$pipe_home/Dropbox/weird|name/project" init -q
+HOME="$pipe_home" "$CLI" repo diff "$pipe_home/Dropbox/weird|name/project" --json >"$tmp/pipe.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "sync-location" and (.actual | contains("weird|name/project")))' "$tmp/pipe.json" >/dev/null ||
+  fail "a path containing a pipe was truncated in the sync-location finding"
+
 # Declarable, like claudeImport and briefs: moving the repository is the fix, and
 # saying so out loud is the alternative.
 optout_home="$tmp/optouthome"

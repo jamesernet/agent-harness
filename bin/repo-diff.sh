@@ -145,12 +145,21 @@ else
   if [[ -n "$home" ]]; then
     sync_prefixes+=("$home/Library/Mobile Documents") && sync_labels+=("iCloud Drive")
     sync_prefixes+=("$home/Library/CloudStorage") && sync_labels+=("a CloudStorage provider")
-    # Globbed, because a second linked account renames these: Dropbox becomes
-    # "Dropbox (Personal)" and "Dropbox (Business)", and OneDrive appends the
-    # organisation name. Matching only the bare path missed all of those.
-    for candidate_dir in "$home"/Dropbox* "$home"/OneDrive* "$home"/"Google Drive"*; do
-      [[ -d "$candidate_dir" ]] || continue
-      sync_prefixes+=("$candidate_dir") && sync_labels+=("$(basename "$candidate_dir")")
+    # A second linked account renames these: Dropbox becomes "Dropbox (Personal)"
+    # and "Dropbox (Business)", and OneDrive appends the organisation name as
+    # "OneDrive - Example Org". Matching only the bare path missed all of those.
+    #
+    # The separator is matched rather than globbed open, because a bare trailing
+    # `*` also matches a directory that merely STARTS with the vendor name:
+    # ~/Dropbox-notes is an ordinary folder no sync client owns, and it was
+    # reported CONFLICT with "synced by Dropbox-notes", failing `repo diff` for
+    # a repository whose location is fine. Only the spellings a client actually
+    # creates count: the bare name, " (" for Dropbox, " - " for OneDrive.
+    for vendor in Dropbox OneDrive "Google Drive"; do
+      for candidate_dir in "$home/$vendor" "$home/$vendor "\(*\) "$home/$vendor - "*; do
+        [[ -d "$candidate_dir" ]] || continue
+        sync_prefixes+=("$candidate_dir") && sync_labels+=("$(basename "$candidate_dir")")
+      done
     done
     if [[ -d "$home/Library/Mobile Documents/com~apple~CloudDocs/Documents" ]]; then
       sync_prefixes+=("$home/Documents") && sync_labels+=("iCloud Desktop & Documents")
@@ -160,14 +169,22 @@ else
 
   common_dir="$(git -C "$root" rev-parse --git-common-dir 2>/dev/null || printf '%s' "$root/.git")"
   case "$common_dir" in /*) ;; *) common_dir="$root/$common_dir" ;; esac
-  checked_paths=("$(sync_canonical "$root")|working tree")
+  # Parallel arrays, for the same reason sync_prefixes/sync_labels are: packing
+  # "path|label" into one string and splitting on "|" truncates a path that
+  # contains a literal pipe, so the finding named a directory that was not the
+  # one tested.
+  checked_targets=("$(sync_canonical "$root")")
+  checked_whats=("working tree")
   git_state_dir="$(sync_canonical "$(dirname "$common_dir")")"
-  [[ "$git_state_dir" == "${checked_paths[0]%%|*}" ]] || checked_paths+=("$git_state_dir|shared Git directory")
+  if [[ "$git_state_dir" != "${checked_targets[0]}" ]]; then
+    checked_targets+=("$git_state_dir") && checked_whats+=("shared Git directory")
+  fi
 
   sync_hit=""
-  for entry in "${checked_paths[@]}"; do
-    target="${entry%%|*}"
-    what="${entry##*|}"
+  entry=0
+  while [[ "$entry" -lt "${#checked_targets[@]}" ]]; do
+    target="${checked_targets[entry]}"
+    what="${checked_whats[entry]}"
     index=0
     while [[ "$index" -lt "${#sync_prefixes[@]}" ]]; do
       prefix="$(sync_canonical "${sync_prefixes[index]}")"
@@ -181,6 +198,7 @@ else
       fi
       index=$((index + 1))
     done
+    entry=$((entry + 1))
   done
 
   if [[ -n "$sync_hit" ]]; then
