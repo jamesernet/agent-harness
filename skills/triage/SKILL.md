@@ -67,7 +67,7 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 
 ## Triage a specific issue or PR
 
-1. **Gather context.** Read the full issue or PR (body, comments, labels, author, dates; for a PR, the diff too). Parse any prior triage notes so you don't re-ask resolved questions. Explore the codebase using the project's domain docs (per `docs/agents/domain.md` — a `CONTEXT.md` glossary, or an OKF `docs/knowledge/` + `docs/architecture/domain-model.md`), respecting ADRs — and enforced principles in `docs/architecture/principles.md` where present — in the area. Run two checks against the codebase: (a) **redundancy** — search for an existing implementation of the requested behavior by domain concept (not just the request's wording), and report where you looked. If found, it's an already-implemented `wontfix` (step 5). (b) **prior rejection** — read `.out-of-scope/*.md` and surface any that resembles this request.
+1. **Gather context.** Read the full issue or PR (body, comments, labels, author, dates; for a PR, the diff too). Parse any prior triage notes so you don't re-ask resolved questions. Explore the codebase using the project's domain docs (per `docs/agents/domain.md` — a `CONTEXT.md` glossary, or an OKF `docs/knowledge/` + `docs/architecture/domain-model.md`), respecting ADRs — and enforced principles in `docs/architecture/principles.md` where present — in the area. Run two checks against the codebase: (a) **redundancy** — search for an existing implementation of the requested behavior by domain concept (not just the request's wording), and report where you looked. If found, it's an already-implemented `wontfix` (step 6). (b) **prior rejection** — read `.out-of-scope/*.md` and surface any that resembles this request.
 
 2. **Recommend.** Tell the maintainer your category and state recommendation with reasoning, plus a brief codebase summary relevant to the request — including whether it's already implemented. Wait for direction.
 
@@ -75,7 +75,9 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 
 4. **Grill (if needed).** If the request needs fleshing out, run the `/interview-me` and `/domain-modeling` skills together — grill it into shape one question at a time, sharpening domain terms and updating the domain docs (glossary or OKF concept docs) and ADRs inline as decisions land.
 
-5. **Apply the outcome:**
+5. **Argue the other side.** Before promoting anything to `ready-for-agent`, write the strongest case *against* doing it into the triage comment. Specific to this issue, not generic risk, and an argument its author would find uncomfortable. A stale issue usually fails its own case against, and that failure is the evidence for `wontfix` rather than a hunch — if the case against holds up better than the case for, say so and recommend closing. This is not what step 4 does: `/interview-me` interrogates the maintainer and needs them present, while an argument written into the issue survives without its author, which is what matters when someone reads this issue in six months.
+
+6. **Apply the outcome:**
    - `ready-for-agent` — post an agent brief comment ([AGENT-BRIEF.md](AGENT-BRIEF.md)).
    - `ready-for-human` — same structure as an agent brief, but note why it can't be delegated (judgment calls, external access, design decisions, manual testing).
    - `needs-info` — post triage notes (template below).
@@ -87,7 +89,7 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 
 ## Quick state override
 
-If the maintainer says "move #42 to ready-for-agent", trust them and apply the role directly. Confirm what you're about to do (role changes, comment, close), then act. Skip grilling. If moving to `ready-for-agent` without a grilling session, ask whether they want to write an agent brief.
+If the maintainer says "move #42 to ready-for-agent", trust them and apply the role directly. Confirm what you're about to do (role changes, comment, close), then act. Skip grilling, and skip step 5 too — an explicit instruction from the maintainer is the case for, already made by the person the argument would be addressed to. If moving to `ready-for-agent` without a grilling session, ask whether they want to write an agent brief.
 
 ## Needs-info template
 
