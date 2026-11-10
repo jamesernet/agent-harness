@@ -127,6 +127,118 @@ else
   add_check adapters FAIL "managed adapters or settings are missing or stale" "$SRC/install.sh"
 fi
 
+# A missing @import target produces NO error in Claude Code: the session runs
+# without those rules.
+#
+# The adapters check above is stronger than it looks, so be clear about what
+# this adds. render_claude derives these paths from the RUNNING script's own
+# location, so a moved checkout, a pruned worktree or a hand edit all make the
+# installed file differ from a fresh render and already FAIL there. And a
+# deleted global/ source is caught too, but only incidentally: render_codex cats
+# those files, so its diff fails -- which means the catch disappears under
+# `--account`, where codex rendering is skipped.
+#
+# That is the measured hole. With a global/ source deleted and `--account`
+# given, `build-adapters.sh --check` reports "all local adapters in sync" and
+# exits 0, adapters PASSes, and only this check fails. render_claude names those
+# paths without ever reading them, and preflight_sources is not on the --check
+# path at all.
+#
+# Everywhere else the value is diagnostic rather than detective: adapters says
+# "missing or stale" and points at install.sh, which never tells you which path
+# is dead.
+#
+# Expect both checks to FAIL together in most real incidents, with different
+# remedies. That is deliberate -- this one is the precise line -- so do not
+# "fix" the duplication by weakening either. Making them exclusive would need
+# --check to return distinct exit codes, i.e. a private protocol between two
+# scripts.
+check_claude_imports() {
+  local file="$1" id="$2" out="" status=0
+  out="$(llmctx_unresolved_imports "$file")" || status=$?
+
+  if [[ "$status" -eq 2 ]]; then
+    # The adapters check already FAILs for this, with the right remedy. A second
+    # failure for one cause with a different remedy only misleads -- the same
+    # reasoning as account-routes below. Reported as a line rather than omitted
+    # so the --json shape stays stable per account.
+    add_check "$id" PASS "imports not checked: CLAUDE.md is absent or unreadable (see the adapters check)" ""
+    return 0
+  fi
+
+  local kind lineno raw resolved
+  local ok=0 broken=0 skipped=0 shown=0 dead="" skipped_at=""
+  while IFS=$'\t' read -r kind lineno raw resolved; do
+    [[ -n "$kind" ]] || continue
+    case "$kind" in
+      ok) ok=$((ok + 1)) ;;
+      unsupported)
+        skipped=$((skipped + 1))
+        skipped_at="$skipped_at $lineno"
+        ;;
+      *)
+        broken=$((broken + 1))
+        # Three is enough to diagnose. The text renderer gives one line per
+        # check, and three absolute paths already wrap a terminal.
+        if [[ "$shown" -lt 3 ]]; then
+          [[ -z "$dead" ]] || dead="$dead; "
+          dead="$dead$kind at line $lineno -> ${resolved:-$raw}"
+          shown=$((shown + 1))
+        fi
+        ;;
+    esac
+  done <<<"$out"
+
+  local remedy="$SRC/bin/build-adapters.sh, run from the primary checkout"
+
+  if [[ "$broken" -gt 0 ]]; then
+    [[ "$broken" -le "$shown" ]] || dead="$dead (+$((broken - shown)) more)"
+    add_check "$id" FAIL "unresolved @import target(s): $dead" "$remedy"
+    return 0
+  fi
+
+  # Zero resolved imports is a failure however it arises. A generated CLAUDE.md
+  # always carries its three, which is what install_rendered's '^@' guard
+  # asserts on the write path; this is its read-side twin. Reporting PASS with
+  # "0 direct @imports resolve" was the bug a space-bearing checkout path hit --
+  # self-contradictory on its face, and it hid exactly the fault this check
+  # exists to find.
+  if [[ "$ok" -eq 0 ]]; then
+    if [[ "$skipped" -gt 0 ]]; then
+      add_check "$id" FAIL \
+        "no @import target could be checked ($skipped unsupported path form(s) at line${skipped_at})" \
+        "$remedy"
+      return 0
+    fi
+    # A generated CLAUDE.md always carries its imports, which is what
+    # install_rendered's '^@' guard asserts on the write path. Zero of them
+    # makes "every target resolved" technically true and practically a lie.
+    add_check "$id" FAIL "no @import lines in CLAUDE.md" "$remedy"
+    return 0
+  fi
+
+  # "direct" is the whole disclosure of the one-level limit, and it belongs on
+  # the PASS line because that is the line a reader trusts.
+  local detail="$ok direct @imports resolve"
+  [[ "$skipped" -eq 0 ]] ||
+    detail="$detail ($skipped skipped: unsupported path form at line${skipped_at})"
+  add_check "$id" PASS "$detail" ""
+}
+
+if [[ -n "$accounts" ]]; then
+  while IFS=$'\t' read -r account_name account_dir; do
+    [[ -n "$account_name" ]] || continue
+    if [[ "$account_name" == "$LLMCTX_ACCOUNT_DEFAULT_NAME" ]]; then
+      check_claude_imports "$account_dir/CLAUDE.md" claude-imports
+    else
+      check_claude_imports "$account_dir/CLAUDE.md" "claude-imports[$account_name]"
+    fi
+  done <<<"$accounts"
+else
+  # Already reported by the accounts check above; see account-routes.
+  add_check claude-imports PASS "imports not checked: account registry unreadable" ""
+fi
+
 if command -v git >/dev/null 2>&1 && git -C "$SRC" rev-parse --git-dir >/dev/null 2>&1; then
   hooks_path="$(git -C "$SRC" config --get core.hooksPath || true)"
   if [[ -n "$hooks_path" ]]; then
