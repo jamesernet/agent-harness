@@ -45,7 +45,8 @@ extract_block() {
 # The marker has ONE definition, used whether the destination already has one
 # or not. It used to exist only on the creation path: a destination that already
 # carried a marker had that line reprinted verbatim, so the marker was
-# write-once and the tool that owns it could never correct it. ADR-001 renamed
+# write-once and the tool that owns it could never correct it. ADR-001
+# (https://github.com/jamesernet/agent-harness/issues/21) renamed
 # the repository and expected one resync to update every mirror's marker; it
 # would not have, because of this. The marker now follows the source.
 marker_line() {
