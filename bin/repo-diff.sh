@@ -113,41 +113,83 @@ fi
 # of a repository, and the estate audit runs `repo diff` on each one, so this
 # covers both a single repository and the fleet.
 #
-# Matching is on the resolved path, so a symlink into a synced tree is caught.
+# BOTH the working tree and the common Git directory are tested. For a linked
+# worktree they are different places, and the refs that actually corrupt live in
+# the common directory, so testing the checkout alone reported OK for a worktree
+# whose shared .git sat in a synced tree — backwards from the incident above.
+#
+# Canonicalising never aborts the command. `cd` into a candidate can fail on an
+# unreadable directory or a stalled network mount, and a failed command
+# substitution under `set -e` took the whole of `repo diff` down with it,
+# including every unrelated finding. An uncheckable candidate is skipped.
+#
 # ~/Documents and ~/Desktop are synced only when iCloud's Desktop & Documents
 # option is on, and the CloudDocs mirror directory is what indicates that: the
 # home directory keeps its ordinary path either way, so testing the path alone
-# would flag every Mac.
-real_root="$(cd "$root" && pwd -P)"
-sync_root=""
-sync_label=""
-for candidate in \
-  "$HOME/Library/Mobile Documents:iCloud Drive" \
-  "$HOME/Library/CloudStorage:a CloudStorage provider" \
-  "$HOME/Dropbox:Dropbox" \
-  "$HOME/Google Drive:Google Drive"; do
-  prefix="${candidate%%:*}"
-  label="${candidate##*:}"
-  # Both sides must be resolved. real_root comes from `pwd -P`, and on macOS a
-  # temporary or symlinked home resolves (/var -> /private/var), so comparing a
-  # resolved path against an unresolved prefix silently never matched.
-  [[ -d "$prefix" ]] || continue
-  prefix="$(cd "$prefix" && pwd -P)"
-  case "$real_root/" in "$prefix"/*) sync_root="$prefix" && sync_label="$label" && break ;; esac
-done
-if [[ -z "$sync_root" && -d "$HOME/Library/Mobile Documents/com~apple~CloudDocs/Documents" ]]; then
-  for prefix in "$HOME/Documents" "$HOME/Desktop"; do
-    [[ -d "$prefix" ]] || continue
-    prefix="$(cd "$prefix" && pwd -P)"
-    case "$real_root/" in "$prefix"/*) sync_root="$prefix" && sync_label="iCloud Desktop & Documents" && break ;; esac
-  done
-fi
-if [[ -n "$sync_root" ]]; then
-  add_finding sync-location CONFLICT "repository outside any file-sync root" \
-    "$real_root is under $sync_root, synced by $sync_label" filesystem \
-    "move the repository outside $sync_root, for example under ~/repos/github.com/<org>/, then run git worktree repair"
+# would report every Mac.
+sync_canonical() { # <dir> -> resolved path, or the input when it cannot be read
+  (cd "$1" 2>/dev/null && pwd -P) || printf '%s' "$1"
+}
+
+sync_declared="$(declared syncLocation)"
+if [[ "$sync_declared" == "false" ]]; then
+  # Declarable for the same reason claudeImport and briefs are: a checker a
+  # mature repository must learn to ignore is a checker nobody reads. Moving the
+  # repository is the fix; saying so out loud is the alternative.
+  add_finding sync-location OVERRIDE "repository outside any file-sync root" \
+    "declined; the owner accepts the sync risk for this repository" repo-policy ""
 else
-  add_finding sync-location OK "repository outside any file-sync root" "not under a known sync root" filesystem ""
+  home="${HOME:-}"
+  sync_prefixes=()
+  sync_labels=()
+  if [[ -n "$home" ]]; then
+    sync_prefixes+=("$home/Library/Mobile Documents") && sync_labels+=("iCloud Drive")
+    sync_prefixes+=("$home/Library/CloudStorage") && sync_labels+=("a CloudStorage provider")
+    # Globbed, because a second linked account renames these: Dropbox becomes
+    # "Dropbox (Personal)" and "Dropbox (Business)", and OneDrive appends the
+    # organisation name. Matching only the bare path missed all of those.
+    for candidate_dir in "$home"/Dropbox* "$home"/OneDrive* "$home"/"Google Drive"*; do
+      [[ -d "$candidate_dir" ]] || continue
+      sync_prefixes+=("$candidate_dir") && sync_labels+=("$(basename "$candidate_dir")")
+    done
+    if [[ -d "$home/Library/Mobile Documents/com~apple~CloudDocs/Documents" ]]; then
+      sync_prefixes+=("$home/Documents") && sync_labels+=("iCloud Desktop & Documents")
+      sync_prefixes+=("$home/Desktop") && sync_labels+=("iCloud Desktop & Documents")
+    fi
+  fi
+
+  common_dir="$(git -C "$root" rev-parse --git-common-dir 2>/dev/null || printf '%s' "$root/.git")"
+  case "$common_dir" in /*) ;; *) common_dir="$root/$common_dir" ;; esac
+  checked_paths=("$(sync_canonical "$root")|working tree")
+  git_state_dir="$(sync_canonical "$(dirname "$common_dir")")"
+  [[ "$git_state_dir" == "${checked_paths[0]%%|*}" ]] || checked_paths+=("$git_state_dir|shared Git directory")
+
+  sync_hit=""
+  for entry in "${checked_paths[@]}"; do
+    target="${entry%%|*}"
+    what="${entry##*|}"
+    index=0
+    while [[ "$index" -lt "${#sync_prefixes[@]}" ]]; do
+      prefix="$(sync_canonical "${sync_prefixes[index]}")"
+      if [[ -d "$prefix" ]]; then
+        case "$target/" in
+          "$prefix"/*)
+            sync_hit="$target is under $prefix, synced by ${sync_labels[index]} ($what)"
+            break 2
+            ;;
+        esac
+      fi
+      index=$((index + 1))
+    done
+  done
+
+  if [[ -n "$sync_hit" ]]; then
+    add_finding sync-location CONFLICT "repository outside any file-sync root" \
+      "$sync_hit" filesystem \
+      "move the repository outside that directory, for example under ~/repos/github.com/<org>/, then run git worktree repair; or set \"syncLocation\": false in .llmctx.json to accept the risk"
+  else
+    add_finding sync-location OK "repository outside any file-sync root" "not under a known sync root" filesystem ""
+  fi
 fi
 
 hooks_path="$(git -C "$root" config --get core.hooksPath || true)"

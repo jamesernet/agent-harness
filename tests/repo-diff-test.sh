@@ -125,4 +125,51 @@ HOME="$synced_home" "$CLI" repo diff "$synced_home/Documents/project" --json >"$
 jq -e 'any(.findings[]; .id == "sync-location" and .status == "CONFLICT")' "$tmp/docs-sync.json" >/dev/null ||
   fail "Documents was not flagged once the iCloud mirror directory existed"
 
+# An unreadable candidate must not take the command down. `cd` into it fails,
+# and a failed command substitution under set -e aborted every finding, not just
+# this one.
+locked_home="$tmp/lockedhome"
+mkdir -p "$locked_home/Dropbox" "$tmp/plain"
+git -C "$tmp/plain" init -q
+chmod 000 "$locked_home/Dropbox"
+HOME="$locked_home" "$CLI" repo diff "$tmp/plain" --json >"$tmp/locked.json" 2>/dev/null || true
+chmod 755 "$locked_home/Dropbox"
+jq -e 'any(.findings[]; .id == "sync-location")' "$tmp/locked.json" >/dev/null ||
+  fail "an unreadable sync-root candidate suppressed the whole report"
+
+# A linked worktree keeps its refs in the shared Git directory, so a worktree
+# outside a sync root whose shared .git is inside one is still at risk. Testing
+# the checkout alone reported OK here, which is backwards.
+wt_home="$tmp/wthome"
+mkdir -p "$wt_home/Dropbox/upstream"
+git -C "$wt_home/Dropbox/upstream" init -q
+git -C "$wt_home/Dropbox/upstream" config user.email wt@example.test
+git -C "$wt_home/Dropbox/upstream" config user.name "Worktree Test"
+git -C "$wt_home/Dropbox/upstream" commit -q --allow-empty -m base
+git -C "$wt_home/Dropbox/upstream" worktree add -q "$tmp/outside-wt" -b parked
+HOME="$wt_home" "$CLI" repo diff "$tmp/outside-wt" --json >"$tmp/wt.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "sync-location" and .status == "CONFLICT" and (.actual | test("shared Git directory")))' "$tmp/wt.json" >/dev/null ||
+  fail "a worktree whose shared Git directory is synced was not flagged"
+
+# A second linked account renames the vendor folder, and matching only the bare
+# path missed every such case.
+variant_home="$tmp/varianthome"
+for variant in "Dropbox (Personal)" "OneDrive - Example Org"; do
+  mkdir -p "$variant_home/$variant/project"
+  git -C "$variant_home/$variant/project" init -q
+  HOME="$variant_home" "$CLI" repo diff "$variant_home/$variant/project" --json >"$tmp/variant.json" 2>/dev/null || true
+  jq -e 'any(.findings[]; .id == "sync-location" and .status == "CONFLICT")' "$tmp/variant.json" >/dev/null ||
+    fail "a repository under '$variant' was not flagged"
+done
+
+# Declarable, like claudeImport and briefs: moving the repository is the fix, and
+# saying so out loud is the alternative.
+optout_home="$tmp/optouthome"
+mkdir -p "$optout_home/Dropbox/accepted"
+git -C "$optout_home/Dropbox/accepted" init -q
+printf '%s\n' '{"schemaVersion":1,"syncLocation":false}' >"$optout_home/Dropbox/accepted/.llmctx.json"
+HOME="$optout_home" "$CLI" repo diff "$optout_home/Dropbox/accepted" --json >"$tmp/optout.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "sync-location" and .status == "OVERRIDE")' "$tmp/optout.json" >/dev/null ||
+  fail "the declared sync-location opt-out was not honoured"
+
 echo "repo diff tests: passed"
