@@ -57,7 +57,7 @@ class Outcome:
     @property
     def needs_merge(self) -> bool:
         """A merged piece whose body has not been written yet."""
-        return self.kind == "merged" and self.merged_body is None
+        return self.kind == "merged" and not self.merged_body
 
     def with_merged(self, body: str) -> "Outcome":
         return replace(self, merged_body=body)

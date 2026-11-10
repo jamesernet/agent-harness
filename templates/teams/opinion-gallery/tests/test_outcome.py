@@ -61,6 +61,7 @@ def test_a_complete_outcome_never_reports_needing_a_merge():
     for kind in ("single", "two-views", "none"):
         assert not Outcome(kind, (_draft("skeptic"),)).needs_merge
     assert Outcome("merged", (_draft("skeptic"),), merged_body="# done").needs_merge is False
+    assert Outcome("merged", (_draft("skeptic"),), merged_body="").needs_merge is True
 
 
 def _gh():
@@ -81,6 +82,7 @@ def test_a_story_everyone_withdrew_from_reaches_publishing_and_writes_nothing(co
 
     from conftest import file_fetch
 
+    from opinion_gallery import delivery
     from opinion_gallery.llm import FakeLLM
     from opinion_gallery.run import run_cycle
 
@@ -88,11 +90,24 @@ def test_a_story_everyone_withdrew_from_reaches_publishing_and_writes_nothing(co
     replies = dict(fake_replies) | {"debate:skeptic": [withdrawn], "debate:strategist": [withdrawn]}
 
     gh = _gh()
-    report = run_cycle(contract, FakeLLM(replies), env={}, now=NOW, fetch=file_fetch, gh_runner=gh)
+    rendered_kinds = []
+    real_render = delivery.render
+
+    def spy_render(*args, **kwargs):
+        rendered_kinds.append(args[2].kind)
+        return real_render(*args, **kwargs)
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(delivery, "render", spy_render)
+    try:
+        report = run_cycle(contract, FakeLLM(replies), env={}, now=NOW, fetch=file_fetch, gh_runner=gh)
+    finally:
+        monkeypatch.undo()
 
     empty = [r for r in report.results if r.outcome.kind == "none"]
     assert empty, "the fixture set has a story two personas both flag"
     assert all(r.path is None and r.issue is None for r in empty)
     written = {p.name for p in (tmp_path / "drafts" / "2026-11-03").iterdir()}
     assert not any(name.startswith(empty[0].story.id) for name in written)
+    assert "none" in rendered_kinds
     assert report.failures == []
