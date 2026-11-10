@@ -174,7 +174,8 @@ call. With five personas and two drafts each the ceiling is about 25 calls.
 
 ## What it never does
 
-Posts to the org's own channels. Fetches a link. Writes about a tragedy. Names a private individual.
+Posts to the org's own channels. Fetches a link. Writes about a tragedy.
+Names a private individual.
 Gives medical, veterinary, legal or financial advice. Claims the org's
 position. Writes about the org's own live problem. Runs without a reviewer
 named in `config.yml`. Runs with an edited `guardrails.md` unless
