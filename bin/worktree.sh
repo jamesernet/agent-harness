@@ -162,8 +162,9 @@ status_protected_refs() {
 # One gh call for the whole report, and three ways it can fail, each named:
 # gh-missing (not installed), gh-failed (offline, no remote, not logged in:
 # first stderr line kept), gh-truncated (as many rows as the limit, so a
-# branch missing from the list proves nothing). Under any of the three a
-# branch with no row is `unknown`, never `none`.
+# branch missing from the list proves nothing -- it is then looked up by name,
+# see status_branch_facts). Under gh-missing and gh-failed a branch with no
+# row is `unknown`, never `none`.
 status_fetch_prs() {
   local limit=200
   STATUS_PR_SOURCE="gh"
@@ -246,12 +247,22 @@ status_branch_facts() {
 
   # Several PRs can share a head branch over time; a merged one outranks an
   # open one, which outranks a closed one, because that is what the proof is for.
-  pr_row="$(jq -c --arg b "$branch" '
-    [.[] | select(.headRefName == $b)]
-    | sort_by(if .state == "MERGED" then 0 elif .state == "OPEN" then 1 else 2 end)
-    | .[0] // empty' "$STATUS_PRS")"
+  pr_row="$(jq -c --arg b "$branch" "$STATUS_PR_PICK" "$STATUS_PRS")"
+  # A list as long as the limit proves nothing about a branch missing from it,
+  # so that branch is looked up by name -- one call per unlisted branch, which
+  # in a repository with thousands of PRs is the few that matter rather than
+  # the thousands that do not. The first run in such a repository showed every
+  # older branch as UNKNOWN, which was honest and useless.
+  pr_known="$STATUS_PR_SOURCE"
+  if [[ -z "$pr_row" && "$STATUS_PR_SOURCE" == "gh-truncated" ]]; then
+    if (cd "$root" && gh pr list --head "$branch" --state all --limit 20 --json headRefName,number,state,headRefOid >"$STATUS_PR_ONE" 2>/dev/null) &&
+      jq -e 'type == "array"' "$STATUS_PR_ONE" >/dev/null 2>&1; then
+      pr_row="$(jq -c --arg b "$branch" "$STATUS_PR_PICK" "$STATUS_PR_ONE")"
+      pr_known="gh"
+    fi
+  fi
   if [[ -z "$pr_row" ]]; then
-    if [[ "$STATUS_PR_SOURCE" == "gh" ]]; then
+    if [[ "$pr_known" == "gh" ]]; then
       STATUS_F_PR_STATE=none
     else
       STATUS_F_PR_STATE=unknown
@@ -349,7 +360,12 @@ status_report() {
   STATUS_GH_ERR="$(status_tmp)"
   STATUS_REFS="$(status_tmp)"
   STATUS_SEEN="$(status_tmp)"
-  trap 'rm -f "$STATUS_ROWS" "$STATUS_PRS" "$STATUS_GH_ERR" "$STATUS_REFS" "$STATUS_SEEN"' EXIT
+  STATUS_PR_ONE="$(status_tmp)"
+  trap 'rm -f "$STATUS_ROWS" "$STATUS_PRS" "$STATUS_GH_ERR" "$STATUS_REFS" "$STATUS_SEEN" "$STATUS_PR_ONE"' EXIT
+  # The one PR that speaks for a branch, from any list of PR rows.
+  STATUS_PR_PICK='[.[] | select(.headRefName == $b)]
+    | sort_by(if .state == "MERGED" then 0 elif .state == "OPEN" then 1 else 2 end)
+    | .[0] // empty'
 
   status_protected_refs
   if [[ ${#STATUS_PROTECTED_REFS[@]} -eq 0 ]]; then
