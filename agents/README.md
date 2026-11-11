@@ -42,6 +42,39 @@ A skill that should run entirely inside a subagent uses `context: fork` plus
 `agent: <name>` in its frontmatter. None do today: every skill in this set has a
 judgment step that belongs in the caller's context.
 
+## Sizing a brief
+
+Measured on 2026-11-11, across nine adversarial reviews of one day's pull
+requests. The budgets above are ceilings; the brief decides whether an agent
+gets to a verdict inside them.
+
+- **A reviewer brief fits in about 25 tool calls.** `reviewer` has 40 turns,
+  and a turn is roughly a tool call. Two briefs that asked for twenty probes,
+  three mutations, lint and an install check hit the limit mid-probe and
+  produced no report. Two that asked for the same work in a fixed order with
+  a hard budget stated in the brief returned verdicts with evidence. State the
+  budget in the brief, put the verdict-bearing steps first, and say "mark
+  anything unreached *insufficient coverage*".
+- **One question per brief; split rather than widen.** A review of a tool and
+  a review of the skill that uses it are two briefs. The second reviewer on
+  PR #95 covered in thirty calls what the first had not reached in forty,
+  because it was asked for exactly that.
+- **A fresh reviewer for every merge decision, never the authoring context.**
+  Four of today's PRs had a defect introduced by their own fix, and in every
+  case it was a reviewer that had not written the fix that found it. The
+  authoring session's verification is a claim to falsify, not evidence.
+- **A finding goes back through fix → re-review, never a quiet patch.** On
+  PR #99 the first fix for a reviewer's finding had the same hole one door
+  over; the second reviewer found it because it was asked to.
+- **Ask a stalled agent for its verdict; do not read its transcript.** An
+  agent that has run long is resumed with one message: "deliver your verdict
+  on the evidence in hand; mark the rest insufficient coverage". Both agents
+  this was tried on answered within a minute. `TaskOutput` returns the raw
+  transcript into the caller's context and is not the tool for this.
+- **A verdict names what it did not reach.** A `CLEAN` with "insufficient
+  coverage: part B" is a result; a `CLEAN` with no such line is a claim about
+  the whole brief, and the caller should read it as one.
+
 ## Tuning
 
 Change the file here, run `llmctx agents install`, and `llmctx doctor` reports
