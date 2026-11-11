@@ -12,6 +12,7 @@
 # INTERFACE
 #
 #   llmctx_target_from_command "<command text>"
+#   $LLMCTX_GIT_GLOBAL_OPTS_RE   (an ERE fragment, see below)
 #
 # Prints the directory the command names, or nothing when it cannot tell.
 # "Cannot tell" is a first-class answer and the caller must handle it.
@@ -37,6 +38,16 @@ llmctx_target_tilde="~"
 
 # `cd ~/x` is written far more often than the expanded path. Expanding a
 # leading `~/` keeps this to string work rather than eval.
+# Global options git accepts between `git` and the subcommand: `-C <dir>`,
+# `-c <k=v>`, `--<long>`, `--<long>=<v>`, and a long option's separate value.
+# An ERE fragment for the ACTION matchers in both hooks, kept beside the
+# target resolver on purpose: `git -C <dir>` is the spelling this library
+# resolves most carefully, and for months it was the one spelling the branch
+# guard's matcher could not see (#79). Zero or more options, each ending in
+# whitespace, so it slots between `git[[:space:]]+` and the subcommand.
+# shellcheck disable=SC2034  # consumed by the hooks that source this file
+LLMCTX_GIT_GLOBAL_OPTS_RE='(-C[[:space:]]+[^[:space:]]+[[:space:]]+|-c[[:space:]]+[^[:space:]]+[[:space:]]+|--[a-z][a-z-]*(=[^[:space:]]*)?[[:space:]]+([^-[:space:]][^[:space:]]*[[:space:]]+)?)*'
+
 llmctx_target_expand_home() {
   case "$1" in
     "$llmctx_target_tilde") printf '%s\n' "$HOME" ;;

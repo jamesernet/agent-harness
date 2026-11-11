@@ -193,9 +193,12 @@ if [[ "$tool" == "Bash" ]]; then
   # `-c <k=v>`, `--no-pager`, `--git-dir=<d>` and `--git-dir <d>` are ordinary.
   # The guard resolved `-C <dir>` as the TARGET for months (lib/target.sh) while
   # this matcher could not see the same spelling, so `git -C <dir> commit` on a
-  # protected branch never reached the gate at all (#79). One fragment, used by
-  # both greps below, so the refspec check sees the same prefix the gate does.
-  git_opts='(-C[[:space:]]+[^[:space:]]+[[:space:]]+|-c[[:space:]]+[^[:space:]]+[[:space:]]+|--[a-z][a-z-]*(=[^[:space:]]*)?[[:space:]]+([^-[:space:]][^[:space:]]*[[:space:]]+)?)*'
+  # protected branch never reached the gate at all (#79). One fragment, defined
+  # beside the target resolver in lib/target.sh and used by both greps below,
+  # so the refspec check sees the same prefix the gate does -- and so the
+  # sibling irreversible-policy hook can see it too, rather than growing a
+  # third hand-rolled matcher.
+  git_opts="$LLMCTX_GIT_GLOBAL_OPTS_RE"
   if ! printf '%s' "$cmd" |
     grep -qE "(^|[;&|]|&&|\|\||[[:space:]]&|^[[:space:]]*)[[:space:]]*(sudo[[:space:]]+|env[[:space:]]+[^[:space:]]+=[^[:space:]]*[[:space:]]+)*git[[:space:]]+${git_opts}(commit|push)\b"; then
     exit 0
