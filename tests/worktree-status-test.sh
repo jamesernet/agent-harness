@@ -148,10 +148,15 @@ git -C "$repo" branch -q feature/landed-upstream origin/main
 # The fake gh. It answers `pr list` from the fixture and refuses anything else.
 mkdir -p "$tmp/fakebin"
 prs="$tmp/prs.json"
+# `pr list` answers from the first-page fixture; `pr list --head <branch>` from
+# the full fixture, filtered -- which is how the real gh behaves when a page
+# is full and status looks a branch up by name.
+prs_all="$tmp/prs-all.json"
 cat >"$tmp/fakebin/gh" <<SHIM
 #!/bin/sh
-case "\$1 \$2" in
-  "pr list") cat "$prs" ;;
+case "\$1 \$2 \$3" in
+  "pr list --head") jq -c --arg b "\$4" '[.[] | select(.headRefName == \$b)]' "$prs_all" ;;
+  "pr list "*) cat "$prs" ;;
   *) echo "fake gh: unexpected args: \$*" >&2; exit 99 ;;
 esac
 SHIM
@@ -164,6 +169,7 @@ jq -n --arg exact "$sha_exact" --arg anc "$sha_anc2" --arg root "$root_sha" --ar
   {headRefName: "feature/unverifiable",    number: 4, state: "MERGED", headRefOid: $missing},
   {headRefName: "feature/open",            number: 5, state: "OPEN",   headRefOid: "ffffffffffffffffffffffffffffffffffffffff"}
 ]' >"$prs"
+cp "$prs" "$prs_all"
 
 run_status() { # run_status <cwd> [args...]
   local dir="$1"
@@ -286,16 +292,38 @@ jq -e '[(.worktrees[], .branches[]) | .headline] | any(. == "STRANDED") | not' <
 grep -q 'pr source: gh-failed (error connecting' <<<"$(run_status "$repo")" ||
   fail "table footer did not carry the gh error"
 
-# 15. gh present but the list is as long as the limit: a missing row proves nothing.
+# 15. gh present but the first page is as long as the limit: a missing row
+# proves nothing, so the branch is looked up by name. The full fixture holds
+# the merged PR the first page cut off; a branch with no PR anywhere is then
+# confidently `none`, and STRANDED. Only when the lookup itself fails is it
+# `unknown`.
 jq -n '[range(0; 200) | {headRefName: "x\(.)", number: ., state: "CLOSED", headRefOid: "0000000000000000000000000000000000000000"}]' >"$prs"
+jq -n --arg exact "$sha_exact" '[{headRefName: "feature/merged-exact", number: 1, state: "MERGED", headRefOid: $exact}]' >"$prs_all"
 cat >"$tmp/fakebin/gh" <<SHIM
 #!/bin/sh
-cat "$prs"
+case "\$1 \$2 \$3" in
+  "pr list --head") jq -c --arg b "\$4" '[.[] | select(.headRefName == \$b)]' "$prs_all" ;;
+  *) cat "$prs" ;;
+esac
 SHIM
 out="$(run_status "$repo" --json)"
 jq -e '.prSource == "gh-truncated"' <<<"$out" >/dev/null || fail "gh-truncated was not detected"
+r="$(jq -c '.worktrees[] | select(.branch == "feature/merged-exact")' <<<"$out")"
+[[ "$(field "$r" .mergeProof)" = merged-exact && "$(field "$r" .headline)" = MERGED ]] ||
+  fail "a branch cut off the first page was not looked up by name: $r"
+r="$(jq -c '.worktrees[] | select(.branch == "feature/stranded")' <<<"$out")"
+[[ "$(field "$r" .prState)" = none && "$(field "$r" .headline)" = STRANDED ]] ||
+  fail "a branch with no PR anywhere was not confidently none after lookup: $r"
+cat >"$tmp/fakebin/gh" <<SHIM
+#!/bin/sh
+case "\$1 \$2 \$3" in
+  "pr list --head") echo "error connecting" >&2; exit 1 ;;
+  *) cat "$prs" ;;
+esac
+SHIM
+out="$(run_status "$repo" --json)"
 [[ "$(jq -r '.worktrees[] | select(.branch == "feature/stranded") | .prState' <<<"$out")" = unknown ]] ||
-  fail "a branch missing from a truncated list was not unknown"
+  fail "a branch whose lookup failed on a truncated page was not unknown"
 
 # 14. gh absent: the allowlist idiom from env-check-test.sh, with gh left out.
 mkdir -p "$tmp/minbin"
