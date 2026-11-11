@@ -187,8 +187,24 @@ if [[ "$tool" == "Bash" ]]; then
   # it, or `grep -r "git push" .` — and under `deny` every one of those false
   # positives is a hard block on an innocent command, which is how a guard
   # earns its removal. Optional leading `sudo`/`env`; allows `cd x && git commit`.
+  #
+  # Global options between `git` and the subcommand are part of the spelling:
+  # `git -C <dir> commit` is how an agent commits in another checkout, and
+  # `-c <k=v>`, `--no-pager`, `--git-dir=<d>` and `--git-dir <d>` are ordinary.
+  # The guard resolved `-C <dir>` as the TARGET for months (lib/target.sh) while
+  # this matcher could not see the same spelling, so `git -C <dir> commit` on a
+  # protected branch never reached the gate at all (#79). One fragment, defined
+  # beside the target resolver in lib/target.sh and used by both greps below,
+  # so the refspec check sees the same prefix the gate does -- and so the
+  # sibling irreversible-policy hook can see it too, rather than growing a
+  # third hand-rolled matcher.
+  git_opts="$LLMCTX_GIT_GLOBAL_OPTS_RE"
+  # The subcommand must be the whole word: `commit-graph write` and
+  # `commit-tree` are plumbing, not commits, and `\b` let `commit` match the
+  # front of both (`-` is a word boundary). A bare `K=V` assignment is a
+  # prefix the shell allows exactly as `env K=V` is, so it is one too.
   if ! printf '%s' "$cmd" |
-    grep -qE '(^|[;&|]|&&|\|\||[[:space:]]&|^[[:space:]]*)[[:space:]]*(sudo[[:space:]]+|env[[:space:]]+[^[:space:]]+=[^[:space:]]*[[:space:]]+)*git[[:space:]]+(commit|push)\b'; then
+    grep -qE "(^|[;&|]|&&|\|\||[[:space:]]&|^[[:space:]]*)[[:space:]]*(sudo[[:space:]]+|env[[:space:]]+[^[:space:]]+=[^[:space:]]*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*git[[:space:]]+${git_opts}(commit|push)([[:space:]]|\$)"; then
     exit 0
   fi
 
@@ -197,7 +213,7 @@ if [[ "$tool" == "Bash" ]]; then
   # publish work, and denying it was the second false block this hook produced.
   # Only an explicit refspec counts: a bare `git push` on a protected branch
   # still pushes the protected branch, and is still caught.
-  if printf '%s' "$cmd" | grep -qE 'git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?push\b'; then
+  if printf '%s' "$cmd" | grep -qE "git[[:space:]]+${git_opts}push([[:space:]]|\$)"; then
     pushed_ref="$(printf '%s' "$cmd" |
       sed -n 's/.*push[[:space:]]\{1,\}\(-[^[:space:]]*[[:space:]]\{1,\}\)*[^[:space:]-][^[:space:]]*[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\2/p' | head -1)"
     pushed_ref="${pushed_ref#*:}" # src:dst — the destination is what lands
