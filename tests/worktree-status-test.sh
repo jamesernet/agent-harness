@@ -130,6 +130,21 @@ git -C "$repo" branch -q feature/behind "$root_sha"
 git -C "$repo" branch -q -u origin/main feature/behind
 git -C "$repo" worktree add -q "$tmp/behind" feature/behind
 
+# 18. Work that landed on origin/main with no PR, while LOCAL main is still
+# behind. Measured against local main alone this branch has one unlanded
+# commit and would read STRANDED; measured against origin/main too it has
+# nothing unlanded and must produce no row at all. This is why protected refs
+# include the origin/ copy, and the case that pins it.
+clone="$tmp/clone"
+git clone -q "$origin" "$clone"
+git -C "$clone" checkout -q -b feature/landed-upstream
+gitc "$clone" commit -q --allow-empty -m "landed upstream, no PR"
+git -C "$clone" checkout -q main
+git -C "$clone" merge -q --ff-only feature/landed-upstream
+git -C "$clone" push -q origin main
+git -C "$repo" fetch -q origin main # origin/main moves; local main does not
+git -C "$repo" branch -q feature/landed-upstream origin/main
+
 # The fake gh. It answers `pr list` from the fixture and refuses anything else.
 mkdir -p "$tmp/fakebin"
 prs="$tmp/prs.json"
@@ -234,8 +249,13 @@ r="$(wt_row feature/gone)"
 [[ "$(field "$r" .upstream)" = gone && "$(field "$r" .headline)" = STRANDED ]] ||
   fail "gone: $r"
 r="$(wt_row feature/behind)"
-[[ "$(field "$r" .upstream)" = behind && "$(field "$r" .upstreamBehind)" = 1 && "$(field "$r" .ahead)" = 0 ]] ||
+# Behind by two: the policy commit, and the commit case 18 landed on origin/main.
+[[ "$(field "$r" .upstream)" = behind && "$(field "$r" .upstreamBehind)" = 2 && "$(field "$r" .ahead)" = 0 ]] ||
   fail "behind: $r"
+# 18
+[[ -z "$(br_row feature/landed-upstream)" && -z "$(wt_row feature/landed-upstream)" ]] ||
+  fail "a branch already on origin/main (local main behind) was listed: $(br_row feature/landed-upstream)"
+[[ "$(wt_row main | jq -r .ahead)" = 0 ]] || fail "local main behind origin/main was counted as ahead"
 
 # 16. From inside a linked worktree the report is the same report.
 out2="$(run_status "$wt_stranded" --json)"
