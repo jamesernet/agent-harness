@@ -45,7 +45,8 @@ payload() { # <cwd> <command>
 # nothing for nothing and never reach its own default.
 # The hook treats paths under $TMPDIR as scratch, and this test's fixtures live
 # under the real one -- so the hook is given a scratch root of its own, and the
-# fixtures stay "outside".
+# fixtures stay "outside". On Linux the real one is /tmp; a hook that also
+# called a literal /tmp scratch read every fixture here as scratch, on CI only.
 scratch_root="$tmp/scratch-root"
 mkdir -p "$scratch_root"
 decide() { # <cwd> <command> -> allow|ask|deny

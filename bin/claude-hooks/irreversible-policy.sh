@@ -27,11 +27,14 @@ set -euo pipefail
 #   recursive delete    rm -r whose target resolves OUTSIDE the command's repo,
 #                       or names / or a home outright (~, ~/, ~user, //, /., "$HOME"/).
 #                       "Inside" includes every linked worktree of the same
-#                       repository, and scratch roots are not outside: $TMPDIR,
-#                       /tmp, /var/tmp and ~/.cache. A worktree-per-session flow
-#                       cleans a sibling's node_modules, and a cache or a temp
-#                       directory is where scratch goes; asking about those is
-#                       how a guard earns its removal.
+#                       repository, and scratch roots are not outside: $TMPDIR
+#                       (which is /tmp exactly where it is unset, as on Linux)
+#                       and ~/.cache. A worktree-per-session flow cleans a
+#                       sibling's node_modules, and a cache or a temp directory
+#                       is where scratch goes; asking about those is how a
+#                       guard earns its removal. Not a literal /tmp beside a set
+#                       $TMPDIR: on macOS $TMPDIR is elsewhere, and a hook that
+#                       calls two roots scratch cannot be told to call one.
 #
 # ...in any of the spellings a shell allows in front of the verb: `sudo`,
 # `env K=V`, a bare `K=V` assignment, `command`, `exec`, `nohup`, `nice`,
@@ -361,8 +364,12 @@ while IFS= read -r raw; do
         done < <(git -C "$repo" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
       fi
       # Scratch roots are not outside: a path UNDER them, never the root itself.
+      # $TMPDIR, not also a literal /tmp: the test suite points TMPDIR at a root
+      # of its own, and on Linux its fixtures live under /tmp, which a literal
+      # entry turned into scratch -- measured on CI as "outside repo: expected
+      # ask, got allow".
       if [[ "$inside" -eq 0 ]]; then
-        for scratch in "${TMPDIR:-/tmp}" /tmp /var/tmp "$HOME/.cache"; do
+        for scratch in "${TMPDIR:-/tmp}" "$HOME/.cache"; do
           [[ -d "$scratch" ]] || continue
           scratch="$(llmctx_target_canonical "$scratch")"
           case "$t" in
