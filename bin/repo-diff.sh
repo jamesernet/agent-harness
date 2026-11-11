@@ -248,6 +248,11 @@ else
 
   if [[ ! -f "$installed_hook" ]]; then
     add_finding git-hook MISSING "agent-harness branch backstop" missing git-hooks "$remediation"
+  elif grep -q 'scaffold-hook-shim' "$installed_hook"; then
+    # project-scaffold's placeholder, asking to be replaced by the installer.
+    # Reported identically to a husky hook, it looked like an integration a
+    # person had to investigate; it is a one-command fix, so it is MISSING.
+    add_finding git-hook MISSING "agent-harness branch backstop" "scaffold placeholder, not yet replaced" git-hooks "$remediation"
   elif ! grep -q 'llmctx-hook' "$installed_hook"; then
     add_finding git-hook UNKNOWN "agent-harness branch backstop" "foreign pre-commit hook" git-hooks "$remediation"
   elif cmp "$SRC/bin/git-hooks/pre-commit" "$installed_hook" >/dev/null 2>&1; then

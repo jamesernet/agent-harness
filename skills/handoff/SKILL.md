@@ -18,3 +18,5 @@ Do not duplicate content already captured in other artifacts (PRDs, plans, ADRs,
 Redact any sensitive information, such as API keys, passwords, or personally identifiable information.
 
 If the user passed arguments, treat them as a description of what the next session will focus on and tailor the doc accordingly.
+
+The next session opens with [start-a-session](../start-a-session/), which reads the tracker and the worktrees rather than a handoff file — so put what it cannot see (what you were about to do, and what you learned) on the ticket, and leave what it can see out.

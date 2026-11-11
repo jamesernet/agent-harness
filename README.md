@@ -232,8 +232,11 @@ Never build directly on `main` or `master`. A single session may use a feature b
 ```sh
 bin/worktree.sh new feature/example
 bin/worktree.sh ls
+bin/worktree.sh status          # what is in flight: dirty, unlanded, PR, merge proof
 bin/worktree.sh rm feature/example
 ```
+
+`status` is read-only and exists because finished work was invisible: it reports, per worktree and per branch with commits not yet on a protected branch, the dirty state, the commits, the upstream, the pull request for the branch and — when that PR has merged — whether this tip is what merged (`merged-exact`, `merged-ancestor`) or has moved past it (`diverged`). The line that matters is `STRANDED`: commits and no pull request. `--json` gives a skill the same report. It deletes nothing and suggests nothing.
 
 Briefs and handoffs live on the issue tracker, which is the source of truth: the brief is the issue, and a mid-flight handoff is a comment on it. A repository that wants a committed mirror keeps `docs/briefs/README.md`, which is what the policy checker expects by default; one that does not declares `"briefs": "tracker"` in `.llmctx.json`, as this repository does. Commits should be logically scoped, use a clear subject of at most 72 characters, and omit `Co-authored-by` trailers. Nothing pushes or opens a PR without an explicit request.
 
