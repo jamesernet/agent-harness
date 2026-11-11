@@ -35,7 +35,14 @@ jq -e '.healthy == false and any(.checks[]; .id == "adapters" and .status == "FA
   fail "missing adapters were not reported"
 
 HOME="$test_home" "$copy/install.sh" >/dev/null
-jq -e '.permissions.allow == ["Private(example)"] and .theme == "dark" and (.hooks.PreToolUse | length) == 2' \
+# The hook-entry count is read from what this repository DECLARES rather than
+# written as a literal. The invariant being pinned is "installation added the
+# entries claude/settings.json declares and no others" — a hardcoded number
+# says nothing about that, and breaks on every hook added thereafter, which is
+# a test failure that teaches nothing.
+declared_hooks="$(jq '.hooks.PreToolUse | length' "$copy/claude/settings.json")"
+jq -e --argjson n "$declared_hooks" \
+  '.permissions.allow == ["Private(example)"] and .theme == "dark" and (.hooks.PreToolUse | length) == $n' \
   "$test_home/.claude/settings.json" >/dev/null || fail "private Claude settings were not preserved"
 HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/healthy.json" ||
   fail "installed machine was reported unhealthy"

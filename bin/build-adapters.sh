@@ -321,6 +321,10 @@ render_claude() {
   echo "| \`deny\` | blocks outright — default for committed client profiles |"
   echo
   echo "Repo-local config beats global, so the strict setting lives in the repos that warrant it. The hook is a backstop; the rule in the guidelines is the intent, and it applies even where the policy is \`off\`."
+  echo
+  echo "The same four values govern a second key, \`git config llmctx.irreversiblePolicy\`, behind \`$CLAUDE_CONFIG_DISPLAY/hooks/irreversible-policy.sh\`. It judges the ACTION rather than the branch: force push, hard reset, history rewrite, force branch deletion, remote branch deletion, and a recursive delete reaching outside the repository. Its default is \`ask\` everywhere — \"stop and confirm\" is not a strictness dial, so unlike \`branchPolicy\` it is not derived from the profile, and \`remind\` is treated as \`ask\` because warning once and then allowing every destructive command after it protects nothing."
+  echo
+  echo "Database drops, migrations against a non-local environment, \`git rebase\`, \`commit --amend\`, and opening a PR unasked are NOT checked, deliberately: none is recognisable from a command string without guessing, and a guard that is wrong on ordinary work gets switched off."
 }
 
 render_codex() {

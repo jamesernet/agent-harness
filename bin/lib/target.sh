@@ -12,6 +12,7 @@
 # INTERFACE
 #
 #   llmctx_target_from_command "<command text>"
+#   llmctx_target_action_statements "<command text>"   (one statement per line, nothing removed)
 #   $LLMCTX_GIT_GLOBAL_OPTS_RE   (an ERE fragment, see below)
 #
 # Prints the directory the command names, or nothing when it cannot tell.
@@ -59,6 +60,37 @@ llmctx_target_expand_home() {
   esac
 }
 
+llmctx_target_strip_slashes() {
+  local p="$1"
+  while [[ "$p" == */ && "$p" != "/" ]]; do p="${p%/}"; done
+  printf '%s\n' "$p"
+}
+
+# Resolve symlinks and `..` through the deepest ancestor that EXISTS, then
+# re-append the part that does not yet (a new file's parent may be new).
+#
+# Any caller comparing two paths needs this, and comparing paths is what every
+# consumer of this library does: `/var` and `/private/var` are the same
+# directory on macOS, so a prefix test between an uncanonicalised path and a
+# `git rev-parse --show-toplevel` result is wrong in whichever direction the
+# symlink was not followed. That is not a hypothetical — it is the first thing
+# that fails when you write a test with mktemp on a Mac.
+llmctx_target_canonical() {
+  local p="$1" rest="" dir
+  p="$(llmctx_target_strip_slashes "$p")"
+  dir="$p"
+  while [[ ! -d "$dir" && "$dir" != "/" && -n "$dir" ]]; do
+    rest="/$(basename "$dir")$rest"
+    dir="$(dirname "$dir")"
+  done
+  if [[ -d "$dir" ]]; then
+    dir="$(cd "$dir" 2>/dev/null && pwd -P)" || dir="$p"
+    printf '%s\n' "$(llmctx_target_strip_slashes "$dir$rest")"
+  else
+    printf '%s\n' "$p"
+  fi
+}
+
 # Command substitutions are removed FIRST. A `cd` inside `$( )` or backticks
 # runs in a subshell whose directory never reaches the outer command, so
 # honouring it would scope a guard to a directory the write never touches —
@@ -78,6 +110,39 @@ llmctx_target_statements() {
   printf '%s' "$1" |
     sed -E -e 's/\$\([^()]*\)//g' -e 's/`[^`]*`//g' |
     tr ';&|()' '\n\n\n\n\n'
+}
+
+# Statements for ACTION matching: the same separators, plus backticks, and
+# NOTHING removed. llmctx_target_statements strips `$( )` and backticks because
+# a `cd` inside a substitution cannot move the outer command — that is a fact
+# about shell STATE. A `git push --force` inside one still pushes — that is a
+# SIDE EFFECT, and the hook that judges actions must see it. The `(` in the
+# separator set already starts a new statement at `$(`; the backtick is added
+# so `\`git push --force\`` is seen the same way.
+# A statement may also begin with a shell keyword or a brace that the matchers
+# below would otherwise see as the verb: `if x; then git push --force; fi`,
+# `for r in a; do rm -rf $r; done`, `{ git push --force; }`, `! rm -rf /`.
+# Those are stripped from the front of each statement, repeatedly, so the
+# verb is what follows them. Braces are not separators -- `${HOME}` must stay
+# whole -- so only a LEADING brace is removed. BSD sed takes the label and the
+# branch as separate expressions.
+#
+# A heredoc body is data, not statements: `cat > notes.md <<'EOF'` followed by
+# a line reading `git push --force` writes a file. The body lines, up to the
+# delimiter, are dropped before splitting; a `<<-` delimiter may be indented
+# with tabs, as the shell allows.
+llmctx_target_action_statements() {
+  printf '%s\n' "$1" |
+    awk '
+      body { if ($0 == delim || (dash && sub(/^\t+/, "") && $0 == delim)) { body = 0 } ; next }
+      { print }
+      match($0, /<<-?[[:space:]]*["'"'"']?[A-Za-z_][A-Za-z0-9_]*["'"'"']?/) {
+        d = substr($0, RSTART, RLENGTH); dash = (d ~ /^<<-/)
+        sub(/^<<-?[[:space:]]*["'"'"']?/, "", d); sub(/["'"'"']$/, "", d)
+        delim = d; body = 1
+      }' |
+    tr ';&|()`' '\n\n\n\n\n\n' |
+    sed -E -e ':a' -e 's/^[[:space:]]*([{}]|(then|do|else|elif|!)([[:space:]]+|$))//' -e 'ta'
 }
 
 # A plain variable assigned in the SAME command text. This is the dominant way

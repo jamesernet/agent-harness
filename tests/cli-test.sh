@@ -25,9 +25,20 @@ output="$($CLI explain branchPolicy "$repo")"
 output="$($CLI explain protectedBranches "$repo")"
 [[ "$output" == "protectedBranches = main stage (source: repo-policy)" ]] || fail "$output"
 
+# The second tenant on the same ladder. Note the profile is `client` here and
+# branchPolicy resolved to deny above, while this stays `ask` — the default is
+# deliberately not profile-derived.
+output="$($CLI explain irreversiblePolicy "$repo")"
+[[ "$output" == "irreversiblePolicy = ask (source: built-in)" ]] || fail "$output"
+
 git -C "$repo" config --local llmctx.branchPolicy off
 output="$($CLI explain branchPolicy "$repo")"
 [[ "$output" == "branchPolicy = off (source: git-local)" ]] || fail "$output"
+
+git -C "$repo" config --local llmctx.irreversiblePolicy deny
+output="$($CLI explain irreversiblePolicy "$repo")"
+[[ "$output" == "irreversiblePolicy = deny (source: git-local)" ]] || fail "$output"
+git -C "$repo" config --local --unset llmctx.irreversiblePolicy
 
 if "$CLI" explain unknown "$repo" >/dev/null 2>&1; then
   fail "unknown setting was accepted"
