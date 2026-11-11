@@ -32,6 +32,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK_SRC="$SCRIPT_DIR/git-hooks/pre-commit"
 POLICY_LIB_SRC="$SCRIPT_DIR/lib/policy.sh"
 MARKER="llmctx-hook"
+# A contract between two repositories, frozen the way the `llmctx` identifier
+# is. project-scaffold writes a placeholder at .git/hooks/pre-commit whose whole
+# body is `exec pre-commit.local`, so a repository's committed guard runs before
+# this installer has been near it; its header carries this string and says this
+# installer owns the path and will replace the file. Without recognising it the
+# shim read as foreign, the preservation branch found pre-commit.local already
+# present, and the install took the hard skip below -- so the handoff both
+# tools documented never happened and the repository got no policy resolution
+# at all (#59). Nothing is lost by replacing it: our hook chains to
+# pre-commit.local, which is the only thing the shim did.
+SHIM_MARKER="scaffold-hook-shim"
 
 REPOS=(
   "$HOME/repos/github.com/jamesernet/agent-harness"
@@ -87,9 +98,10 @@ for repo in "${REPOS[@]}"; do
   mkdir -p "$hooks_dir"
   existing="$hooks_dir/pre-commit"
 
-  # Ours = new marker, or the pre-marker version of this same hook (so
-  # upgrading doesn't preserve a stale copy of ourselves as pre-commit.local).
-  if [ -f "$existing" ] && ! grep -qE "$MARKER|Installed by llm-context" "$existing"; then
+  # Ours = new marker, the pre-marker version of this same hook (so upgrading
+  # doesn't preserve a stale copy of ourselves as pre-commit.local), or the
+  # scaffold's placeholder, which exists to be replaced by this.
+  if [ -f "$existing" ] && ! grep -qE "$MARKER|Installed by llm-context|$SHIM_MARKER" "$existing"; then
     if [ -e "$hooks_dir/pre-commit.local" ]; then
       echo "skip: $repo (has both a foreign pre-commit AND pre-commit.local — resolve manually)" >&2
       continue

@@ -328,6 +328,32 @@ git -C "$wt_main" -c user.email=t@t -c user.name=t merge side >/dev/null 2>&1 ||
 [[ -z "$(cd / && hook_with "$(edit_payload "$wt_feature" "$wt_main/conflict.txt")")" ]] ||
   fail "denied a conflict resolution mid-merge on the trunk"
 
+# --- remind without shasum ----------------------------------------------------
+#
+# The once-per-session marker was keyed with `shasum`, which a minimal Linux
+# does not ship. There the command substitution failed, the ERR trap exited 0,
+# and `remind` -- this repository's own default -- silently became `off`. A
+# guard that fails open cannot report its own absence, so this runs the hook
+# with both hashing tools masked off PATH and asks for the reminder (#56).
+minbin="$(mktemp -d)"
+for tool in bash git jq grep sed awk cut cat find mkdir rm head tail tr sort uniq wc dirname basename cksum env; do
+  real="$(command -v "$tool" 2>/dev/null)" || continue
+  ln -sf "$real" "$minbin/$tool"
+done
+[[ ! -e "$minbin/shasum" && ! -e "$minbin/sha256sum" ]] || fail "test setup: a hashing tool leaked into the minimal PATH"
+remind_repo="$(mktemp -d)"
+git -C "$remind_repo" init -q -b main
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","branchPolicy":"remind"}' >"$remind_repo/.llmctx.json"
+remind_payload="$(jq -nc --arg c "$remind_repo" --arg cmd "git commit -m x" \
+  '{tool_name:"Bash",session_id:"no-shasum-session",tool_input:{command:$cmd},cwd:$c}')"
+first="$(printf '%s' "$remind_payload" | PATH="$minbin" TMPDIR="$minbin/tmp" "$HOOK" 2>"$minbin/err")"
+[[ "$first" == *'"permissionDecision": "ask"'* ]] ||
+  fail "remind did not fire without shasum on PATH (output: ${first:-<empty>}; stderr: $(cat "$minbin/err")) -- the marker key fell open"
+second="$(printf '%s' "$remind_payload" | PATH="$minbin" TMPDIR="$minbin/tmp" "$HOOK" 2>/dev/null)"
+[[ -z "$second" ]] || fail "remind fired twice for one session -- the marker was not written: $second"
+[[ -n "$(find "$minbin/tmp/claude-branch-policy" -type f 2>/dev/null)" ]] || fail "no marker file was written"
+rm -rf "$minbin" "$remind_repo"
+
 # --- fail open --------------------------------------------------------------
 #
 # A guard that blocks on a malformed payload gets removed, and then it protects
