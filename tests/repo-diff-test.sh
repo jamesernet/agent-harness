@@ -99,6 +99,29 @@ printf '%s\n' '#!/bin/sh' 'git symbolic-ref --short HEAD' >"$hp/.githooks/pre-co
 jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "UNKNOWN")' "$tmp/hp-own.json" >/dev/null ||
   fail "a foreign branch check was not distinguished from none at all"
 
+# --- a scaffold shim is MISSING, a foreign hook is UNKNOWN -------------------
+#
+# Both used to report one undifferentiated UNKNOWN. The shim is asking to be
+# replaced by one command; the husky hook is an integration a person must look
+# at. Reporting them identically is what kept the stalled handoff invisible.
+shim="$tmp/shim"
+mkdir -p "$shim"
+git -C "$shim" init -q -b main
+git -C "$shim" checkout -q -b feature/t
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","briefs":"tracker","claudeImport":false}' >"$shim/.llmctx.json"
+printf '%s\n' '# Project instructions' >"$shim/AGENTS.md"
+shim_hooks="$(git -C "$shim" rev-parse --git-path hooks)"
+case "$shim_hooks" in /*) ;; *) shim_hooks="$shim/$shim_hooks" ;; esac
+mkdir -p "$shim_hooks"
+printf '%s\n' '#!/bin/sh' '# scaffold-hook-shim — placeholder' 'exec "$(dirname "$0")/pre-commit.local" "$@"' >"$shim_hooks/pre-commit"
+"$CLI" repo diff "$shim" --json >"$tmp/shim.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "MISSING" and (.actual | test("scaffold")))' "$tmp/shim.json" >/dev/null ||
+  fail "a scaffold shim was not reported as MISSING: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/shim.json")"
+printf '%s\n' '#!/bin/sh' '# husky' 'echo husky' >"$shim_hooks/pre-commit"
+"$CLI" repo diff "$shim" --json >"$tmp/husky.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN" and .actual == "foreign pre-commit hook")' "$tmp/husky.json" >/dev/null ||
+  fail "a foreign hook was not reported as UNKNOWN: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/husky.json")"
+
 # sync-location. HOME is overridden rather than writing into the real home, and
 # the repository is created under the fake HOME so the resolved path genuinely
 # sits beneath a sync root. The OK case matters as much as the CONFLICT one: the
