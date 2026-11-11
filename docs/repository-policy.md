@@ -86,7 +86,7 @@ Statuses are:
 - `MISSING`: a required convention is absent;
 - `CONFLICT`: policy is invalid, or the repository's location is unsafe for Git;
 - `STALE`: an installed managed component differs from this release;
-- `UNKNOWN`: another hook framework or foreign component owns the seam.
+- `UNKNOWN`: another hook framework or foreign component owns the seam. A `project-scaffold` placeholder hook (`scaffold-hook-shim`) is not foreign — it exists to be replaced by `bin/install-git-hooks.sh` — so it is reported `MISSING`, with that command as the remediation.
 
 `MISSING`, `CONFLICT`, and `STALE` make the command non-compliant. `OVERRIDE` and `UNKNOWN` are reported without pretending the tool owns an external framework.
 

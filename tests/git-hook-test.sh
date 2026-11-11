@@ -83,4 +83,38 @@ out="$(HOME="$reg_home" "$SRC/bin/install-git-hooks.sh" "$reg_home/explicit")"
 printf '%s\n' "$out" | grep -q "$reg_home/registered" &&
   fail "an explicit repo list did not override the registry"
 
+# --- the scaffold's placeholder asks to be replaced ---------------------------
+#
+# project-scaffold writes a pre-commit whose body is `exec pre-commit.local`,
+# marked scaffold-hook-shim, so the repo's committed guard runs before this
+# installer arrives. It read as foreign; pre-commit.local existed; the install
+# took the hard skip and the repository got no policy resolution (#59).
+shim_repo="$tmp/shim"
+mkdir -p "$shim_repo"
+git -C "$shim_repo" init -q
+shim_hooks="$(git -C "$shim_repo" rev-parse --git-path hooks)"
+case "$shim_hooks" in /*) ;; *) shim_hooks="$shim_repo/$shim_hooks" ;; esac
+mkdir -p "$shim_hooks"
+printf '%s\n' '#!/bin/sh' '# scaffold-hook-shim — placeholder, NOT the real guard.' \
+  'exec "$(dirname "$0")/pre-commit.local" "$@"' >"$shim_hooks/pre-commit"
+printf '%s\n' '#!/bin/sh' 'echo committed guard ran' >"$shim_hooks/pre-commit.local"
+chmod +x "$shim_hooks/pre-commit" "$shim_hooks/pre-commit.local"
+out="$("$SRC/bin/install-git-hooks.sh" "$shim_repo" 2>&1)"
+[[ "$out" != *"skip:"* ]] || fail "the scaffold shim was treated as a foreign hook: $out"
+grep -q 'llmctx-hook' "$shim_hooks/pre-commit" || fail "the scaffold shim was not replaced by the backstop"
+grep -q 'committed guard ran' "$shim_hooks/pre-commit.local" ||
+  fail "replacing the shim disturbed the repository's own pre-commit.local"
+# A genuinely foreign hook beside a pre-commit.local is still the hard skip.
+foreign_repo="$tmp/foreign"
+mkdir -p "$foreign_repo"
+git -C "$foreign_repo" init -q
+foreign_hooks="$(git -C "$foreign_repo" rev-parse --git-path hooks)"
+case "$foreign_hooks" in /*) ;; *) foreign_hooks="$foreign_repo/$foreign_hooks" ;; esac
+mkdir -p "$foreign_hooks"
+printf '%s\n' '#!/bin/sh' '# husky' 'echo husky' >"$foreign_hooks/pre-commit"
+printf '%s\n' '#!/bin/sh' 'echo local' >"$foreign_hooks/pre-commit.local"
+out="$("$SRC/bin/install-git-hooks.sh" "$foreign_repo" 2>&1)"
+[[ "$out" == *"skip:"*"resolve manually"* ]] || fail "a foreign hook beside pre-commit.local was not skipped: $out"
+grep -q husky "$foreign_hooks/pre-commit" || fail "a foreign hook was overwritten"
+
 echo "git hook tests: passed"
