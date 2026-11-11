@@ -28,25 +28,54 @@ usage() {
 }
 
 cmd="${1:-}"
-# Anchor to the MAIN checkout, not the current one. --show-toplevel returns the
-# worktree you are standing in, so running this from inside a worktree computed
-# a parent nested under that worktree. --git-common-dir points at the main
-# checkout's .git from any worktree, and resolves from any subdirectory.
-# Two statements, not one. Nested inside a larger string the substitution
-# failure is invisible to set -e: outside a repository `git rev-parse` wrote
-# its fatal to stderr and nothing to stdout, the shell then ran `cd "/.."`,
-# which succeeds, and the script printed "///-worktrees/<slug>" and exited 0.
-# A bare assignment is the one form set -e does track, so this exits 128 the
-# way it did before the anchor changed.
-# A work tree is a precondition, not an inference. --git-common-dir returns
-# "." in a BARE repository, so `cd "./.."` anchored the parent one level
-# above the bare repo and the script answered confidently about a checkout
-# that does not exist. --show-toplevel is the assertion the previous anchor
-# got for free; it stays as the guard, and --git-common-dir is used only for
-# the anchor, which is the one thing it is better at.
-git rev-parse --show-toplevel >/dev/null
+
+# Where the MAIN checkout is. Every subcommand lays worktrees out beside it, so
+# it is resolved once, here, and asserted rather than inferred.
+#
+# --show-toplevel is the work-tree assertion. Outside a repository and in a bare
+# one it is fatal, and a bare `var=$(...)` is the form `set -e` tracks, so the
+# script stops with git's own message and exit 128 instead of printing a path it
+# invented. It is also the right answer wherever the tree we stand in IS the
+# main checkout: the primary, any subdirectory of it, and a submodule's own
+# checkout -- where the shared git dir is <outer>/.git/modules/<sub>, and
+# `dirname` of it would have put the worktrees INSIDE the superproject's .git.
+#
+# A linked worktree is the one place --show-toplevel is wrong, because it names
+# the worktree we are standing in. It is recognised the way build-adapters.sh
+# and this repo's pre-commit.local recognise it: the per-worktree git dir and
+# the shared one are different directories. Only then is the main checkout
+# taken from the shared .git, and only when that directory is literally named
+# ".git". A linked worktree of a submodule, or of a repository made with
+# --separate-git-dir, has no checkout at `dirname`, so it is refused by name.
+#
+# Physical paths (pwd -P) throughout: git records worktrees as /private/var on
+# macOS while $TMPDIR says /var, and `git worktree remove` matches the recorded
+# spelling. --show-toplevel is already realpath'd by git; --git-common-dir is
+# RELATIVE from the primary (".git", "../.git"), hence the cd. Each cd is its
+# own bare assignment so a failure is visible to set -e, not swallowed inside a
+# larger string.
+toplevel="$(git rev-parse --show-toplevel)"
+git_dir="$(git rev-parse --git-dir)"
+git_dir="$(cd "$git_dir" && pwd -P)"
 common_dir="$(git rev-parse --git-common-dir)"
-root="$(cd "$common_dir/.." && pwd -P)"
+common_dir="$(cd "$common_dir" && pwd -P)"
+if [[ "$git_dir" == "$common_dir" ]]; then
+  root="$toplevel"
+elif [[ "$(basename "$common_dir")" == .git ]]; then
+  root="$(dirname "$common_dir")"
+else
+  cat >&2 <<EOF
+worktree.sh: refusing to lay out worktrees from here.
+
+  standing in:    $toplevel (a linked worktree)
+  shared git dir: $common_dir
+
+That directory is not a ".git" beside a checkout, so there is no main checkout
+to put worktrees next to: this is a linked worktree of a submodule, or of a
+repository created with --separate-git-dir. Run from the primary checkout.
+EOF
+  exit 1
+fi
 repo="$(basename "$root")"
 wt_root="$(dirname "$root")/$repo-worktrees"
 

@@ -14,6 +14,11 @@ set -euo pipefail
 #    you are standing in. Since the whole point is one session per worktree,
 #    running the helper from inside one computed a parent nested under that
 #    worktree. Observed 2026-11-10.
+# 3. The fix for (2) anchored on --git-common-dir, which in a SUBMODULE checkout
+#    is <outer>/.git/modules/<sub>, so the parent landed INSIDE the
+#    superproject's .git. The root is now asserted from --show-toplevel unless
+#    the checkout is a linked worktree, and a linked worktree whose shared git
+#    dir is not a ".git" beside a checkout is refused. Observed 2026-11-11.
 #
 # Isolation: every repository here is created under $tmp, so the real
 # repository's worktree list is never touched.
@@ -119,5 +124,56 @@ out="$(cd "$bare" && "$WT" path some/branch 2>/dev/null)" || status=$?
   fail "path in a bare repository exited 0 and printed: $out"
 [[ -z "$out" ]] ||
   fail "path in a bare repository invented a location: $out"
+
+# A submodule's own checkout IS a main checkout, so its worktrees land beside
+# it (<outer>/sub-worktrees), exactly as main behaved -- never under the
+# superproject's .git, which is where anchoring on --git-common-dir
+# (<outer>/.git/modules/sub, parent <outer>/.git/modules) put them.
+# protocol.file.allow: git >= 2.38.1 refuses file:// submodules by default.
+sub_origin="$tmp/sub-origin"
+git init -q -b main "$sub_origin"
+git -C "$sub_origin" -c user.email=t@example.com -c user.name=t \
+  commit -q --allow-empty -m "sub root"
+outer="$tmp/org/outer"
+mkdir -p "$outer"
+git -C "$outer" init -q -b main
+git -C "$outer" -c user.email=t@example.com -c user.name=t \
+  commit -q --allow-empty -m "outer root"
+git -C "$outer" -c protocol.file.allow=always submodule add -q "$sub_origin" sub
+git -C "$outer" -c user.email=t@example.com -c user.name=t \
+  commit -q -m "add sub"
+got="$(cd "$outer/sub" && "$WT" path feature/x)"
+[[ "$got" = "$tmp/org/outer/sub-worktrees/feature-x" ]] ||
+  fail "path from a submodule checkout was not beside the submodule: $got"
+mkdir -p "$outer/sub/deep/er"
+got="$(cd "$outer/sub/deep/er" && "$WT" path feature/x)"
+[[ "$got" = "$tmp/org/outer/sub-worktrees/feature-x" ]] ||
+  fail "path from a submodule subdirectory was wrong: $got"
+(cd "$outer/sub" && "$WT" new feature/x >/dev/null)
+[[ -d "$tmp/org/outer/sub-worktrees/feature-x" ]] ||
+  fail "new from a submodule did not create <outer>/sub-worktrees/<slug>"
+[[ ! -e "$outer/.git/modules-worktrees" ]] ||
+  fail "new from a submodule wrote inside the superproject's .git"
+
+# A linked worktree OF a submodule has a shared git dir that is not a ".git"
+# beside any checkout, so there is nowhere honest to lay out worktrees. It
+# must refuse by name rather than answer -- this is the only input that
+# reaches the refusal, so it is what keeps that branch from being dead code.
+git -C "$outer/sub" worktree add -q -b sub/linked "$tmp/sub-linked" main
+status=0
+out="$(cd "$tmp/sub-linked" && "$WT" path some/branch 2>"$tmp/sub-linked.err")" || status=$?
+[[ "$status" -ne 0 ]] ||
+  fail "path from a linked worktree of a submodule exited 0 and printed: $out"
+[[ -z "$out" ]] ||
+  fail "path from a linked worktree of a submodule invented a location: $out"
+grep -q submodule "$tmp/sub-linked.err" ||
+  fail "the refusal did not say why: $(cat "$tmp/sub-linked.err")"
+
+# Entered through a symlink, the answer is still the physical path, because
+# that is the spelling git records and `git worktree remove` matches against.
+ln -s "$repo" "$tmp/via-link"
+got="$(cd "$tmp/via-link" && "$WT" path feature/other)"
+[[ "$got" = "$tmp/org/demo-worktrees/feature-other" ]] ||
+  fail "path entered via a symlink was not the physical path: $got"
 
 echo "worktree tests: passed"
