@@ -38,9 +38,25 @@ bootstrap_args=("$@")
 "$SCRIPT_DIR/install-git-hooks.sh" "$SRC"
 hooks_dir="$(git -C "$SRC" rev-parse --git-path hooks)"
 case "$hooks_dir" in /*) ;; *) hooks_dir="$SRC/$hooks_dir" ;; esac
-cp "$SCRIPT_DIR/git-hooks/pre-commit-local.agent-harness" "$hooks_dir/pre-commit.local"
-chmod +x "$hooks_dir/pre-commit.local"
-echo "installed pre-commit.local (skill lint + adapter drift check) -> $SRC"
+# pre-commit.local is the slot install-git-hooks.sh PRESERVES a foreign hook
+# into, and the slot this repository's own checks occupy. The line above can
+# therefore have just written a husky or lefthook hook there and printed
+# "preserved:", and an unconditional cp here destroyed it four lines later,
+# exit 0 (#57). The file is overwritten only when it is ours: the marker, or
+# the pre-marker header of this same file, so an upgrade still refreshes it.
+local_hook="$hooks_dir/pre-commit.local"
+local_hook_status=0
+if [ -f "$local_hook" ] && ! grep -qE "llmctx-local-checks|agent-harness ITSELF" "$local_hook"; then
+  local_hook_status=1
+  echo "bootstrap: NOT overwriting $local_hook" >&2
+  echo "  it is not this repository's local-checks hook; install-git-hooks.sh preserves a" >&2
+  echo "  foreign pre-commit there and the branch backstop chains to it. Move it aside, or" >&2
+  echo "  fold its checks into bin/git-hooks/pre-commit-local.agent-harness, then re-run." >&2
+else
+  cp "$SCRIPT_DIR/git-hooks/pre-commit-local.agent-harness" "$local_hook"
+  chmod +x "$local_hook"
+  echo "installed pre-commit.local (skill lint + adapter drift check) -> $SRC"
+fi
 
 # Agents install AFTER the backstop and never abort it: a hand-written
 # ~/.claude/agents/reviewer.md is a conflict, not a reason to leave the repo
@@ -69,6 +85,9 @@ adapter_status=0
 "$SCRIPT_DIR/build-adapters.sh" "$@" || adapter_status=$?
 
 echo
+if ((local_hook_status != 0)); then
+  echo "bootstrap: this repository's pre-commit.local was NOT installed; a foreign hook occupies the slot (see above)." >&2
+fi
 if ((agents_status != 0)); then
   echo "bootstrap: install-agents.sh exited $agents_status; the agents above were not all installed." >&2
   echo "  resolve the conflict named, then re-run bin/install-agents.sh." >&2
@@ -81,5 +100,6 @@ if ((adapter_status != 0)); then
   exit "$adapter_status"
 fi
 ((agents_status == 0)) || exit "$agents_status"
+((local_hook_status == 0)) || exit "$local_hook_status"
 
 echo "bootstrap complete. per-repo git hooks: bin/install-git-hooks.sh in each repo."

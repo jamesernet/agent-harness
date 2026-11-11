@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
+# llmctx-local-checks
 # Repo-local pre-commit checks for agent-harness ITSELF. Installed as
 # .git/hooks/pre-commit.local by bin/bootstrap.sh; the branch backstop
-# (bin/git-hooks/pre-commit) execs it after its own check passes.
+# (bin/git-hooks/pre-commit) execs it after its own check passes. The marker
+# on line 2 is how bootstrap.sh knows the file at that path is this one and
+# not a foreign hook that install-git-hooks.sh preserved there.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 bin/lint-skills.sh
