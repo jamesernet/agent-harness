@@ -16,9 +16,11 @@ case "$REF" in
     ;;
 esac
 UPSTREAM="https://github.com/cloudflare/skills"
-SKILLS=(agents-sdk cloudflare cloudflare-email-service cloudflare-one
-  cloudflare-one-migrations durable-objects sandbox-sdk turnstile-spin
-  web-perf workers-best-practices wrangler)
+# Only what a bundle actually installs. Eleven skills were vendored for a
+# `cloudflare` bundle no account ever activated, while the Cloudflare plugin
+# keeps the full current set in ~/.claude/skills on its own; the one skill in
+# use is web-perf, through the website bundle. Decided on issue #36.
+SKILLS=(web-perf)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
