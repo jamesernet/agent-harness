@@ -25,7 +25,13 @@ set -euo pipefail
 #                       git update-ref -d | git push --delete | -d | --prune |
 #                       --mirror | git push <remote> :<ref>
 #   recursive delete    rm -r whose target resolves OUTSIDE the command's repo,
-#                       or names / or a home outright (~, ~/, ~user, //, /., "$HOME"/)
+#                       or names / or a home outright (~, ~/, ~user, //, /., "$HOME"/).
+#                       "Inside" includes every linked worktree of the same
+#                       repository, and scratch roots are not outside: $TMPDIR,
+#                       /tmp, /var/tmp and ~/.cache. A worktree-per-session flow
+#                       cleans a sibling's node_modules, and a cache or a temp
+#                       directory is where scratch goes; asking about those is
+#                       how a guard earns its removal.
 #
 # ...in any of the spellings a shell allows in front of the verb: `sudo`,
 # `env K=V`, a bare `K=V` assignment, `command`, `exec`, `nohup`, `nice`,
@@ -55,6 +61,12 @@ set -euo pipefail
 #     have.
 #   * `rm -r` inside the repository. Deleting your own build output is ordinary
 #     work. The line is reaching outside the tree you are working in.
+#   * `git push --dry-run`, in any spelling. It never contacts the remote, and
+#     it is the careful way to preview a force push -- asking about it would
+#     punish the caution the guidelines ask for.
+#   * The body of a heredoc. `cat > notes.md <<'EOF'` followed by a line of
+#     `git push --force` writes a file; the body lines are data and are not
+#     read as statements.
 #   * A command string handed to another interpreter: `eval "…"`, `bash -c "…"`,
 #     `sh -c '…'`, `xargs rm -rf`, `find / -delete`. Judging those means
 #     evaluating shell, which this deliberately never does. The limit is named
@@ -174,6 +186,16 @@ is_git() { # <statement> <subcommand-alternation>
   printf '%s' "$1" | grep -qE "${git_re}($2)([[:space:]]|\$)"
 }
 
+# A dry run never contacts the remote. `--dry-run` anywhere, or `-n` in a short
+# cluster AFTER the push word -- `sudo -n git push --force` is not a dry run.
+# The tail is cut with a parameter expansion rather than matched with `.*`:
+# BSD grep -E does not match `push[[:space:]].*[[:space:]]-n` against
+# ` push -n -f `, measured, while the same cluster pattern alone matches.
+push_is_dry_run() { # <statement>
+  has_flag "$1" '--dry-run' && return 0
+  has_short "${1#*push}" n
+}
+
 finding=""
 detail=""
 
@@ -186,7 +208,7 @@ while IFS= read -r raw; do
   st="$(printf '%s' "$raw" | tr -d '\\"'"'"'')"
 
   # --- git, by subcommand.
-  if is_git "$st" push; then
+  if is_git "$st" push && ! push_is_dry_run "$st"; then
     # `+refspec` is the oldest spelling of a forced update, and a short cluster
     # (`-fu`) is how git actually accepts `-f` next to another flag.
     if has_flag "$st" '--force' '--force-with-lease' '--force-if-includes' '--force-with-lease=[^[:space:]]*' ||
@@ -292,7 +314,9 @@ while IFS= read -r raw; do
       # conservative direction the rest of this takes.
       case "$t" in
         '$HOME' | '${HOME}') t="$HOME" ;;
-        '$'*) continue ;; # a variable or substitution: cannot tell, so not judged
+        '$HOME/'*) t="$HOME/${t#\$HOME/}" ;;
+        '${HOME}/'*) t="$HOME/${t#\$\{HOME\}/}" ;;
+        '$'*) continue ;; # any other variable or substitution: cannot tell, so not judged
       esac
       # A `~user` that expand_home left alone is someone's home when that user
       # exists, and a directory literally named `~something` when not.
@@ -319,8 +343,38 @@ while IFS= read -r raw; do
       [[ -n "$repo" ]] || continue
       [[ "$t" == /* ]] || t="$scope_dir/$t"
       t="$(llmctx_target_canonical "$t")"
+      inside=0
       case "$t" in
-        "$repo" | "$repo"/*) ;;
+        "$repo" | "$repo"/*) inside=1 ;;
+      esac
+      # Every linked worktree of this repository is the same tree of work.
+      if [[ "$inside" -eq 0 ]]; then
+        while IFS= read -r wt; do
+          [[ -n "$wt" ]] || continue
+          wt="$(llmctx_target_canonical "$wt")"
+          case "$t" in
+            "$wt" | "$wt"/*)
+              inside=1
+              break
+              ;;
+          esac
+        done < <(git -C "$repo" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
+      fi
+      # Scratch roots are not outside: a path UNDER them, never the root itself.
+      if [[ "$inside" -eq 0 ]]; then
+        for scratch in "${TMPDIR:-/tmp}" /tmp /var/tmp "$HOME/.cache"; do
+          [[ -d "$scratch" ]] || continue
+          scratch="$(llmctx_target_canonical "$scratch")"
+          case "$t" in
+            "$scratch"/*)
+              inside=1
+              break
+              ;;
+          esac
+        done
+      fi
+      case "$inside" in
+        1) ;;
         *)
           finding="recursive delete outside the repository"
           detail="\"$t\" is outside $repo, which is the tree this command is working in"

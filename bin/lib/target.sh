@@ -126,8 +126,22 @@ llmctx_target_statements() {
 # verb is what follows them. Braces are not separators -- `${HOME}` must stay
 # whole -- so only a LEADING brace is removed. BSD sed takes the label and the
 # branch as separate expressions.
+#
+# A heredoc body is data, not statements: `cat > notes.md <<'EOF'` followed by
+# a line reading `git push --force` writes a file. The body lines, up to the
+# delimiter, are dropped before splitting; a `<<-` delimiter may be indented
+# with tabs, as the shell allows.
 llmctx_target_action_statements() {
-  printf '%s' "$1" | tr ';&|()`' '\n\n\n\n\n\n' |
+  printf '%s\n' "$1" |
+    awk '
+      body { if ($0 == delim || (dash && sub(/^\t+/, "") && $0 == delim)) { body = 0 } ; next }
+      { print }
+      match($0, /<<-?[[:space:]]*["'"'"']?[A-Za-z_][A-Za-z0-9_]*["'"'"']?/) {
+        d = substr($0, RSTART, RLENGTH); dash = (d ~ /^<<-/)
+        sub(/^<<-?[[:space:]]*["'"'"']?/, "", d); sub(/["'"'"']$/, "", d)
+        delim = d; body = 1
+      }' |
+    tr ';&|()`' '\n\n\n\n\n\n' |
     sed -E -e ':a' -e 's/^[[:space:]]*([{}]|(then|do|else|elif|!)([[:space:]]+|$))//' -e 'ta'
 }
 

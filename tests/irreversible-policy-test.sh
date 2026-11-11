@@ -43,9 +43,14 @@ payload() { # <cwd> <command>
 # Empty output IS the allow case — the hook prints nothing when it has no
 # opinion — so emptiness is checked before jq, which would otherwise print
 # nothing for nothing and never reach its own default.
+# The hook treats paths under $TMPDIR as scratch, and this test's fixtures live
+# under the real one -- so the hook is given a scratch root of its own, and the
+# fixtures stay "outside".
+scratch_root="$tmp/scratch-root"
+mkdir -p "$scratch_root"
 decide() { # <cwd> <command> -> allow|ask|deny
   local out
-  out="$(payload "$1" "$2" | bash "$HOOK" 2>/dev/null || true)"
+  out="$(payload "$1" "$2" | TMPDIR="$scratch_root" bash "$HOOK" 2>/dev/null || true)"
   if [[ -z "${out//[[:space:]]/}" ]]; then
     echo allow
     return
@@ -140,7 +145,10 @@ want ask "quoted root" "$repo" "rm -rf '/'"
 want ask "another user's home" "$repo" "rm -rf ~root" # a user that exists; ~someone is a literal directory
 want ask "push --prune" "$repo" "git"" push --prune origin"
 want allow "a keyword inside an argument" "$repo" "git"" commit -m 'then do it'"
-want allow "braces inside a path" "$repo" 'rm -rf ${HOME}/repo/node_modules'
+# ${HOME} is expanded like $HOME, and the braces are not statement separators:
+# $tmp/home/../repo is the test repository, so this resolves inside it.
+want allow "braces inside a path" "$repo" 'rm -rf ${HOME}/../repo/node_modules'
+want ask "braces, outside" "$repo" 'rm -rf ${HOME}/Documents'
 # Handed to another interpreter: the header names this as the stated limit.
 want allow "eval is not evaluated" "$repo" "eval '$PF origin main'"
 want allow "bash -c is not evaluated" "$repo" "bash -c '$PF origin main'"
@@ -175,6 +183,32 @@ want allow "variable verb is a stated limit" "$repo" "g=git; \$g push --force or
 mkdir -p "$repo/~literal-dir"
 want allow "a literal ~ directory" "$repo" "rm -rf '~literal-dir'"
 want allow "a literal ~ directory, unquoted path" "$repo" "rm -rf ~literal-dir-that-is-no-user"
+
+# The fourth review: false positives on ordinary work, which is the class
+# that gets a guard switched off.
+git -C "$repo" -c user.email=t@example.com -c user.name=T commit -q --allow-empty -m root
+git -C "$repo" worktree add -q "$tmp/sibling-wt" -b feature/sibling
+mkdir -p "$tmp/sibling-wt/node_modules" "$HOME/.cache/pip" "$scratch_root/build"
+want allow "a sibling worktree of the same repository" "$repo" "rm -rf $tmp/sibling-wt/node_modules"
+want allow "a sibling worktree, relative" "$repo" "rm -rf ../sibling-wt/node_modules"
+want allow "under TMPDIR" "$repo" "rm -rf $scratch_root/build"
+want allow "under ~/.cache" "$repo" "rm -rf ~/.cache/pip"
+want allow "under \$HOME/.cache" "$repo" 'rm -rf $HOME/.cache/pip'
+want ask "a home subpath that is not scratch" "$repo" "rm -rf ~/Documents"
+want ask "\$HOME/<subpath> is known by name" "$repo" 'rm -rf $HOME/Documents'
+want ask "a scratch ROOT itself" "$repo" "rm -rf $scratch_root"
+want allow "a heredoc body mentioning a force push" "$repo" "cat > notes.md <<'EOF'
+$PF origin main
+EOF"
+want allow "an indented heredoc body" "$repo" "cat > notes.md <<-EOF
+	rm -rf /
+	EOF"
+want ask "a force push AFTER a heredoc" "$repo" "cat > notes.md <<'EOF'
+hello
+EOF
+$PF origin main"
+want allow "dry-run force push" "$repo" "git"" push --dry-run --force origin main"
+want allow "dry-run -n force push" "$repo" "git"" push -n -f origin main"
 
 # Flag spellings git accepts (finding 3).
 want ask "clustered -fu" "$repo" "git"" push -fu origin main"
