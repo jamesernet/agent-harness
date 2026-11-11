@@ -10,21 +10,22 @@ usage:
   llmctx version [--json]
   llmctx doctor [--json|--quiet] [--account <name>]
   llmctx explain <profile|branchPolicy|irreversiblePolicy|protectedBranches> [repo]
-  llmctx account list [--json]
-  llmctx account add <name> <dir>
-  llmctx account remove <name>
+  llmctx account list [--provider claude|codex] [--json]
+  llmctx account add [--provider claude|codex] <name> <dir>
+  llmctx account remove [--provider claude|codex] <name>
   llmctx skills install [--dev] [--bundle <name>[,<name>...]] [--account <name>]
   llmctx agents install [--dev] [--account <name>]
   llmctx client apply <profile.toml> [--check]
+  llmctx context apply <profile.toml> [--check]
   llmctx vendor check
   llmctx repo diff [repo] [--json]
   llmctx env check [repo]
   llmctx env explain [repo]
   llmctx publish sync [--check]
 
-`profile` is a REPOSITORY policy (personal|client). `account` is a Claude Code
-config directory — a separate login. Different things, deliberately different
-words.
+`profile` is a REPOSITORY policy (personal|client). A work `context` is an
+identity and security boundary. A provider `account` is a Claude or Codex home
+and separate login. Different axes, deliberately different words.
 EOF
 }
 
@@ -67,6 +68,14 @@ case "$command_name" in
     exec "$SCRIPT_DIR/install-agents.sh" "$@"
     ;;
   client)
+    [[ "${2:-}" == "apply" ]] || {
+      usage >&2
+      exit 2
+    }
+    shift 2
+    exec "$SCRIPT_DIR/client-apply.sh" "$@"
+    ;;
+  context)
     [[ "${2:-}" == "apply" ]] || {
       usage >&2
       exit 2

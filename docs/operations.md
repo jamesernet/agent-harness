@@ -8,6 +8,8 @@ Run `./install.sh` from a checked-out release, then `bin/llmctx doctor`. Install
 
 Installation covers every registered Claude account, not only `~/.claude`. Register one with `bin/llmctx account add <name> <dir>` before installing; `~/.claude` is always covered as `default`. In `doctor --json`, the default account keeps the `claude-skills` check id and each additional account appears as `claude-skills[<name>]`, so existing consumers are unaffected and a lagging second account cannot hide behind an aggregate result.
 
+The `claude-imports` check, named per account the same way, reads the `@import` lines out of each account's generated `CLAUDE.md` and fails on a target that is not on disk. Claude Code reports nothing for an unresolved import — the session runs without those rules — so without this the loss is invisible. It checks **direct** imports only, which the PASS line says in as many words; a target that imports further files is not followed. `build-adapters.sh --check` runs the same scan and reports it separately from drift, because an unresolvable target is the case where the installed file matches what would be generated and is still wrong.
+
 ## Update
 
 Fetch tags, deliberately check out the desired release, run `install.sh`, then run `doctor`. Do not automate `git pull` against `main`. The workstation repository should choose the release; this repository should remain unaware of machine inventory and Git identities.

@@ -40,4 +40,47 @@ printf '%s\n' '{"schemaVersion":1,"profile":"client"}' >"$repo/.llmctx.json"
 git -C "$repo" symbolic-ref HEAD refs/heads/feature/test
 (cd "$repo" && "$hook" >/dev/null 2>&1) || fail "feature branch was blocked"
 
+# The llmctx.repo registry. HOME is redirected so the built-in repo paths
+# resolve inside the sandbox and this test can never install into a real repo.
+reg_home="$tmp/reghome"
+mkdir -p "$reg_home"
+
+mkreg_repo() {
+  local path="$1"
+  mkdir -p "$path"
+  git -C "$path" init -q
+  git -C "$path" symbolic-ref HEAD refs/heads/main
+}
+
+mkreg_repo "$reg_home/registered"
+mkreg_repo "$reg_home/tilde-registered"
+
+git config --global --add llmctx.repo "$reg_home/registered"
+# shellcheck disable=SC2088  # a literal tilde is what gets stored and expanded
+git config --global --add llmctx.repo '~/tilde-registered'
+git config --global --add llmctx.repo "$reg_home/registered"
+
+out="$(HOME="$reg_home" "$SRC/bin/install-git-hooks.sh")"
+
+[[ -x "$reg_home/registered/.git/hooks/pre-commit" ]] ||
+  fail "registered repo did not get the hook"
+[[ -x "$reg_home/tilde-registered/.git/hooks/pre-commit" ]] ||
+  fail "a ~-prefixed registration was not expanded"
+
+installed_twice="$(printf '%s\n' "$out" | grep -c "installed pre-commit -> $reg_home/registered$" || true)"
+[[ "$installed_twice" -eq 1 ]] ||
+  fail "a repo registered twice was installed $installed_twice times, expected 1"
+
+# Additive, not a replacement: the built-ins are still attempted. Inside the
+# sandbox they do not exist, so each one reports as skipped rather than silently
+# dropping out of the list.
+printf '%s\n' "$out" | grep -q "skip: $reg_home/repos/github.com/jamesernet/agent-harness" ||
+  fail "the built-in repos were replaced by the registry instead of extended"
+
+# An explicit argument list is neither the built-ins nor the registry.
+mkreg_repo "$reg_home/explicit"
+out="$(HOME="$reg_home" "$SRC/bin/install-git-hooks.sh" "$reg_home/explicit")"
+printf '%s\n' "$out" | grep -q "$reg_home/registered" &&
+  fail "an explicit repo list did not override the registry"
+
 echo "git hook tests: passed"

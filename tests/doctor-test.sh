@@ -51,6 +51,79 @@ jq -e '.healthy == true and all(.checks[]; .status == "PASS")' "$tmp/healthy.jso
 HOME="$test_home" "$copy/bin/llmctx" doctor --quiet || fail "quiet check failed"
 [[ -z "$(HOME="$test_home" "$copy/bin/llmctx" doctor --quiet)" ]] || fail "quiet check produced output"
 
+# An unresolved @import is SILENT in a session: the rules simply do not load.
+# The installed file is byte-identical to a correct render, because render_claude
+# names these paths without ever reading them.
+#
+# adapters FAILs here too, now that --check runs the same scan -- it did not
+# before, and that gap under --account is what justified this check. What
+# adapters still cannot do is say WHICH path died: its detail is "missing or
+# stale" and its remedy is install.sh. So the assertion is on the filename, not
+# on being the only witness.
+mv "$copy/global/handoff-and-briefs.md" "$tmp/handoff-and-briefs.md"
+if HOME="$test_home" "$copy/bin/llmctx" doctor --json --account default >"$tmp/imports.json"; then
+  fail "an unresolvable @import target was reported healthy"
+fi
+jq -e 'any(.checks[]; .id == "claude-imports" and .status == "FAIL" and (.detail | contains("handoff-and-briefs.md")))' \
+  "$tmp/imports.json" >/dev/null || fail "the dead @import target was not named"
+jq -e 'any(.checks[]; .id == "adapters" and (.detail | contains("handoff-and-briefs.md"))) | not' \
+  "$tmp/imports.json" >/dev/null || fail "adapters named the dead path, so this check adds nothing"
+mv "$tmp/handoff-and-briefs.md" "$copy/global/handoff-and-briefs.md"
+
+# The hand-edited row of the table in #30. Any hand edit is also adapter drift,
+# so assert on this check's id alone, never on all(.checks[]; ...).
+printf '@%s\n' "$copy/global/typo-does-not-exist.md" >>"$test_home/.claude/CLAUDE.md"
+if HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/imports-typo.json"; then
+  fail "a hand-edited dead @import line was reported healthy"
+fi
+jq -e 'any(.checks[]; .id == "claude-imports" and .status == "FAIL")' \
+  "$tmp/imports-typo.json" >/dev/null || fail "a typo'd @ line was not reported"
+HOME="$test_home" "$copy/install.sh" >/dev/null
+
+# Claude Code does not expand shell variables, so this form is reported as a
+# visible skip rather than asserted broken -- the only way decision (c) in #30
+# is observable.
+# Appending the line is adapter drift too, so doctor exits non-zero either way;
+# the claim under test is this check's verdict, not the overall exit.
+printf '@$HOME/nope.md\n' >>"$test_home/.claude/CLAUDE.md"
+HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/imports-unsupported.json" || true
+jq -e 'any(.checks[]; .id == "claude-imports" and .status == "PASS" and (.detail | contains("skipped")))' \
+  "$tmp/imports-unsupported.json" >/dev/null || fail "the unsupported path form was not reported as a skip"
+HOME="$test_home" "$copy/install.sh" >/dev/null
+
+# A checkout path containing a space used to make EVERY import "unsupported",
+# so the check reported PASS having verified nothing and #30's own headline
+# scenario stayed invisible. Nothing else in tests/ uses a space-bearing path,
+# and CI installs under mktemp -d, so this was invisible to the whole suite.
+spaced="$tmp/My Source Dir"
+mkdir -p "$spaced"
+tar -C "$copy" -cf - . | tar -C "$spaced" -xf -
+git -C "$spaced" init -q .
+spaced_home="$tmp/home-spaced"
+mkdir -p "$spaced_home"
+HOME="$spaced_home" "$spaced/install.sh" >/dev/null
+HOME="$spaced_home" "$spaced/bin/llmctx" doctor --json >"$tmp/spaced-ok.json" ||
+  fail "a space-bearing checkout was reported unhealthy"
+jq -e 'any(.checks[]; .id == "claude-imports" and .status == "PASS" and (.detail | startswith("3 direct")))' \
+  "$tmp/spaced-ok.json" >/dev/null ||
+  fail "imports under a space-bearing path were not actually checked"
+
+mv "$spaced/global/handoff-and-briefs.md" "$tmp/spaced-stash.md"
+if HOME="$spaced_home" "$spaced/bin/llmctx" doctor --json --account default >"$tmp/spaced-dead.json"; then
+  fail "a dead @import under a space-bearing path was reported healthy"
+fi
+jq -e 'any(.checks[]; .id == "claude-imports" and .status == "FAIL" and (.detail | contains("handoff-and-briefs.md")))' \
+  "$tmp/spaced-dead.json" >/dev/null ||
+  fail "the dead target under a space-bearing path was not named"
+mv "$tmp/spaced-stash.md" "$spaced/global/handoff-and-briefs.md"
+
+# "direct" is the one-level limit disclosing itself on the line a reader trusts.
+# Pinning the word stops the wording quietly becoming a claim of completeness.
+HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/imports-ok.json" ||
+  fail "a correct install was reported unhealthy by the import check"
+jq -e 'any(.checks[]; .id == "claude-imports" and .status == "PASS" and (.detail | contains("direct")))' \
+  "$tmp/imports-ok.json" >/dev/null || fail "resolving imports were not reported as direct-only"
+
 HOME="$test_home" "$copy/bin/llmctx" skills install --dev >/dev/null
 HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/development.json" ||
   fail "development skill install was reported unhealthy"

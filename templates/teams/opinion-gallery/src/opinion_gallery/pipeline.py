@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace
 
 from . import prompts
 from .contract import Contract, Persona
@@ -39,13 +39,36 @@ class Reply:
     revised_draft: str | None = None
 
 
-@dataclass
+@dataclass(frozen=True)
 class Outcome:
+    """What gets published about one story, and the only thing that decides it.
+
+    Frozen on purpose: an outcome is complete when the module that settled it
+    returns it. A merged piece arrives incomplete exactly once, and `with_merged`
+    is the only way to finish it.
+    """
+
     kind: str  # single | two-views | merged | none
-    drafts: list[Draft] = field(default_factory=list)
-    replies: list[Reply] = field(default_factory=list)
+    drafts: tuple[Draft, ...] = ()
+    replies: tuple[Reply, ...] = ()
     merged_body: str | None = None
-    withdrew: list[str] = field(default_factory=list)
+    withdrew: tuple[str, ...] = ()
+
+    @property
+    def needs_merge(self) -> bool:
+        """A merged piece whose body has not been written yet."""
+        return self.kind == "merged" and not self.merged_body
+
+    def with_merged(self, body: str) -> "Outcome":
+        return replace(self, merged_body=body)
+
+    def reply_from(self, persona: str) -> Reply | None:
+        """What this persona said after reading the others, if it said anything."""
+        return next((r for r in self.replies if r.persona == persona), None)
+
+    @property
+    def publishable(self) -> bool:
+        return bool(self.drafts)
 
 
 def triage_persona(llm: LLM, contract: Contract, persona: Persona, stories: list[Story]) -> list[Triage]:
@@ -133,12 +156,13 @@ def resolve_debate(drafts: list[Draft], replies: list[Reply], outcome_mode: str)
             d = Draft(d.persona, d.story_id, d.section, d.stance, d.reason, r.revised_draft)
         standing.append(d)
     standing.sort(key=lambda d: d.stance, reverse=True)
-    if len(standing) >= 2:
-        return Outcome("two-views", standing, replies, withdrew=withdrew)
-    if len(standing) == 1:
-        kind = "merged" if outcome_mode == "auto" and withdrew else "single"
-        return Outcome(kind, standing, replies, withdrew=withdrew)
-    return Outcome("none", [], replies, withdrew=withdrew)
+    settled, spoke, gone = tuple(standing), tuple(replies), tuple(withdrew)
+    if len(settled) >= 2:
+        return Outcome("two-views", settled, spoke, withdrew=gone)
+    if len(settled) == 1:
+        kind = "merged" if outcome_mode == "auto" and gone else "single"
+        return Outcome(kind, settled, spoke, withdrew=gone)
+    return Outcome("none", (), spoke, withdrew=gone)
 
 
 def merge(llm: LLM, contract: Contract, story: Story, outcome: Outcome) -> str:

@@ -88,7 +88,7 @@ How hard the tool-level guard pushes is a per-repo decision: `off`, `remind` (on
 git worktree add -b feature/<short-description> ../<repo>-worktrees/<slug> <base>
 ```
 
-Run one session per worktree; remove it (`git worktree remove`) once merged. Solo, single-session work may branch in the main checkout **unless the repo's own hooks refuse it** — check `.githooks/pre-commit` and `core.hooksPath` before assuming, because a repo that enforces worktree-per-branch unconditionally will refuse the commit after you have done the work, not before. A repo may ship a helper (e.g. `scripts/new-worktree.sh`) that encodes its base branch and location convention; prefer it over the raw command above.
+Run one session per worktree; remove it (`git worktree remove`) once merged. Solo, single-session work may branch in the main checkout **unless the repo's own hooks refuse it** — check `.git/hooks/pre-commit`, `.githooks/pre-commit` and `core.hooksPath` before assuming, because a repo that enforces worktree-per-branch unconditionally will refuse the commit after you have done the work, not before. A repo may carry either location, both, or neither: the branch backstop installs into `.git/hooks/`, which is never cloned, while a scaffolded repo commits its own hook to `.githooks/`. **A missing `.githooks/` is not evidence that nothing will refuse the commit.** `llmctx repo diff .` answers the question directly. A repo may ship a helper (e.g. `scripts/new-worktree.sh`) that encodes its base branch and location convention; prefer it over the raw command above.
 
 **Clean up completed work.** When you know a feature branch has been merged into
 `main`, `master`, or the repo's integration branch (for example `stage`):
