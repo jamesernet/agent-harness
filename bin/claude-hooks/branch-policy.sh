@@ -199,8 +199,12 @@ if [[ "$tool" == "Bash" ]]; then
   # sibling irreversible-policy hook can see it too, rather than growing a
   # third hand-rolled matcher.
   git_opts="$LLMCTX_GIT_GLOBAL_OPTS_RE"
+  # The subcommand must be the whole word: `commit-graph write` and
+  # `commit-tree` are plumbing, not commits, and `\b` let `commit` match the
+  # front of both (`-` is a word boundary). A bare `K=V` assignment is a
+  # prefix the shell allows exactly as `env K=V` is, so it is one too.
   if ! printf '%s' "$cmd" |
-    grep -qE "(^|[;&|]|&&|\|\||[[:space:]]&|^[[:space:]]*)[[:space:]]*(sudo[[:space:]]+|env[[:space:]]+[^[:space:]]+=[^[:space:]]*[[:space:]]+)*git[[:space:]]+${git_opts}(commit|push)\b"; then
+    grep -qE "(^|[;&|]|&&|\|\||[[:space:]]&|^[[:space:]]*)[[:space:]]*(sudo[[:space:]]+|env[[:space:]]+[^[:space:]]+=[^[:space:]]*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*git[[:space:]]+${git_opts}(commit|push)([[:space:]]|\$)"; then
     exit 0
   fi
 
@@ -209,7 +213,7 @@ if [[ "$tool" == "Bash" ]]; then
   # publish work, and denying it was the second false block this hook produced.
   # Only an explicit refspec counts: a bare `git push` on a protected branch
   # still pushes the protected branch, and is still caught.
-  if printf '%s' "$cmd" | grep -qE "git[[:space:]]+${git_opts}push\b"; then
+  if printf '%s' "$cmd" | grep -qE "git[[:space:]]+${git_opts}push([[:space:]]|\$)"; then
     pushed_ref="$(printf '%s' "$cmd" |
       sed -n 's/.*push[[:space:]]\{1,\}\(-[^[:space:]]*[[:space:]]\{1,\}\)*[^[:space:]-][^[:space:]]*[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\2/p' | head -1)"
     pushed_ref="${pushed_ref#*:}" # src:dst — the destination is what lands
