@@ -81,6 +81,75 @@ for c in "git commit -m x" "git push" "git push origin main"; do
   [[ "$(decision "$payload")" == deny ]] || fail "allowed '$c' on a protected branch"
 done
 
+# --- global git options between `git` and the subcommand (#79) --------------
+#
+# `git -C <dir> commit` is the spelling lib/target.sh resolves as the TARGET,
+# and for months the action matcher could not see it, so the one spelling the
+# scope code handled most carefully never reached the gate. The option forms
+# must be judged exactly as their bare equivalents, under every policy value.
+# Negative first: each spelling IS caught on the protected checkout. These
+# payloads stand IN the protected repository; the --git-dir rows depend on
+# that, because the scope resolver reads -C and cd but not --git-dir, so from
+# elsewhere they fall back to the cwd (see the issue filed from PR #96's review).
+for c in \
+  "git -C $repo commit -m x" \
+  "git -C $repo push" \
+  "git -C $repo push origin main" \
+  "git -c user.name=t commit -m x" \
+  "git -c user.name=t -c user.email=t@t push" \
+  "git --no-pager commit -m x" \
+  "git --git-dir=$repo/.git commit -m x" \
+  "git --git-dir $repo/.git push" \
+  "git -C $repo --no-pager -c core.pager=cat commit -m x" \
+  "cd /tmp && git -C $repo commit -m x" \
+  "sudo git -C $repo push" \
+  "git -P commit -m x" \
+  "git -p -C $repo commit -m x" \
+  "GIT_TRACE=1 git commit -m x" \
+  "GIT_DIR=$repo/.git git -C $repo push"; do
+  payload="$(jq -nc --arg c "$repo" --arg cmd "$c" \
+    '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
+  [[ "$(decision "$payload")" == deny ]] || fail "allowed '$c' on a protected branch (#79)"
+done
+# Positive: the option forms are not false positives — a non-mutating
+# subcommand behind the same options, and the words inside other commands.
+for c in \
+  "git -C $repo status" \
+  "git -C $repo log --oneline" \
+  "git --no-pager -C $repo diff" \
+  "echo 'git -C $repo commit'" \
+  "grep -r 'git -c x=y push' ." \
+  "git commit-tree HEAD^{tree} -m x" \
+  "git -C $repo commit-graph write" \
+  "git -C $repo push-to-nowhere"; do
+  payload="$(jq -nc --arg c "$repo" --arg cmd "$c" \
+    '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
+  [[ -z "$(hook_with "$payload")" ]] || fail "denied '$c', which mutates nothing"
+done
+# The refspec exemption must see the same prefix the gate does: a push that
+# names an unprotected branch is how work is published, with or without -C.
+for c in \
+  "git -C $repo push -u origin feature/x" \
+  "git -c push.default=current push origin feature/x" \
+  "git --no-pager push origin HEAD:feature/x"; do
+  payload="$(jq -nc --arg c "$repo" --arg cmd "$c" \
+    '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
+  [[ -z "$(hook_with "$payload")" ]] || fail "denied '$c', which pushes an unprotected branch"
+done
+# Under every policy value, the option form decides exactly as the bare form.
+# Fresh session ids, because `remind` fires once per session and would make
+# the second call differ from the first for a reason that is not the spelling.
+for policy in off remind ask deny; do
+  git -C "$repo" config --local llmctx.branchPolicy "$policy"
+  bare="$(decision "$(jq -nc --arg c "$repo" --arg cmd "git commit -m x" \
+    '{tool_name:"Bash",session_id:"bare-\($cmd)",tool_input:{command:$cmd},cwd:$c}')")"
+  dashc="$(decision "$(jq -nc --arg c "$repo" --arg cmd "git -C $repo commit -m x" \
+    '{tool_name:"Bash",session_id:"opt-\($cmd)",tool_input:{command:$cmd},cwd:$c}')")"
+  [[ "$bare" == "$dashc" ]] ||
+    fail "under $policy, 'git -C <dir> commit' decided $dashc but bare decided $bare"
+  git -C "$repo" config --local --unset llmctx.branchPolicy
+done
+
 # A push naming a DIFFERENT repository is judged by that repository's branch.
 other="$(mktemp -d)"
 git -C "$other" init -q -b main
