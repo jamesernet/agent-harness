@@ -87,7 +87,10 @@ done
 # and for months the action matcher could not see it, so the one spelling the
 # scope code handled most carefully never reached the gate. The option forms
 # must be judged exactly as their bare equivalents, under every policy value.
-# Negative first: each spelling IS caught on the protected checkout.
+# Negative first: each spelling IS caught on the protected checkout. These
+# payloads stand IN the protected repository; the --git-dir rows depend on
+# that, because the scope resolver reads -C and cd but not --git-dir, so from
+# elsewhere they fall back to the cwd (see the issue filed from PR #96's review).
 for c in \
   "git -C $repo commit -m x" \
   "git -C $repo push" \
