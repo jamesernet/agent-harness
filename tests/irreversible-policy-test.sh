@@ -134,6 +134,17 @@ want ask "--force --delete on branch" "$repo" "git"" branch --force --delete fea
 want ask "--delete --force on branch" "$repo" "git"" branch --delete --force feature/x"
 want ask "-d -f on branch" "$repo" "git"" branch -d -f feature/x"
 
+# git's global options between `git` and the subcommand (finding 6) -- the
+# fragment lib/target.sh defines for both hooks, so `-C <dir>` is a spelling
+# the gate sees and not only a scope the resolver understands.
+want ask "-C then force push" "$repo" "git"" -C $repo push --force origin main"
+want ask "--no-pager then hard reset" "$repo" "git"" --no-pager reset --hard HEAD~3"
+want ask "-c then force push" "$repo" "git"" -c core.pager=cat push --force origin main"
+want ask "-P then -f" "$repo" "git"" -P push -f origin main"
+want ask "--git-dir= then filter-repo" "$repo" "git"" --git-dir=$repo/.git filter-repo --force"
+want allow "-C then plain push" "$repo" "git"" -C $repo push origin feature/x"
+want allow "--no-pager then log" "$repo" "git"" --no-pager log --oneline"
+
 # A remote-tracking ref is undone by `git fetch` (finding 7).
 want allow "-rd is recoverable" "$repo" "git"" branch -rd origin/stale"
 want allow "-r -d is recoverable" "$repo" "git"" branch -r -d origin/stale"
