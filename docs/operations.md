@@ -30,6 +30,12 @@ Run `bin/llmctx skills install --dev` to replace managed copies with links into 
 4. Create a signed `vMAJOR.MINOR.PATCH` tag on that exact tested commit.
 5. Push `main` and the explicit tag ref, then verify both remote refs.
 6. Let tag CI verify the tag and portable suite before workstation automation adopts it.
+7. Refresh the estate's git hooks from the released checkout: `bin/install-git-hooks.sh`
+   with no arguments walks the built-in repositories and every `llmctx.repo`
+   registration and prints `current`, `refreshed` or `installed` per repository
+   with a summary. The hook and its policy library live in `.git/`, which is
+   never cloned, so a release that changes either leaves every repository's
+   guard behind until this runs; a `refreshed` line is one that had.
 
 If `fetch.pruneTags=true` is configured, do not fetch between creating and
 pushing a new tag: Git may prune the local-only tag because it does not exist on
