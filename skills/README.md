@@ -51,11 +51,12 @@ covers a shorter window than the others.
 `/name` means a person types it. "auto" means the agent may load it from the
 trigger phrases in the skill's description, so how that description is worded
 does most of the work of making a skill fire. Skills marked
-`disable-model-invocation` are slash-only on purpose. For `triage`, `to-issues`
-and `grab` the reason is that they write to a tracker or start a branch, and
-that should not happen because a sentence sounded like it; `setup-skills`,
-`handoff` and `improve-codebase-architecture` are slash-only because each is a
-deliberate session-level act rather than a reaction to a phrase.
+`disable-model-invocation` are slash-only on purpose. For `triage`, `to-issues`,
+`grab` and `start-a-session` the reason is that they write to a tracker or
+start a branch, and that should not happen because a sentence sounded like it;
+`setup-skills`, `handoff` and `improve-codebase-architecture` are slash-only
+because each is a deliberate session-level act rather than a reaction to a
+phrase (`start-a-session` is both).
 
 Five skills pin an `effort` level. It is an override, not a floor: the skill
 runs at that level whatever the session is set to, up or down. `threat-model`,
@@ -88,7 +89,7 @@ docs-drift-audit is the odd one out, auditing the docs the others read.
 
 ### Intake pipeline
 
-Issue → triage → slices → worktree → implementation → handoff. All slash-only.
+Session start → issue → triage → slices → worktree → implementation → handoff. All slash-only.
 Run `/setup-skills` once per repo; the others read the `docs/agents/*.md` it
 writes, so they never hardcode where a repo keeps its tracker, labels or briefs.
 
@@ -99,6 +100,7 @@ writes, so they never hardcode where a repo keeps its tracker, labels or briefs.
 | [to-issues](to-issues/) | `/to-issues` | a plan into tracer-bullet vertical-slice issues | writes the parent PRD issue from the conversation first when none exists, without interviewing |
 | [grab](grab/) | `/grab` | issue → worktree → brief → implement → handoff in one motion | built for several sessions in parallel; verifies each acceptance criterion with evidence, not claims |
 | [handoff](handoff/) | `/handoff` | compact the session for the next agent | puts the handoff where this repo keeps them, which differs per repo; redacts; points at artifacts rather than copying them |
+| [start-a-session](start-a-session/) | `/start-a-session` | open a session: stranded work, tracker, merge queue → at most three seams → one pick → the skill that fits | the squash-merge-correct stranded-work proof via `worktree.sh status`; each seam carries its case against; a fan-out is a batch of sessions, never a batch inside one; supporting [SEAMS](start-a-session/SEAMS.md) |
 
 ### Website audit
 
