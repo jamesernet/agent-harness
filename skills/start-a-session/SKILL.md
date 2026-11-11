@@ -38,6 +38,11 @@ that gets a skill abandoned.
    (untriaged); `ready` but untouched for weeks (suspect — the premise may have
    moved since it was written).
 3. **Merge queue.** `gh pr list --state open --limit 100 --json number,title,baseRefName,mergeStateStatus,reviewDecision,isDraft`.
+   What this session may do with those PRs is the repository's call: resolve
+   `mergePolicy` (`bin/llmctx explain mergePolicy`, or the key in
+   `.llmctx.json`, default `hold`) and say which it is when offering the
+   merge-queue seam, because it decides whether that seam ends in a review or
+   in a merge.
    Flag `CONFLICTING`, approved-and-unmerged, and a child PR whose base branch
    has since merged — nothing retargets it for you.
 4. **Policy and doc drift.** `bin/llmctx repo diff . --json` where the repo is

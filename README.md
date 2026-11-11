@@ -210,6 +210,17 @@ bin/llmctx explain branchPolicy
 
 ### A second tenant on the same ladder
 
+`mergePolicy` (`hold` by default, or `review-and-merge`, `queue`) says what a
+session may do with a pull request it has finished. It is read by skills rather
+than hooks — it governs what a session chooses, not what it is stopped from
+doing — and it does not change the rule that nothing pushes or opens a pull
+request without being asked.
+
+```sh
+bin/llmctx explain mergePolicy
+git config llmctx.mergePolicy review-and-merge
+```
+
 `irreversiblePolicy` takes the same four values through the same four tiers, and
 judges the **action** rather than the branch it happens on: force push, hard
 reset, history rewrite, force branch deletion, remote branch deletion, and a

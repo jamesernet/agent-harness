@@ -40,6 +40,14 @@ output="$($CLI explain irreversiblePolicy "$repo")"
 [[ "$output" == "irreversiblePolicy = deny (source: git-local)" ]] || fail "$output"
 git -C "$repo" config --local --unset llmctx.irreversiblePolicy
 
+output="$($CLI explain mergePolicy "$repo")"
+[[ "$output" == "mergePolicy = hold (source: built-in)" ]] || fail "unexpected mergePolicy explain: $output"
+git -C "$repo" config --local llmctx.mergePolicy review-and-merge
+output="$($CLI explain mergePolicy "$repo")"
+[[ "$output" == "mergePolicy = review-and-merge (source: git-local)" ]] ||
+  fail "a repo-local mergePolicy was not reported: $output"
+git -C "$repo" config --local --unset llmctx.mergePolicy
+
 if "$CLI" explain unknown "$repo" >/dev/null 2>&1; then
   fail "unknown setting was accepted"
 fi

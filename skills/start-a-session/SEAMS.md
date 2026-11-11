@@ -26,7 +26,7 @@ evidence from step 1, never by taste.
 | stranded work, no ticket | [to-issues](../to-issues/) for the work's own ticket — or an explicit "abandoned" note, so abandoning is a decision rather than a disk event | the row, and which of the two |
 | ticket hygiene | [triage](../triage/) | the bucket (unlabelled, suspect) and the issue numbers |
 | a decision to walk | [interview-me](../interview-me/) on the issue, then the decision as a comment | the issue, and step 2's case against |
-| merge queue | the built-in `/code-review <PR>` dispatched as a fresh reviewer; a stacked child is retargeted with `gh pr edit <n> --base <trunk>` *between* the two merges | PR number, `mergeStateStatus`, the last blocking comment |
+| merge queue | the built-in `/code-review <PR>` dispatched as a fresh reviewer, then whatever `mergePolicy` says — `hold` stops at the review, `review-and-merge` merges on a clean verdict after CI, `queue` hands off; a stacked child is retargeted with `gh pr edit <n> --base <trunk>` *between* the two merges | PR number, `mergeStateStatus`, the last blocking comment, the resolved `mergePolicy` |
 | grabbable work | [grab](../grab/) `<issue>` — one worktree per issue; several → a list of sessions to open, or the managed `implementer` agent | issue numbers; never more than one per session |
 | blocked on access or a key | a comment on the issue stating the exact action a person must take | the ask, the account, the path |
 | sensitive-code review | `/code-review <PR>` as a fresh reviewer, never the authoring session | PR number and the paths touched |

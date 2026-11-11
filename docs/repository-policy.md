@@ -13,11 +13,14 @@
   "protectedBranches": ["main", "master"],
   "briefs": "tree",
   "claudeImport": true,
-  "strandedExempt": ["backup/"]
+  "strandedExempt": ["backup/"],
+  "mergePolicy": "hold"
 }
 ```
 
 All fields except `schemaVersion` are optional. Profiles are `personal` or `client`. Branch policies are `off`, `remind`, `ask`, or `deny`. `protectedBranches` must be a non-empty array of non-empty strings.
+
+`mergePolicy` resolves through the same four tiers as `branchPolicy`, and `llmctx explain mergePolicy` reports which one answered. Its value is shape-validated, unlike `briefs` and `claudeImport`, because a misspelling should be heard from `repo diff` rather than silently ignored by the skill meant to obey it.
 
 `irreversiblePolicy` takes the same four values and governs actions that cannot be undone rather than the branch they happen on: force push, hard reset, history rewrite, force branch deletion, remote branch deletion, and a recursive delete whose target resolves outside the repository. Two things differ from `branchPolicy` on purpose. Its built-in default is `ask` for **both** profiles, because "stop and confirm before destroying something" is the same answer in a personal repository and a client engagement, where branch strictness genuinely is a dial. And `remind` is treated as `ask`, because reminding once that a destructive command is destructive and then allowing every one that follows protects nothing.
 
@@ -40,6 +43,16 @@ resolves on this machine; `llmctx env explain` prints it with the steps that
 remain manual.
 
 `claudeImport` is `true` (default) or `false`. `true` expects a `CLAUDE.md` whose body is `@AGENTS.md`. `false` says the repository is deliberately tool-neutral and keeps `AGENTS.md` alone.
+
+`mergePolicy` is `hold` (default), `review-and-merge`, or `queue`. It says what a session may do with a pull request it has finished, and it is the first key on this ladder that **no hook reads**: it governs what a session chooses, not what it is stopped from doing, so its readers are skills. It does not change the rule that nothing pushes or opens a pull request without being asked — it decides what happens once that has been asked for.
+
+| value | what a session does with a green pull request it authored |
+|---|---|
+| `hold` | records the review on it, says it is ready, stops |
+| `review-and-merge` | dispatches a **fresh** reviewer, never its own authoring context, with the PR body's claims as the brief; merges only on a clean verdict, after CI, then cleans up by the §5 rules; a finding goes back through fix and re-review |
+| `queue` | a named owner or a merge queue merges; the session says it is ready and moves on |
+
+`hold` is the default for both profiles. A merge is the one step in the flow where a person in the loop costs least and protects most, so the cautious answer is what a repository gets for saying nothing; the other two are a committed decision with a diff rather than a sentence in a chat log. Note that `review-and-merge` needs a per-project permission rule allowing `gh pr merge` as well: the policy says what should happen, and the rule is what lets it.
 
 `strandedExempt` is a list of branch-name prefixes, empty by default. `bin/worktree.sh status` reports a branch with commits past a protected branch and no pull request as `STRANDED`; a prefix listed here (for example `backup/`, for branches kept on purpose and never meant to merge) suppresses that headline for branches that start with it. The row is still reported, so nothing is hidden; only the judgement is withheld. It is read by `worktree.sh` alone and is not shape-validated, like the two keys above.
 
