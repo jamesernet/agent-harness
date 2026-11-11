@@ -10,6 +10,15 @@ set -euo pipefail
 #                                            plus every registered one
 #   bin/install-git-hooks.sh <repo> [repo…]  install into specific repos
 #
+# Per repository it says what it did -- `current:` (hook and policy library
+# already match this checkout), `refreshed:` (one or both had fallen behind;
+# which is named), `installed pre-commit ->` (there was none), `preserved:`
+# (a foreign hook moved aside first), or `skip:` with the reason -- and ends
+# with one summary line. A `refreshed:` line is a guard that had silently
+# stopped matching the policy it enforces, which is the state nothing reported
+# before (#85): the hook lives in .git/, which is never cloned, so staleness is
+# the default over time, and the no-argument run is the estate's refresh.
+#
 # Registering a repo (machine state, so global config, beside llmctx.skillBundle):
 #
 #   git config --global --add llmctx.repo ~/repos/github.com/<org>/<repo>
@@ -80,9 +89,11 @@ done < <(git config --global --get-all llmctx.repo 2>/dev/null || true)
 # An explicit list is exactly that: neither the built-ins nor the registry.
 if [ "$#" -gt 0 ]; then REPOS=("$@"); fi
 
+n_current=0 n_refreshed=0 n_installed=0 n_skipped=0
 for repo in "${REPOS[@]}"; do
   if ! git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
     echo "skip: $repo (not a git repo)"
+    n_skipped=$((n_skipped + 1))
     continue
   fi
 
@@ -90,6 +101,7 @@ for repo in "${REPOS[@]}"; do
   if [ -n "$hooks_path" ]; then
     echo "skip: $repo (core.hooksPath=$hooks_path — a hook framework manages hooks here;" >&2
     echo "      add the branch check via that framework's config instead)" >&2
+    n_skipped=$((n_skipped + 1))
     continue
   fi
 
@@ -104,6 +116,7 @@ for repo in "${REPOS[@]}"; do
   if [ -f "$existing" ] && ! grep -qE "$MARKER|Installed by llm-context|$SHIM_MARKER" "$existing"; then
     if [ -e "$hooks_dir/pre-commit.local" ]; then
       echo "skip: $repo (has both a foreign pre-commit AND pre-commit.local — resolve manually)" >&2
+      n_skipped=$((n_skipped + 1))
       continue
     fi
     mv "$existing" "$hooks_dir/pre-commit.local"
@@ -111,9 +124,41 @@ for repo in "${REPOS[@]}"; do
     echo "preserved: existing pre-commit -> pre-commit.local (chained after branch check) in $repo"
   fi
 
+  # What this run changes, named before it changes it. Ours-and-identical is
+  # `current` and nothing is written; ours-and-different is `refreshed`, with
+  # the half that had fallen behind named; anything else is `installed`.
+  outcome=installed
+  if [ -f "$existing" ] && grep -q "$MARKER" "$existing"; then
+    stale=""
+    cmp -s "$HOOK_SRC" "$existing" || stale="hook"
+    if ! cmp -s "$POLICY_LIB_SRC" "$hooks_dir/llmctx-policy.sh"; then
+      stale="${stale:+$stale, }policy library"
+    fi
+    if [ -z "$stale" ]; then
+      outcome=current
+    else
+      outcome="refreshed ($stale)"
+    fi
+  fi
+  if [ "$outcome" = current ]; then
+    echo "current: $repo"
+    n_current=$((n_current + 1))
+    continue
+  fi
+
   cp "$HOOK_SRC" "$existing"
   chmod +x "$existing"
   cp "$POLICY_LIB_SRC" "$hooks_dir/llmctx-policy.sh"
   chmod 0644 "$hooks_dir/llmctx-policy.sh"
-  echo "installed pre-commit -> $repo"
+  case "$outcome" in
+    installed)
+      echo "installed pre-commit -> $repo"
+      n_installed=$((n_installed + 1))
+      ;;
+    *)
+      echo "refreshed: $repo ${outcome#refreshed }"
+      n_refreshed=$((n_refreshed + 1))
+      ;;
+  esac
 done
+echo "git hooks: $n_current current, $n_refreshed refreshed, $n_installed installed, $n_skipped skipped"
