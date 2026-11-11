@@ -38,8 +38,15 @@ cmd="${1:-}"
 # which succeeds, and the script printed "///-worktrees/<slug>" and exited 0.
 # A bare assignment is the one form set -e does track, so this exits 128 the
 # way it did before the anchor changed.
+# A work tree is a precondition, not an inference. --git-common-dir returns
+# "." in a BARE repository, so `cd "./.."` anchored the parent one level
+# above the bare repo and the script answered confidently about a checkout
+# that does not exist. --show-toplevel is the assertion the previous anchor
+# got for free; it stays as the guard, and --git-common-dir is used only for
+# the anchor, which is the one thing it is better at.
+git rev-parse --show-toplevel >/dev/null
 common_dir="$(git rev-parse --git-common-dir)"
-root="$(cd "$common_dir/.." && pwd)"
+root="$(cd "$common_dir/.." && pwd -P)"
 repo="$(basename "$root")"
 wt_root="$(dirname "$root")/$repo-worktrees"
 

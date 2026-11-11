@@ -106,4 +106,18 @@ out="$(cd "$outside" && "$WT" path some/branch 2>/dev/null)" || status=$?
 [[ -z "$out" ]] ||
   fail "path outside a repository invented a location: $out"
 
+# A bare repository has no checkout for a worktree to sit beside, and must be
+# refused rather than answered. --git-common-dir returns "." there, so anchoring
+# on it alone put the parent one level ABOVE the bare repo and exited 0 — the
+# same invented-path failure as the out-of-repo case, reached through a repo that
+# does exist.
+bare="$tmp/bare.git"
+git init -q --bare "$bare"
+status=0
+out="$(cd "$bare" && "$WT" path some/branch 2>/dev/null)" || status=$?
+[[ "$status" -ne 0 ]] ||
+  fail "path in a bare repository exited 0 and printed: $out"
+[[ -z "$out" ]] ||
+  fail "path in a bare repository invented a location: $out"
+
 echo "worktree tests: passed"
