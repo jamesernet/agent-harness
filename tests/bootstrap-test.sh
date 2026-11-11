@@ -71,4 +71,18 @@ grep -q 'was NOT installed' "$tmp/foreign.out" || fail "the summary did not name
 grep -q 'llmctx-hook' "$copy/.git/hooks/pre-commit" || fail "the branch backstop was not installed alongside the refusal"
 [[ -d "$home/.claude/skills" ]] || fail "skills were not installed after the refusal"
 
+# 4. A foreign hook that MENTIONS our phrases is still foreign. The first
+#    version of the probe grepped the whole file and overwrote this one.
+copy="$(fresh_copy mentions)"
+home="$tmp/home-mentions"
+mkdir -p "$home" "$copy/.git/hooks"
+printf '%s\n' '#!/bin/sh' '# a husky hook, NOT agent-harness ITSELF; nothing to do with llmctx-local-checks' \
+  'echo mentioning hook ran' >"$copy/.git/hooks/pre-commit"
+chmod +x "$copy/.git/hooks/pre-commit"
+status=0
+HOME="$home" "$copy/bin/bootstrap.sh" >"$tmp/mentions.out" 2>&1 || status=$?
+grep -q 'echo mentioning hook ran' "$copy/.git/hooks/pre-commit.local" ||
+  fail "a foreign hook that mentions our marker text was overwritten: $(head -3 "$copy/.git/hooks/pre-commit.local")"
+[[ "$status" -ne 0 ]] || fail "bootstrap exited 0 after a foreign hook that mentions our marker text"
+
 echo "bootstrap tests: passed"

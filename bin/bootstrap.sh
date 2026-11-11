@@ -46,7 +46,18 @@ case "$hooks_dir" in /*) ;; *) hooks_dir="$SRC/$hooks_dir" ;; esac
 # the pre-marker header of this same file, so an upgrade still refreshes it.
 local_hook="$hooks_dir/pre-commit.local"
 local_hook_status=0
-if [ -f "$local_hook" ] && ! grep -qE "llmctx-local-checks|agent-harness ITSELF" "$local_hook"; then
+# Line 2 must BE the marker line, or the pre-marker header line, exactly. An
+# unanchored grep let a foreign hook that merely MENTIONED either phrase read
+# as ours and be overwritten -- the review of this change reproduced it with a
+# husky hook whose second line said "NOT agent-harness ITSELF" -- and a
+# substring test on line 2 alone has the same hole. Equality does not.
+local_hook_line2=""
+[ ! -f "$local_hook" ] || local_hook_line2="$(sed -n '2p' "$local_hook")"
+case "$local_hook_line2" in
+  '# llmctx-local-checks' | '# Repo-local pre-commit checks for agent-harness ITSELF. Installed as') local_hook_ours=1 ;;
+  *) local_hook_ours=0 ;;
+esac
+if [ -f "$local_hook" ] && [ "$local_hook_ours" -eq 0 ]; then
   local_hook_status=1
   echo "bootstrap: NOT overwriting $local_hook" >&2
   echo "  it is not this repository's local-checks hook; install-git-hooks.sh preserves a" >&2
