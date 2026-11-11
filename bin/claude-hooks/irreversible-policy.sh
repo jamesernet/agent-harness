@@ -20,17 +20,18 @@ set -euo pipefail
 #                       --force-with-lease | --force-if-includes | +<refspec>
 #   history rewrite     git reset --hard | git filter-branch | git filter-repo
 #   branch deletion     git branch -D | --delete --force (either order) |
-#                       git push --delete | -d | git push <remote> :<ref>
+#                       git push --delete | -d | --prune | git push <remote> :<ref>
 #   recursive delete    rm -r whose target resolves OUTSIDE the command's repo,
-#                       or names / or $HOME outright (~, ~/, //, /. included)
+#                       or names / or a home outright (~, ~/, ~user, //, /., "$HOME"/)
 #
 # ...in any of the spellings a shell allows in front of the verb: `sudo`,
 # `env K=V`, a bare `K=V` assignment, `command`, `exec`, `nohup`, a leading
 # path (`/bin/rm`), git's global options between `git` and the subcommand
 # (`-C <dir>`, `-c <k=v>`, `--no-pager`, `--git-dir=<d>`), as a later statement
-# after `;` `&&` `||` `|`, and INSIDE `$( )` or backticks — a subshell isolates
-# directory and variables, not a push. The first version anchored every rule
-# on `^git` and `^rm`, and `sudo rm -rf /` walked straight through it.
+# after `;` `&&` `||` `|`, after `then`/`do`/`else`/`{`/`!`, and INSIDE `$( )`
+# or backticks — a subshell isolates directory and variables, not a push. The
+# first version anchored every rule on `^git` and `^rm`, and `sudo rm -rf /`
+# walked straight through it.
 #
 # WHAT IT DELIBERATELY DOES NOT JUDGE, because a guard that is wrong half the
 # time gets switched off and then protects nothing (guidelines §5 says exactly
@@ -49,6 +50,10 @@ set -euo pipefail
 #     have.
 #   * `rm -r` inside the repository. Deleting your own build output is ordinary
 #     work. The line is reaching outside the tree you are working in.
+#   * A command string handed to another interpreter: `eval "…"`, `bash -c "…"`,
+#     `sh -c '…'`, `xargs rm -rf`, `find / -delete`. Judging those means
+#     evaluating shell, which this deliberately never does. The limit is named
+#     here so that an `eval` walking through is a known edge, not a surprise.
 #
 # STATED LIMIT: when the command's directory is not in a git repository, only
 # the catastrophic absolute targets are judged. There is no "my work area" to be
@@ -76,16 +81,16 @@ TARGET_LIB="$SCRIPT_DIR/llmctx-target.sh"
 source "$TARGET_LIB"
 
 input="$(cat)"
-tool="$(printf '%s' "$input" | jq -r '.tool_name // ""')"
+tool="$(printf '%s' "$input" | jq -r '.tool_name // ""' 2>/dev/null)"
 # Only Bash. An Edit or a Write cannot force-push, and the matcher in
 # claude/settings.json is re-checked here rather than trusted, for the reason
 # branch-policy.sh gives: a hook that depends on its registration being right
 # is a hook that silently stops working when the registration drifts.
 [[ "$tool" == "Bash" ]] || exit 0
 
-cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // ""')"
+cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)"
 [[ -n "$cmd" ]] || exit 0
-cwd="$(printf '%s' "$input" | jq -r '.cwd // "."')"
+cwd="$(printf '%s' "$input" | jq -r '.cwd // "."' 2>/dev/null)"
 
 # Judge the TARGET's repository, not the session's, exactly as the other two
 # hooks do. bin/lib/target.sh is the shared resolver.
@@ -141,7 +146,10 @@ has_short() { # <statement> <letter>
 # rather than on `^[[:space:]]*git` / `^[[:space:]]*rm`, because `sudo rm -rf /`
 # — the single worst input this hook exists to catch — walked through the
 # first version. Optional and repeatable: `sudo env A=1 /bin/rm`.
-prefix_re='^[[:space:]]*((sudo|command|exec|nohup)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*|env[[:space:]]+(-[^[:space:]]+[[:space:]]+|[^[:space:]]+=[^[:space:]]*[[:space:]]+)*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:]]*/)?'
+# A prefix command's flag may take a separate value (`sudo -u root`), so each
+# flag may be followed by one non-flag word; the regex backtracks when that
+# word turns out to be the verb.
+prefix_re='^[[:space:]]*((sudo|command|exec|nohup)[[:space:]]+(-[^[:space:]]+[[:space:]]+([^-[:space:]][^[:space:]]*[[:space:]]+)?)*|env[[:space:]]+(-[^[:space:]]+[[:space:]]+|[^[:space:]]+=[^[:space:]]*[[:space:]]+)*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:]]*/)?'
 # git's global options between `git` and the subcommand: the fragment the
 # branch guard uses, defined beside the target resolver so both hooks see the
 # same spelling (#79). `-C <dir>` is both scope and spelling.
@@ -171,7 +179,7 @@ while IFS= read -r st; do
       detail="a force push overwrites published history; whatever it replaced is gone for anyone who had fetched it"
       break
     fi
-    if has_flag "$st" '--delete' || has_short "$st" d; then
+    if has_flag "$st" '--delete' '--prune' || has_short "$st" d; then
       finding="remote branch deletion"
       detail="this deletes a branch on the remote, which the guidelines say never happens without an explicit request"
       break
@@ -219,7 +227,7 @@ while IFS= read -r st; do
     targets="$(printf '%s' "$st" |
       sed -E "s#${rm_re}##" |
       tr ' \t' '\n\n' |
-      sed -E -e '/^$/d' -e '/^-/d' -e "s/^[\"']//" -e "s/[\"']\$//")"
+      sed -E -e '/^$/d' -e '/^-/d' -e "s/[\"']//g")"
     home_canonical="$(llmctx_target_canonical "$HOME")"
     while IFS= read -r t; do
       [[ -n "$t" ]] || continue
@@ -240,9 +248,11 @@ while IFS= read -r st; do
         '$HOME' | '${HOME}') t="$HOME" ;;
       esac
       [[ "$t" != /* ]] || t="$(llmctx_target_canonical "$t")"
-      # Catastrophic outright, repository or not.
+      # Catastrophic outright, repository or not. A `~user` that expand_home
+      # left alone is someone's home, which is the same class.
+      # shellcheck disable=SC2154  # llmctx_target_tilde is set by lib/target.sh
       case "$t" in
-        / | "$home_canonical")
+        / | "$home_canonical" | "$llmctx_target_tilde"*)
           finding="recursive delete of a home or root path"
           detail="\"$t\" is not a path anything should be removing recursively"
           break 2

@@ -125,6 +125,26 @@ want ask "command prefix" "$repo" "command rm -rf $tmp/outside"
 want ask "/bin/rm outside repo" "$repo" "/bin/rm -rf $tmp/outside"
 want allow "/bin/rm inside repo" "$repo" "/bin/rm -rf $repo/node_modules"
 
+# The second review's bypasses: a prefix flag with a separate value, a shell
+# keyword or brace in front of the verb, a quote glued to the path, another
+# user's home, and --prune.
+want ask "sudo -u root" "$repo" "sudo -u root rm -rf /"
+want ask "sudo -n -u root force push" "$repo" "sudo -n -u root $PF origin main"
+want ask "brace group" "$repo" "{ $PF origin main; }"
+want ask "if/then" "$repo" "if true; then $PF origin main; fi"
+want ask "for/do" "$repo" "for r in a; do $PF \$r main; done"
+want ask "negated" "$repo" "! $PF origin main"
+want ask "case arm" "$repo" "case x in a) $PF origin main;; esac"
+want ask "quote before the slash" "$repo" 'rm -rf "$HOME"/'
+want ask "quoted root" "$repo" "rm -rf '/'"
+want ask "another user's home" "$repo" "rm -rf ~someone"
+want ask "push --prune" "$repo" "git"" push --prune origin"
+want allow "a keyword inside an argument" "$repo" "git"" commit -m 'then do it'"
+want allow "braces inside a path" "$repo" 'rm -rf ${HOME}/repo/node_modules'
+# Handed to another interpreter: the header names this as the stated limit.
+want allow "eval is not evaluated" "$repo" "eval '$PF origin main'"
+want allow "bash -c is not evaluated" "$repo" "bash -c '$PF origin main'"
+
 # Flag spellings git accepts (finding 3).
 want ask "clustered -fu" "$repo" "git"" push -fu origin main"
 want ask "clustered -uf" "$repo" "git"" push -uf origin main"
@@ -239,12 +259,14 @@ st=0
 payload "$repo" "$PF origin main" | bash "$HOOK" >/dev/null || st=$?
 [[ "$st" -eq 0 ]] || fail "the hook exited $st when denying"
 
-# ...and anything unexpected allows rather than erroring.
+# ...and anything unexpected allows rather than erroring -- and says nothing
+# on stderr either: jq's own parse error used to leak before the ERR trap ran.
 for bad in 'not json at all' '' '{' '{"tool_name":"Bash"}' '{"tool_name":"Bash","tool_input":{}}'; do
   st=0
-  out="$(printf '%s' "$bad" | bash "$HOOK" 2>/dev/null)" || st=$?
+  out="$(printf '%s' "$bad" | bash "$HOOK" 2>"$tmp/bad.err")" || st=$?
   [[ "$st" -eq 0 ]] || fail "the hook exited $st on payload: $bad"
   [[ -z "${out//[[:space:]]/}" ]] || fail "did not fail open on payload: $bad"
+  [[ ! -s "$tmp/bad.err" ]] || fail "wrote to stderr on payload '$bad': $(cat "$tmp/bad.err")"
 done
 
 echo "irreversible policy tests: passed"

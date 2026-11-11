@@ -119,8 +119,16 @@ llmctx_target_statements() {
 # SIDE EFFECT, and the hook that judges actions must see it. The `(` in the
 # separator set already starts a new statement at `$(`; the backtick is added
 # so `\`git push --force\`` is seen the same way.
+# A statement may also begin with a shell keyword or a brace that the matchers
+# below would otherwise see as the verb: `if x; then git push --force; fi`,
+# `for r in a; do rm -rf $r; done`, `{ git push --force; }`, `! rm -rf /`.
+# Those are stripped from the front of each statement, repeatedly, so the
+# verb is what follows them. Braces are not separators -- `${HOME}` must stay
+# whole -- so only a LEADING brace is removed. BSD sed takes the label and the
+# branch as separate expressions.
 llmctx_target_action_statements() {
-  printf '%s' "$1" | tr ';&|()`' '\n\n\n\n\n\n'
+  printf '%s' "$1" | tr ';&|()`' '\n\n\n\n\n\n' |
+    sed -E -e ':a' -e 's/^[[:space:]]*([{}]|(then|do|else|elif|!)([[:space:]]+|$))//' -e 'ta'
 }
 
 # A plain variable assigned in the SAME command text. This is the dominant way
