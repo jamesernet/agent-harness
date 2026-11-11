@@ -1,4 +1,4 @@
-# Copy to .github/workflows/opinion gallery.yml in the org's repo, where the gallery
+# Copy to .github/workflows/opinion-gallery.yml in the org's repo, where the gallery
 # directory and the contract live. Adjust the contract path and the secret
 # name to match provider.api_key_env in config.yml.
 #
@@ -29,7 +29,7 @@ jobs:
         with:
           enable-cache: true
       - name: Run the gallery
-        working-directory: opinion gallery
+        working-directory: opinion-gallery
         run: uv run --locked --extra anthropic opinion-gallery run --contract contracts/<org>
         env:
           # whichever of these provider.api_key_env names
@@ -38,9 +38,22 @@ jobs:
           GH_TOKEN: ${{ github.token }} # gh is preinstalled on runners and reads this
           OPINION_GALLERY_GITHUB_REPO: ${{ github.repository }}
       - name: Commit drafts and state
+        # Same working-directory as the run step, because the paths below are the
+        # ones config.yml declares and those are relative to the directory the
+        # gallery runs in. Without it this step's cwd is the workspace root, the
+        # pathspec matches nothing, `git add` exits 128, and the step fails on
+        # every run — so the state is never committed and a rerun repeats every
+        # paid call, which is the thing committing the state exists to prevent.
+        working-directory: opinion-gallery
         run: |
           git config user.name "opinion-gallery"
           git config user.email "opinion-gallery@users.noreply.github.com"
-          git add opinion-gallery/opinion gallery
+          # Both, because this step is named for both; only the state was staged.
+          # Each is guarded because `git add` exits 128 on a pathspec that
+          # matches nothing, and on a morning when every persona stayed quiet
+          # there are no drafts to stage — the quiet day is the common case.
+          for staged in opinion-gallery/.state.json opinion-gallery/drafts; do
+            [ -e "$staged" ] && git add "$staged"
+          done
           git diff --cached --quiet || git commit -m "opinion-gallery: drafts for $(date -u +%F)"
           git push
