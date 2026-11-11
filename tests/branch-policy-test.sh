@@ -99,7 +99,11 @@ for c in \
   "git --git-dir $repo/.git push" \
   "git -C $repo --no-pager -c core.pager=cat commit -m x" \
   "cd /tmp && git -C $repo commit -m x" \
-  "sudo git -C $repo push"; do
+  "sudo git -C $repo push" \
+  "git -P commit -m x" \
+  "git -p -C $repo commit -m x" \
+  "GIT_TRACE=1 git commit -m x" \
+  "GIT_DIR=$repo/.git git -C $repo push"; do
   payload="$(jq -nc --arg c "$repo" --arg cmd "$c" \
     '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
   [[ "$(decision "$payload")" == deny ]] || fail "allowed '$c' on a protected branch (#79)"
@@ -111,7 +115,10 @@ for c in \
   "git -C $repo log --oneline" \
   "git --no-pager -C $repo diff" \
   "echo 'git -C $repo commit'" \
-  "grep -r 'git -c x=y push' ."; do
+  "grep -r 'git -c x=y push' ." \
+  "git commit-tree HEAD^{tree} -m x" \
+  "git -C $repo commit-graph write" \
+  "git -C $repo push-to-nowhere"; do
   payload="$(jq -nc --arg c "$repo" --arg cmd "$c" \
     '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
   [[ -z "$(hook_with "$payload")" ]] || fail "denied '$c', which mutates nothing"
