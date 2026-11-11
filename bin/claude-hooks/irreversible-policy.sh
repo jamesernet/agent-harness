@@ -16,11 +16,21 @@ set -euo pipefail
 #
 # WHAT IT JUDGES, and nothing else:
 #
-#   force push          git push --force | -f | --force-with-lease | --force-if-includes
+#   force push          git push --force | -f (in any short cluster: -fu) |
+#                       --force-with-lease | --force-if-includes | +<refspec>
 #   history rewrite     git reset --hard | git filter-branch | git filter-repo
-#   branch deletion     git branch -D | git push --delete | git push <remote> :<ref>
+#   branch deletion     git branch -D | --delete --force (either order) |
+#                       git push --delete | -d | git push <remote> :<ref>
 #   recursive delete    rm -r whose target resolves OUTSIDE the command's repo,
-#                       or names /, $HOME or ~ outright
+#                       or names / or $HOME outright (~, ~/, //, /. included)
+#
+# ...in any of the spellings a shell allows in front of the verb: `sudo`,
+# `env K=V`, a bare `K=V` assignment, `command`, `exec`, `nohup`, a leading
+# path (`/bin/rm`), git's global options between `git` and the subcommand
+# (`-C <dir>`, `-c <k=v>`, `--no-pager`, `--git-dir=<d>`), as a later statement
+# after `;` `&&` `||` `|`, and INSIDE `$( )` or backticks — a subshell isolates
+# directory and variables, not a push. The first version anchored every rule
+# on `^git` and `^rm`, and `sudo rm -rf /` walked straight through it.
 #
 # WHAT IT DELIBERATELY DOES NOT JUDGE, because a guard that is wrong half the
 # time gets switched off and then protects nothing (guidelines §5 says exactly
@@ -90,7 +100,10 @@ esac
 # The policy resolves even outside a repository: `git -C <dir> config --local`
 # simply fails there, so resolution falls through to global config and the
 # built-in. That is what lets the catastrophic-target rule below apply anywhere.
-llmctx_policy_resolve "$scope_dir" >/dev/null 2>&1 || exit 0
+# Resolved on its own, not through llmctx_policy_resolve: that one validates
+# every key first and returns 1 on an unrelated typo, and this hook fails open
+# on a non-zero return — so `branchPolicy: stirct` used to switch this gate off.
+llmctx_policy_resolve_irreversible "$scope_dir" >/dev/null 2>&1 || exit 0
 policy="$LLMCTX_IRREVERSIBLE_POLICY"
 [[ "$policy" == "off" ]] && exit 0
 
@@ -100,10 +113,12 @@ repo="$(git -C "$scope_dir" rev-parse --show-toplevel 2>/dev/null || true)"
 # rev-parse result is wrong in whichever direction the symlink was not followed.
 [[ -z "$repo" ]] || repo="$(llmctx_target_canonical "$repo")"
 
-# One statement per line, command substitutions removed, via the shared library
-# — so `foo && git push --force` is seen as its own statement and a `--force`
-# inside "$(...)" is not read as one.
-statements="$(llmctx_target_statements "$cmd")"
+# One statement per line, NOTHING removed, via the shared library — so
+# `foo && git push --force` is its own statement, and so is the `git push
+# --force` inside `echo "$(…)"`: a subshell isolates the working directory and
+# variables, which is why the SCOPE resolver above strips substitutions, and it
+# does not isolate the push, which is why the ACTION matcher must not.
+statements="$(llmctx_target_action_statements "$cmd")"
 
 # A word that is exactly this flag, not a substring of a longer argument.
 has_flag() { # <statement> <flag>…
@@ -115,21 +130,48 @@ has_flag() { # <statement> <flag>…
   return 1
 }
 
+# A short-option cluster containing this letter: `-f`, `-fu`, `-uf`. git
+# accepts clustered short flags and the first version matched only `-f` as a
+# whole word, so `git push -fu origin main` was allowed.
+has_short() { # <statement> <letter>
+  printf '%s' " $1 " | grep -qE "[[:space:]]-[a-zA-Z]*$2[a-zA-Z]*[[:space:]]"
+}
+
+# What a shell allows in front of the verb. Every rule below anchors on this
+# rather than on `^[[:space:]]*git` / `^[[:space:]]*rm`, because `sudo rm -rf /`
+# — the single worst input this hook exists to catch — walked through the
+# first version. Optional and repeatable: `sudo env A=1 /bin/rm`.
+prefix_re='^[[:space:]]*((sudo|command|exec|nohup)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*|env[[:space:]]+(-[^[:space:]]+[[:space:]]+|[^[:space:]]+=[^[:space:]]*[[:space:]]+)*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:]]*/)?'
+# git's global options between `git` and the subcommand: the fragment the
+# branch guard uses, defined beside the target resolver so both hooks see the
+# same spelling (#79). `-C <dir>` is both scope and spelling.
+git_re="${prefix_re}git[[:space:]]+${LLMCTX_GIT_GLOBAL_OPTS_RE:-}"
+rm_re="${prefix_re}rm([[:space:]]|\$)"
+
+# Is this statement `git <subcommand>` — the subcommand as the verb, behind any
+# of the prefixes above? `echo git push --force` and `grep -r "reset --hard"`
+# are not, because their verb is echo and grep.
+is_git() { # <statement> <subcommand-alternation>
+  printf '%s' "$1" | grep -qE "${git_re}($2)([[:space:]]|\$)"
+}
+
 finding=""
 detail=""
 
 while IFS= read -r st; do
   [[ -n "${st//[[:space:]]/}" ]] || continue
 
-  # --- git, by subcommand. The subcommand must be the statement's verb, so
-  #     `echo git push --force` and `grep -r "reset --hard"` are not matched.
-  if printf '%s' "$st" | grep -qE '^[[:space:]]*git([[:space:]]+-[^[:space:]]+|[[:space:]]+-C[[:space:]]+[^[:space:]]+)*[[:space:]]+push([[:space:]]|$)'; then
-    if has_flag "$st" '--force' '-f' '--force-with-lease' '--force-if-includes' '--force-with-lease=[^[:space:]]*'; then
+  # --- git, by subcommand.
+  if is_git "$st" push; then
+    # `+refspec` is the oldest spelling of a forced update, and a short cluster
+    # (`-fu`) is how git actually accepts `-f` next to another flag.
+    if has_flag "$st" '--force' '--force-with-lease' '--force-if-includes' '--force-with-lease=[^[:space:]]*' ||
+      has_short "$st" f || printf '%s' " $st " | grep -qE '[[:space:]]\+[^[:space:]]+'; then
       finding="force push"
       detail="a force push overwrites published history; whatever it replaced is gone for anyone who had fetched it"
       break
     fi
-    if has_flag "$st" '--delete' '-d'; then
+    if has_flag "$st" '--delete' || has_short "$st" d; then
       finding="remote branch deletion"
       detail="this deletes a branch on the remote, which the guidelines say never happens without an explicit request"
       break
@@ -143,47 +185,64 @@ while IFS= read -r st; do
     fi
   fi
 
-  if printf '%s' "$st" | grep -qE '^[[:space:]]*git([[:space:]]+-C[[:space:]]+[^[:space:]]+)*[[:space:]]+reset([[:space:]]|$)' &&
-    has_flag "$st" '--hard'; then
+  if is_git "$st" reset && has_flag "$st" '--hard'; then
     finding="hard reset"
     detail="a hard reset discards uncommitted work in the working tree and index, which nothing else holds a copy of"
     break
   fi
 
-  if printf '%s' "$st" | grep -qE '^[[:space:]]*git([[:space:]]+-C[[:space:]]+[^[:space:]]+)*[[:space:]]+(filter-branch|filter-repo)([[:space:]]|$)'; then
+  if is_git "$st" 'filter-branch|filter-repo'; then
     finding="history rewrite"
     detail="this rewrites every commit it touches, so every existing commit id for them becomes wrong"
     break
   fi
 
-  if printf '%s' "$st" | grep -qE '^[[:space:]]*git([[:space:]]+-C[[:space:]]+[^[:space:]]+)*[[:space:]]+branch([[:space:]]|$)' &&
-    has_flag "$st" '-D' '--delete[[:space:]]+--force' '-rd'; then
+  # `-D`, or `--delete` and `--force` in either order. A remote-tracking ref
+  # (`-r`) is excluded: `git branch -rd origin/stale` is undone by `git fetch`,
+  # and the first version flagged it with a message about unmerged branches,
+  # which was neither what happened nor consistent with `-r -d` being allowed.
+  if is_git "$st" branch && ! has_flag "$st" '--remotes' && ! has_short "$st" r &&
+    { has_short "$st" D ||
+      { { has_flag "$st" '--delete' || has_short "$st" d; } &&
+        { has_flag "$st" '--force' || has_short "$st" f; }; }; }; then
     finding="force branch deletion"
     detail="-D deletes a branch git believes is unmerged; the guidelines reserve force-delete for an explicit request, and -d is the safe form"
     break
   fi
 
   # --- rm -r
-  if printf '%s' "$st" | grep -qE '^[[:space:]]*rm([[:space:]]|$)' &&
+  if printf '%s' "$st" | grep -qE "$rm_re" &&
     printf '%s' "$st" | grep -qE '[[:space:]]-[a-zA-Z]*[rR][a-zA-Z]*([[:space:]]|$)|[[:space:]]--recursive([[:space:]]|$)'; then
-    # Everything that is not the command and not a flag is a target.
+    # Everything after the verb that is not a flag is a target. The prefix and
+    # the verb are removed first, so `/bin/rm` is not itself read as a target
+    # outside the repository.
     targets="$(printf '%s' "$st" |
+      sed -E "s#${rm_re}##" |
       tr ' \t' '\n\n' |
-      sed -E -e '/^$/d' -e '/^rm$/d' -e '/^-/d' -e "s/^[\"']//" -e "s/[\"']\$//")"
+      sed -E -e '/^$/d' -e '/^-/d' -e "s/^[\"']//" -e "s/[\"']\$//")"
+    home_canonical="$(llmctx_target_canonical "$HOME")"
     while IFS= read -r t; do
       [[ -n "$t" ]] || continue
       t="$(llmctx_target_expand_home "$t")"
+      # Normalised BEFORE the catastrophic test, not after it: `~/`, `//`,
+      # `/.` and `/..` all name root or home, and the first version compared
+      # the raw token, so `rm -rf ~` was stopped and `rm -rf ~/` was not.
+      t="$(llmctx_target_strip_slashes "$t")"
+      t="${t%/.}"
+      [[ -n "$t" ]] || t="/"
       # `rm -rf "$HOME"` arrives as the literal four characters `$HOME`, not as
       # its value, because nothing here evaluates shell. The two spellings of
-      # home that matter are recognised by name; a path built from any other
-      # variable is not guessable and falls through to the repository test,
-      # which is the same conservative direction the rest of this takes.
+      # home that matter are recognised by name, after the slash stripping so
+      # `$HOME/` is the same name; a path built from any other variable is not
+      # guessable and falls through to the repository test, which is the same
+      # conservative direction the rest of this takes.
       case "$t" in
         '$HOME' | '${HOME}') t="$HOME" ;;
       esac
+      [[ "$t" != /* ]] || t="$(llmctx_target_canonical "$t")"
       # Catastrophic outright, repository or not.
       case "$t" in
-        / | "$HOME" | '~')
+        / | "$home_canonical")
           finding="recursive delete of a home or root path"
           detail="\"$t\" is not a path anything should be removing recursively"
           break 2

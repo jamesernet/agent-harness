@@ -108,8 +108,44 @@ want allow "message mentioning it" "$repo" "git"" commit -m 'no --force here'"
 want allow "echoing the command" "$repo" "echo '$PF origin main'"
 want allow "grepping for it" "$repo" "grep -r 'reset --hard' ."
 
-# A force push inside a command substitution runs in a subshell.
-want allow "force push in \$( )" "$repo" "echo \"\$($PF origin main)\""
+# A force push inside a command substitution still pushes. The first version
+# allowed this on the grounds that a subshell isolates the outer command — true
+# of its working directory and variables, false of its side effects — and
+# pinned the bypass as a must-allow case. Retired deliberately, not quietly.
+want ask "force push in \$( )" "$repo" "echo \"\$($PF origin main)\""
+want ask "force push in backticks" "$repo" "echo \`$PF origin main\`"
+
+# Prefixes a shell allows in front of the verb (review of PR #77, finding 1).
+want ask "sudo rm -rf /" "$repo" "sudo rm -rf /"
+want ask "/bin/rm -rf /" "$repo" "/bin/rm -rf /"
+want ask "sudo force push" "$repo" "sudo $PF origin main"
+want ask "env prefix" "$repo" "env GIT_TRACE=1 $PF origin main"
+want ask "assignment prefix" "$repo" "GIT_TRACE=1 $PF origin main"
+want ask "command prefix" "$repo" "command rm -rf $tmp/outside"
+want ask "/bin/rm outside repo" "$repo" "/bin/rm -rf $tmp/outside"
+want allow "/bin/rm inside repo" "$repo" "/bin/rm -rf $repo/node_modules"
+
+# Flag spellings git accepts (finding 3).
+want ask "clustered -fu" "$repo" "git"" push -fu origin main"
+want ask "clustered -uf" "$repo" "git"" push -uf origin main"
+want ask "+refspec" "$repo" "git"" push origin +main"
+want ask "clustered -fd" "$repo" "git"" push -fd origin feature/x"
+want ask "--force --delete on branch" "$repo" "git"" branch --force --delete feature/x"
+want ask "--delete --force on branch" "$repo" "git"" branch --delete --force feature/x"
+want ask "-d -f on branch" "$repo" "git"" branch -d -f feature/x"
+
+# A remote-tracking ref is undone by `git fetch` (finding 7).
+want allow "-rd is recoverable" "$repo" "git"" branch -rd origin/stale"
+want allow "-r -d is recoverable" "$repo" "git"" branch -r -d origin/stale"
+want allow "-rD is recoverable" "$repo" "git"" branch -rD origin/stale"
+
+# Trailing slash spellings of root and home (finding 5).
+want ask "rm -rf ~/" "$repo" "rm -rf ~/"
+want ask "rm -rf //" "$repo" "rm -rf //"
+want ask "rm -rf /." "$repo" "rm -rf /."
+want ask "rm -rf /.. " "$repo" "rm -rf /.."
+want ask "rm -rf \$HOME/" "$repo" 'rm -rf "$HOME/"'
+want ask "rm -rf ~/ with no repo" "$outside_repo" "rm -rf ~/"
 
 # Outside a repository only the catastrophic targets are judged — the stated
 # limit in the hook's header.
@@ -149,11 +185,23 @@ cat >"$repo/.llmctx.json" <<'JSON'
 JSON
 want deny "committed policy is read" "$repo" "$PF origin main"
 
-# An INVALID policy file fails OPEN, like the other two hooks.
+# An INVALID irreversiblePolicy fails OPEN, like the other two hooks.
 cat >"$repo/.llmctx.json" <<'JSON'
 {"schemaVersion": 1, "irreversiblePolicy": "sometimes"}
 JSON
 want allow "an invalid policy fails open" "$repo" "$PF origin main"
+
+# ...but a typo in an UNRELATED key does not switch this gate off (finding 4).
+# llmctx_policy_resolve validates every key and returns 1 on a bad
+# branchPolicy; this hook resolves its own key on its own.
+cat >"$repo/.llmctx.json" <<'JSON'
+{"schemaVersion": 1, "branchPolicy": "stirct"}
+JSON
+want ask "a typo in branchPolicy does not disable this gate" "$repo" "$PF origin main"
+cat >"$repo/.llmctx.json" <<'JSON'
+{"schemaVersion": 1, "branchPolicy": "stirct", "irreversiblePolicy": "deny"}
+JSON
+want deny "a typo in branchPolicy does not hide an explicit deny" "$repo" "$PF origin main"
 rm -f "$repo/.llmctx.json"
 
 # The default is `ask` for BOTH profiles, deliberately unlike branchPolicy,

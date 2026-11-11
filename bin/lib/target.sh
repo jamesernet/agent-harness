@@ -12,6 +12,7 @@
 # INTERFACE
 #
 #   llmctx_target_from_command "<command text>"
+#   llmctx_target_action_statements "<command text>"   (one statement per line, nothing removed)
 #
 # Prints the directory the command names, or nothing when it cannot tell.
 # "Cannot tell" is a first-class answer and the caller must handle it.
@@ -95,6 +96,17 @@ llmctx_target_statements() {
   printf '%s' "$1" |
     sed -E -e 's/\$\([^()]*\)//g' -e 's/`[^`]*`//g' |
     tr ';&|()' '\n\n\n\n\n'
+}
+
+# Statements for ACTION matching: the same separators, plus backticks, and
+# NOTHING removed. llmctx_target_statements strips `$( )` and backticks because
+# a `cd` inside a substitution cannot move the outer command — that is a fact
+# about shell STATE. A `git push --force` inside one still pushes — that is a
+# SIDE EFFECT, and the hook that judges actions must see it. The `(` in the
+# separator set already starts a new statement at `$(`; the backtick is added
+# so `\`git push --force\`` is seen the same way.
+llmctx_target_action_statements() {
+  printf '%s' "$1" | tr ';&|()`' '\n\n\n\n\n\n'
 }
 
 # A plain variable assigned in the SAME command text. This is the dominant way

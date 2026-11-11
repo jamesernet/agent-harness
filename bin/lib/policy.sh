@@ -143,6 +143,50 @@ llmctx_policy_validate() {
   }
 }
 
+# irreversiblePolicy: the SAME ladder, a different tenant. Governs commands
+# that cannot be undone — force-push, history rewrite, branch deletion,
+# recursive delete outside the repository.
+#
+# Its built-in default is `ask` for BOTH profiles, deliberately unlike
+# branchPolicy. Branch protection is a strictness dial: a client engagement
+# reasonably forbids what a personal repo merely reminds about. "Confirm
+# before you destroy something" is not a dial — it is the same answer
+# everywhere, and behavioural-guidelines §6 words it as "stop and confirm"
+# rather than "never". Deriving it from the profile would have made the
+# personal default `remind`, which for a destructive command means warning
+# once and then allowing every one that follows.
+#
+# Resolved ON ITS OWN, not behind the file-level validation that
+# llmctx_policy_resolve runs first. That validation returns 1 on a bad
+# branchPolicy, and the hook that guards destructive commands fails open on a
+# non-zero return — so one typo in an unrelated key (`branchPolicy: stirct`)
+# switched this gate off (#77 review). This function validates only its own
+# key; an unreadable file is treated as "nothing declared here" and resolution
+# falls through to global config and the built-in, which is what makes the
+# catastrophic-target rule apply anywhere. An explicit value still wins at
+# every tier, so a repository that wants `deny` says so.
+llmctx_policy_resolve_irreversible() {
+  local root="$1" file value
+  file="$(llmctx_policy_file "$root")"
+  if value="$(git -C "$root" config --local --get llmctx.irreversiblePolicy 2>/dev/null)"; then
+    LLMCTX_IRREVERSIBLE_POLICY="$value"
+    LLMCTX_IRREVERSIBLE_POLICY_SOURCE="git-local"
+  elif [[ -f "$file" ]] && value="$(jq -r '.irreversiblePolicy // empty' "$file" 2>/dev/null)" && [[ -n "$value" ]]; then
+    LLMCTX_IRREVERSIBLE_POLICY="$value"
+    LLMCTX_IRREVERSIBLE_POLICY_SOURCE="repo-policy"
+  elif value="$(git config --global --get llmctx.irreversiblePolicy 2>/dev/null)"; then
+    LLMCTX_IRREVERSIBLE_POLICY="$value"
+    LLMCTX_IRREVERSIBLE_POLICY_SOURCE="git-global"
+  else
+    LLMCTX_IRREVERSIBLE_POLICY="ask"
+    LLMCTX_IRREVERSIBLE_POLICY_SOURCE="built-in"
+  fi
+  case "$LLMCTX_IRREVERSIBLE_POLICY" in
+    off | remind | ask | deny) ;;
+    *) llmctx_policy_error "invalid resolved irreversiblePolicy: $LLMCTX_IRREVERSIBLE_POLICY" || return 1 ;;
+  esac
+}
+
 llmctx_policy_resolve() {
   local root="$1" file value profile_default
   llmctx_policy_validate "$root" || return 1
@@ -182,38 +226,7 @@ llmctx_policy_resolve() {
     *) llmctx_policy_error "invalid resolved branchPolicy: $LLMCTX_BRANCH_POLICY" || return 1 ;;
   esac
 
-  # irreversiblePolicy: the SAME ladder, a different tenant. Governs commands
-  # that cannot be undone — force-push, history rewrite, branch deletion,
-  # recursive delete outside the repository.
-  #
-  # Its built-in default is `ask` for BOTH profiles, deliberately unlike
-  # branchPolicy. Branch protection is a strictness dial: a client engagement
-  # reasonably forbids what a personal repo merely reminds about. "Confirm
-  # before you destroy something" is not a dial — it is the same answer
-  # everywhere, and behavioural-guidelines §6 words it as "stop and confirm"
-  # rather than "never". Deriving it from the profile would have made the
-  # personal default `remind`, which for a destructive command means warning
-  # once and then allowing every one that follows.
-  #
-  # An explicit value still wins at every tier, so a repository that wants
-  # `deny` says so.
-  if value="$(git -C "$root" config --local --get llmctx.irreversiblePolicy 2>/dev/null)"; then
-    LLMCTX_IRREVERSIBLE_POLICY="$value"
-    LLMCTX_IRREVERSIBLE_POLICY_SOURCE="git-local"
-  elif [[ -f "$file" ]] && value="$(jq -r '.irreversiblePolicy // empty' "$file")" && [[ -n "$value" ]]; then
-    LLMCTX_IRREVERSIBLE_POLICY="$value"
-    LLMCTX_IRREVERSIBLE_POLICY_SOURCE="repo-policy"
-  elif value="$(git config --global --get llmctx.irreversiblePolicy 2>/dev/null)"; then
-    LLMCTX_IRREVERSIBLE_POLICY="$value"
-    LLMCTX_IRREVERSIBLE_POLICY_SOURCE="git-global"
-  else
-    LLMCTX_IRREVERSIBLE_POLICY="ask"
-    LLMCTX_IRREVERSIBLE_POLICY_SOURCE="built-in"
-  fi
-  case "$LLMCTX_IRREVERSIBLE_POLICY" in
-    off | remind | ask | deny) ;;
-    *) llmctx_policy_error "invalid resolved irreversiblePolicy: $LLMCTX_IRREVERSIBLE_POLICY" || return 1 ;;
-  esac
+  llmctx_policy_resolve_irreversible "$root" || return 1
 
   if value="$(git -C "$root" config --local --get llmctx.protectedBranches 2>/dev/null)"; then
     LLMCTX_PROTECTED_BRANCHES="$value"
