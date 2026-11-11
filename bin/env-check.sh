@@ -22,12 +22,23 @@ TARGETS_DIR="$SRC/targets"
 source "$SCRIPT_DIR/lib/policy.sh"
 
 mode="${1:-check}"
-root="${2:-$PWD}"
-[[ -d "$root" ]] || {
-  echo "env: not a directory: $root" >&2
-  exit 2
-}
-root="$(cd "$root" && pwd)"
+# With no argument, the REPOSITORY the cwd is in, as explain-policy.sh and
+# repo-diff.sh resolve it -- not the cwd itself. The declaration lives at the
+# root, and from a package subdirectory this used to print "no .llmctx.json in
+# <subdir> -- nothing declared, nothing to check" and exit 0, which reads as a
+# pass to anything that checks the exit code (#58). Outside any repository the
+# cwd is still the answer: `env check` on a plain directory is meaningful. An
+# explicit argument stays literal, because other scripts may rely on it.
+if [[ -n "${2:-}" ]]; then
+  root="$2"
+  [[ -d "$root" ]] || {
+    echo "env: not a directory: $root" >&2
+    exit 2
+  }
+  root="$(cd "$root" && pwd)"
+else
+  root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+fi
 
 failures=0
 add() { # status key detail remediation
