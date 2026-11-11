@@ -10,7 +10,7 @@ symlinks under `--dev` so edits take effect immediately. A project-local `.claud
 **additive**: it cannot hide a globally installed skill.
 
 **Bundles:** [`bundles.conf`](bundles.conf) decides which skills a class of project actually
-installs (`core`, `website`, `webapp`, `platform`, `fintech`, `cloudflare`, or `all`). Every
+installs (`core`, `website`, `webapp`, `platform`, `fintech`, `cloudflare`, `media`, or `all`). Every
 skill below must appear in at least one bundle — `bin/lint-skills.sh` enforces it, because a
 skill in no bundle silently installs only under `all`.
 
@@ -82,6 +82,11 @@ _`review` was dropped 2026-07 — `implement` uses the built-in `/code-review`; 
 | [data-privacy-review](data-privacy-review/) | `/data-privacy-review` · auto | PII inventory, retention/deletion, DSAR, residency, processors |
 | [pci-dss-scoping](pci-dss-scoping/) | `/pci-dss-scoping` · auto | card-data flow mapping, CDE shrinking, SAQ selection |
 | [kyc-aml-review](kyc-aml-review/) | `/kyc-aml-review` · auto | IDV, screening, risk rating, monitoring, SAR workflow |
+
+## media (mine — not upstream)
+| skill | invoke | scope |
+|---|---|---|
+| [plan-to-video](plan-to-video/) | `/plan-to-video` · auto | Claude writes a shot plan, Veo (Gemini API) renders each shot behind a per-render seconds approval, ffmpeg stitches; supporting [plan-format](plan-to-video/references/plan-format.md), [example-plan](plan-to-video/references/example-plan.json), [video.py](plan-to-video/scripts/video.py) |
 
 ## Attribution
 Seeded verbatim from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT,
