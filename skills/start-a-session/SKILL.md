@@ -64,10 +64,12 @@ Which signal means which seam, and the usual case against each, is in
 "also seen, not proposed: …". The failure mode of this skill is becoming a
 status board.
 
-**The nudge.** `/start-a-session architecture` jumps to that seam — but step 1
-still runs in full. The stranded-work check is the one step that must not be
-skippable; both findings that motivated this skill had existed for weeks and
-surfaced only because someone looked.
+**The nudge.** `/start-a-session architecture` jumps to that seam; which seams
+each nudge value narrows to is the last table in [SEAMS](SEAMS.md) (`tickets`
+covers all three tracker seams, and step 3 still asks). Step 1 still runs in
+full. The stranded-work check is the one step that must not be skippable; both
+findings that motivated this skill had existed for weeks and surfaced only
+because someone looked.
 
 ### 3. Offer, then apply
 

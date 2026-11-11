@@ -40,7 +40,6 @@ covers a shorter window than the others.
 
 | skill | invoke | reach for it when |
 |---|---|---|
-| [start-a-session](start-a-session/) | `/start-a-session` | you are opening a working session and want stranded work, the tracker and the merge queue read before you pick what to do |
 | [codebase-design](codebase-design/) | auto | you are about to design or reshape a module's interface and want the deep-module vocabulary applied consistently |
 | [tdd](tdd/) | `/tdd` · auto | you want a feature built test-first without the trap of writing every test before any code |
 | [product-ux-review](product-ux-review/) | `/product-ux-review` · auto | a running web product needs an interaction audit whose findings a client cannot wave away |
