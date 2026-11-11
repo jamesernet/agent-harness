@@ -18,15 +18,20 @@ set -euo pipefail
 #
 #   force push          git push --force | -f (in any short cluster: -fu) |
 #                       --force-with-lease | --force-if-includes | +<refspec>
-#   history rewrite     git reset --hard | git filter-branch | git filter-repo
+#   history rewrite     git reset --hard | git filter-branch | git filter-repo |
+#                       git reflog expire --expire=now | git gc --prune=now
 #   branch deletion     git branch -D | --delete --force (either order) |
-#                       git push --delete | -d | --prune | git push <remote> :<ref>
+#                       git branch -M | -f <name> <start> (a forced move) |
+#                       git update-ref -d | git push --delete | -d | --prune |
+#                       --mirror | git push <remote> :<ref>
 #   recursive delete    rm -r whose target resolves OUTSIDE the command's repo,
 #                       or names / or a home outright (~, ~/, ~user, //, /., "$HOME"/)
 #
 # ...in any of the spellings a shell allows in front of the verb: `sudo`,
-# `env K=V`, a bare `K=V` assignment, `command`, `exec`, `nohup`, a leading
-# path (`/bin/rm`), git's global options between `git` and the subcommand
+# `env K=V`, a bare `K=V` assignment, `command`, `exec`, `nohup`, `nice`,
+# `time`, `timeout <n>`, `doas`, a leading path (`/bin/rm`), a quoted or
+# backslash-escaped verb (`"git"`, `\git`, `git\ push`), git's global options
+# between `git` and the subcommand
 # (`-C <dir>`, `-c <k=v>`, `--no-pager`, `--git-dir=<d>`), as a later statement
 # after `;` `&&` `||` `|`, after `then`/`do`/`else`/`{`/`!`, and INSIDE `$( )`
 # or backticks — a subshell isolates directory and variables, not a push. The
@@ -54,6 +59,12 @@ set -euo pipefail
 #     `sh -c '…'`, `xargs rm -rf`, `find / -delete`. Judging those means
 #     evaluating shell, which this deliberately never does. The limit is named
 #     here so that an `eval` walking through is a known edge, not a surprise.
+#   * A verb or a target held in a variable or a substitution: `$g push
+#     --force`, `rm -rf "$BUILD"`, `rm -rf "$(pwd)/.."`. Only the two literal
+#     spellings of home ($HOME, ${HOME}) are known by name; every other `$` is
+#     "cannot tell", and a target this cannot tell about is NOT judged -- it
+#     is neither called safe nor called dangerous. The first version resolved
+#     the literal text against the repository and called it inside.
 #
 # STATED LIMIT: when the command's directory is not in a git repository, only
 # the catastrophic absolute targets are judged. There is no "my work area" to be
@@ -149,7 +160,7 @@ has_short() { # <statement> <letter>
 # A prefix command's flag may take a separate value (`sudo -u root`), so each
 # flag may be followed by one non-flag word; the regex backtracks when that
 # word turns out to be the verb.
-prefix_re='^[[:space:]]*((sudo|command|exec|nohup)[[:space:]]+(-[^[:space:]]+[[:space:]]+([^-[:space:]][^[:space:]]*[[:space:]]+)?)*|env[[:space:]]+(-[^[:space:]]+[[:space:]]+|[^[:space:]]+=[^[:space:]]*[[:space:]]+)*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:]]*/)?'
+prefix_re='^[[:space:]]*((sudo|doas|command|exec|nohup|nice|ionice|time)[[:space:]]+(-[^[:space:]]+[[:space:]]+([^-[:space:]][^[:space:]]*[[:space:]]+)?)*|timeout[[:space:]]+(-[^[:space:]]+[[:space:]]+)*[^-[:space:]][^[:space:]]*[[:space:]]+|env[[:space:]]+(-[^[:space:]]+[[:space:]]+|[^[:space:]]+=[^[:space:]]*[[:space:]]+)*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:]]*/)?'
 # git's global options between `git` and the subcommand: the fragment the
 # branch guard uses, defined beside the target resolver so both hooks see the
 # same spelling (#79). `-C <dir>` is both scope and spelling.
@@ -166,8 +177,13 @@ is_git() { # <statement> <subcommand-alternation>
 finding=""
 detail=""
 
-while IFS= read -r st; do
-  [[ -n "${st//[[:space:]]/}" ]] || continue
+while IFS= read -r raw; do
+  [[ -n "${raw//[[:space:]]/}" ]] || continue
+  # Quotes and backslashes are spelling, not meaning: `"git" push`, `\git push`
+  # and `git\ push` all run git. They are removed for matching the verb and
+  # its flags; rm targets are read from the raw statement below and have their
+  # own quote handling.
+  st="$(printf '%s' "$raw" | tr -d '\\"'"'"'')"
 
   # --- git, by subcommand.
   if is_git "$st" push; then
@@ -179,7 +195,7 @@ while IFS= read -r st; do
       detail="a force push overwrites published history; whatever it replaced is gone for anyone who had fetched it"
       break
     fi
-    if has_flag "$st" '--delete' '--prune' || has_short "$st" d; then
+    if has_flag "$st" '--delete' '--prune' '--mirror' || has_short "$st" d; then
       finding="remote branch deletion"
       detail="this deletes a branch on the remote, which the guidelines say never happens without an explicit request"
       break
@@ -205,6 +221,35 @@ while IFS= read -r st; do
     break
   fi
 
+  # The recovery path. A hard reset leaves its commits dangling and findable;
+  # expiring the reflog now, or pruning unreachable objects now, is what makes
+  # that loss permanent.
+  if { is_git "$st" reflog && has_flag "$st" '--expire=now' '--expire-unreachable=now' '--expire=all' '--expire-unreachable=all'; } ||
+    { is_git "$st" gc && has_flag "$st" '--prune=now' '--prune=all'; }; then
+    finding="recovery pruning"
+    detail="this removes the dangling commits and objects that a reset or a deleted branch could still be recovered from"
+    break
+  fi
+
+  # Deleting a ref directly is a quieter spelling of `branch -D`, without even
+  # git's unmerged-branch refusal in the way.
+  if is_git "$st" update-ref && { has_flag "$st" '-d' '--delete' || has_short "$st" d; }; then
+    finding="ref deletion"
+    detail="update-ref -d deletes a branch or tag ref outright; -D would at least refuse an unmerged branch"
+    break
+  fi
+
+  # A forced move of a branch: -M renames over an existing name, and
+  # `branch -f <name> <start>` points the name somewhere else. The commits it
+  # pointed to become unreachable, which is the same loss as -D.
+  if is_git "$st" branch && ! has_flag "$st" '--remotes' && ! has_short "$st" r &&
+    ! { has_flag "$st" '--delete' || has_short "$st" d || has_short "$st" D; } &&
+    { has_short "$st" M || has_flag "$st" '--force' || has_short "$st" f; }; then
+    finding="forced branch move"
+    detail="-M or -f points a branch name at a different commit; whatever it pointed to is unreachable afterwards"
+    break
+  fi
+
   # `-D`, or `--delete` and `--force` in either order. A remote-tracking ref
   # (`-r`) is excluded: `git branch -rd origin/stale` is undone by `git fetch`,
   # and the first version flagged it with a message about unmerged branches,
@@ -224,7 +269,8 @@ while IFS= read -r st; do
     # Everything after the verb that is not a flag is a target. The prefix and
     # the verb are removed first, so `/bin/rm` is not itself read as a target
     # outside the repository.
-    targets="$(printf '%s' "$st" |
+    targets="$(printf '%s' "$raw" |
+      tr -d '\\' |
       sed -E "s#${rm_re}##" |
       tr ' \t' '\n\n' |
       sed -E -e '/^$/d' -e '/^-/d' -e "s/[\"']//g")"
@@ -246,13 +292,24 @@ while IFS= read -r st; do
       # conservative direction the rest of this takes.
       case "$t" in
         '$HOME' | '${HOME}') t="$HOME" ;;
+        '$'*) continue ;; # a variable or substitution: cannot tell, so not judged
       esac
-      [[ "$t" != /* ]] || t="$(llmctx_target_canonical "$t")"
-      # Catastrophic outright, repository or not. A `~user` that expand_home
-      # left alone is someone's home, which is the same class.
+      # A `~user` that expand_home left alone is someone's home when that user
+      # exists, and a directory literally named `~something` when not.
       # shellcheck disable=SC2154  # llmctx_target_tilde is set by lib/target.sh
       case "$t" in
-        / | "$home_canonical" | "$llmctx_target_tilde"*)
+        "$llmctx_target_tilde"*)
+          tilde_user="${t#"$llmctx_target_tilde"}"
+          tilde_user="${tilde_user%%/*}"
+          if [[ -n "$tilde_user" ]] && id -u "$tilde_user" >/dev/null 2>&1; then
+            t="/"
+          fi
+          ;;
+      esac
+      [[ "$t" != /* ]] || t="$(llmctx_target_canonical "$t")"
+      # Catastrophic outright, repository or not.
+      case "$t" in
+        / | "$home_canonical")
           finding="recursive delete of a home or root path"
           detail="\"$t\" is not a path anything should be removing recursively"
           break 2

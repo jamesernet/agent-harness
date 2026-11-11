@@ -137,13 +137,44 @@ want ask "negated" "$repo" "! $PF origin main"
 want ask "case arm" "$repo" "case x in a) $PF origin main;; esac"
 want ask "quote before the slash" "$repo" 'rm -rf "$HOME"/'
 want ask "quoted root" "$repo" "rm -rf '/'"
-want ask "another user's home" "$repo" "rm -rf ~someone"
+want ask "another user's home" "$repo" "rm -rf ~root" # a user that exists; ~someone is a literal directory
 want ask "push --prune" "$repo" "git"" push --prune origin"
 want allow "a keyword inside an argument" "$repo" "git"" commit -m 'then do it'"
 want allow "braces inside a path" "$repo" 'rm -rf ${HOME}/repo/node_modules'
 # Handed to another interpreter: the header names this as the stated limit.
 want allow "eval is not evaluated" "$repo" "eval '$PF origin main'"
 want allow "bash -c is not evaluated" "$repo" "bash -c '$PF origin main'"
+
+# The third review's bypasses.
+want ask "nice prefix" "$repo" "nice -n 5 rm -rf /"
+want ask "time prefix" "$repo" "time rm -rf /"
+want ask "timeout prefix" "$repo" "timeout 30 rm -rf /"
+want ask "doas prefix" "$repo" "doas $PF origin main"
+want ask "escaped verb" "$repo" "\\$PF origin main"
+want ask "escaped space in verb" "$repo" "git\\ push --force origin main"
+want ask "quoted verb" "$repo" "\"git\" push --force origin main"
+want ask "single-quoted verb" "$repo" "'git' push --force origin main"
+want ask "push --mirror" "$repo" "git"" push --mirror origin"
+want ask "branch -M" "$repo" "git"" branch -M main"
+want ask "branch --force move" "$repo" "git"" branch --force main HEAD~5"
+want ask "branch -f move" "$repo" "git"" branch -f main HEAD~5"
+want ask "update-ref -d" "$repo" "git"" update-ref -d refs/heads/main"
+want ask "reflog expire now" "$repo" "git"" reflog expire --expire=now --all"
+want ask "gc prune now" "$repo" "git"" gc --prune=now"
+want allow "branch -m rename" "$repo" "git"" branch -m old new"
+want allow "plain gc" "$repo" "git"" gc"
+want allow "plain reflog expire" "$repo" "git"" reflog expire"
+want allow "update-ref set" "$repo" "git"" update-ref refs/heads/x HEAD"
+# A target built from a variable or a substitution is not judged either way:
+# the hook never evaluates shell, and the first version resolved the literal
+# text against the repository and called "$(pwd)/../.." inside it.
+want allow "variable target" "$repo" 'rm -rf "$BUILD_DIR"'
+want allow "substitution target" "$repo" 'rm -rf "$(pwd)/../.."'
+want allow "variable verb is a stated limit" "$repo" "g=git; \$g push --force origin main"
+# A directory literally named ~something, inside the repository, is not a home.
+mkdir -p "$repo/~literal-dir"
+want allow "a literal ~ directory" "$repo" "rm -rf '~literal-dir'"
+want allow "a literal ~ directory, unquoted path" "$repo" "rm -rf ~literal-dir-that-is-no-user"
 
 # Flag spellings git accepts (finding 3).
 want ask "clustered -fu" "$repo" "git"" push -fu origin main"
