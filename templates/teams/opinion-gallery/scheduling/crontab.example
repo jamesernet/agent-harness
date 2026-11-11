@@ -4,5 +4,10 @@
 # here. Keys live in a .env file the command sources, never in the crontab.
 # Run `gh auth login` once as this user, or put GH_TOKEN in the same .env.
 #
+# The redirect needs logs/ to exist, and nothing else creates it, so the line
+# makes it. Without this the redirect fails before uv is reached and the run
+# simply does not happen — every morning, with the log that would have said
+# so being the thing that could not be opened.
+#
 # m h dom mon dow   command
-0 6 * * 1-5  cd /srv/opinion gallery && PATH=/usr/local/bin:/opt/homebrew/bin:$PATH && set -a && . ./.env && set +a && uv run --locked opinion-gallery run --contract contracts/<org> >> logs/opinion gallery.log 2>&1
+0 6 * * 1-5  cd /srv/opinion-gallery && mkdir -p logs && PATH=/usr/local/bin:/opt/homebrew/bin:$PATH && set -a && . ./.env && set +a && uv run --locked opinion-gallery run --contract contracts/<org> >> logs/opinion-gallery.log 2>&1
