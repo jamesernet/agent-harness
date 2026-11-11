@@ -24,6 +24,23 @@ policy_lib="$hooks_dir/llmctx-policy.sh"
 [[ -x "$hook" ]] || fail "pre-commit hook was not installed"
 cmp "$SRC/bin/lib/policy.sh" "$policy_lib" >/dev/null || fail "policy library was not installed"
 
+# A second run over a current install says so and writes nothing; a hook or a
+# policy library that has fallen behind is named as refreshed. The no-argument
+# run is the estate's refresh, and `refreshed:` is the guard that had silently
+# stopped matching the policy it enforces (#85).
+out="$("$SRC/bin/install-git-hooks.sh" "$repo")"
+grep -q "^current: $repo\$" <<<"$out" || fail "a second run did not report the repo current: $out"
+grep -q '^git hooks: 1 current, 0 refreshed, 0 installed, 0 skipped$' <<<"$out" || fail "no summary line: $out"
+printf '%s\n' '# older' >>"$policy_lib"
+out="$("$SRC/bin/install-git-hooks.sh" "$repo")"
+grep -q "^refreshed: $repo (policy library)\$" <<<"$out" || fail "a stale policy library was not reported refreshed: $out"
+cmp "$SRC/bin/lib/policy.sh" "$policy_lib" >/dev/null || fail "a stale policy library was not refreshed"
+printf '%s\n' '# older' >>"$hook"
+printf '%s\n' '# older' >>"$policy_lib"
+out="$("$SRC/bin/install-git-hooks.sh" "$repo")"
+grep -q "^refreshed: $repo (hook, policy library)\$" <<<"$out" || fail "a stale hook and library were not both named: $out"
+cmp "$SRC/bin/git-hooks/pre-commit" "$hook" >/dev/null || fail "a stale hook was not refreshed"
+
 printf '%s\n' '{"schemaVersion":1,"profile":"client"}' >"$repo/.llmctx.json"
 if (cd "$repo" && "$hook" >/dev/null 2>&1); then
   fail "client policy did not block main"

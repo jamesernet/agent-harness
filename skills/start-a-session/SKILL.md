@@ -29,12 +29,15 @@ that gets a skill abandoned.
 1. **Stranded work.** `bin/worktree.sh status --json` (agent-harness; a repo
    that ships its own helper names it in its CLAUDE.md/AGENTS.md). Read the
    `headline` per row — `STRANDED`, `DIRTY`, `DIVERGED`, `UNKNOWN` — and
-   `prSource`: anything but `gh` means the PR column is *unknown*, not empty.
-2. **Tracker.** `gh issue list --state open --json number,title,labels,assignees,updatedAt`
+   `prSource`: `gh-missing` or `gh-failed` means the PR column is *unknown*, not
+   empty; `gh-truncated` means the first page was full and unlisted branches were
+   looked up one by one. The default `gh` limits are 30 issues and 30 PRs, which a
+   busy repository exceeds; the limits above are deliberate.
+2. **Tracker.** `gh issue list --state open --limit 200 --json number,title,labels,assignees,updatedAt`
    into three buckets: `ready` and unassigned (grabbable); open and unlabelled
    (untriaged); `ready` but untouched for weeks (suspect — the premise may have
    moved since it was written).
-3. **Merge queue.** `gh pr list --state open --json number,title,baseRefName,mergeStateStatus,reviewDecision,isDraft`.
+3. **Merge queue.** `gh pr list --state open --limit 100 --json number,title,baseRefName,mergeStateStatus,reviewDecision,isDraft`.
    Flag `CONFLICTING`, approved-and-unmerged, and a child PR whose base branch
    has since merged — nothing retargets it for you.
 4. **Policy and doc drift.** `bin/llmctx repo diff . --json` where the repo is

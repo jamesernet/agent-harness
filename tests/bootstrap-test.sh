@@ -85,4 +85,28 @@ grep -q 'echo mentioning hook ran' "$copy/.git/hooks/pre-commit.local" ||
   fail "a foreign hook that mentions our marker text was overwritten: $(head -3 "$copy/.git/hooks/pre-commit.local")"
 [[ "$status" -ne 0 ]] || fail "bootstrap exited 0 after a foreign hook that mentions our marker text"
 
+# 5. A skill directory with the wrong owner. install-skills.sh reports the
+#    conflict and exits non-zero; bootstrap must still install the branch
+#    backstop, the local checks, the agents and the adapters, name the
+#    conflict in its summary, and exit non-zero (#104). It used to stop at
+#    the skills step, on the day the git hook genuinely needed refreshing.
+copy="$(fresh_copy conflict)"
+home="$tmp/home-conflict"
+mkdir -p "$home/.claude/skills/codebase-design"
+printf '%s\n' '# somebody else wrote this' >"$home/.claude/skills/codebase-design/SKILL.md"
+status=0
+HOME="$home" "$copy/bin/bootstrap.sh" >"$tmp/conflict.out" 2>&1 || status=$?
+grep -q '^conflict: .*codebase-design is not managed' "$tmp/conflict.out" ||
+  fail "test setup: the skills installer did not report the unmanaged directory: $(grep -i conflict "$tmp/conflict.out" | head -2)"
+[[ "$status" -ne 0 ]] || fail "bootstrap exited 0 with a skill conflict"
+grep -q 'llmctx-hook' "$copy/.git/hooks/pre-commit" ||
+  fail "a skill conflict stopped bootstrap before the branch backstop"
+cmp -s "$SRC/bin/git-hooks/pre-commit-local.agent-harness" "$copy/.git/hooks/pre-commit.local" ||
+  fail "a skill conflict stopped bootstrap before this repository's local checks"
+[[ -f "$home/.claude/CLAUDE.md" ]] || fail "a skill conflict stopped bootstrap before the adapters"
+grep -q 'install-skills.sh exited' "$tmp/conflict.out" || fail "the summary did not name the skills step"
+grep -q 'step(s) failed' "$tmp/conflict.out" || fail "the summary did not say what did not happen"
+grep -q '^# somebody else wrote this' "$home/.claude/skills/codebase-design/SKILL.md" ||
+  fail "the unmanaged skill directory was overwritten"
+
 echo "bootstrap tests: passed"
