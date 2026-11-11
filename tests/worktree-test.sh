@@ -176,4 +176,22 @@ got="$(cd "$tmp/via-link" && "$WT" path feature/other)"
 [[ "$got" = "$tmp/org/demo-worktrees/feature-other" ]] ||
   fail "path entered via a symlink was not the physical path: $got"
 
+# An exported GIT_DIR from somewhere else must not make the cwd a work tree.
+# rev-parse honours GIT_DIR over discovery, so from a directory with no .git
+# and GIT_DIR naming the demo repository, --show-toplevel returned the cwd and
+# the script invented a parent beside it, exit 0. Found by the review of #83,
+# pre-existing on main, filed as #94.
+elsewhere="$tmp/elsewhere"
+mkdir -p "$elsewhere"
+status=0
+out="$(cd "$elsewhere" && GIT_DIR="$repo/.git" "$WT" path some/branch 2>/dev/null)" || status=$?
+[[ "$status" -ne 0 ]] ||
+  fail "path with an exported GIT_DIR exited 0 and printed: $out"
+[[ -z "$out" ]] ||
+  fail "path with an exported GIT_DIR invented a location: $out"
+# ...and inside the repository an exported GIT_DIR changes nothing.
+got="$(cd "$repo" && GIT_DIR="$repo/.git" GIT_WORK_TREE="$repo" "$WT" path feature/other)"
+[[ "$got" = "$tmp/org/demo-worktrees/feature-other" ]] ||
+  fail "path inside the repository with GIT_DIR exported was wrong: $got"
+
 echo "worktree tests: passed"

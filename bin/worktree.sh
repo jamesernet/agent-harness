@@ -74,6 +74,18 @@ cmd="${1:-}"
 # RELATIVE from the primary (".git", "../.git"), hence the cd. Each cd is its
 # own bare assignment so a failure is visible to set -e, not swallowed inside a
 # larger string.
+#
+# Answered from where the script STANDS, not from the environment. Git exports
+# GIT_DIR and GIT_COMMON_DIR to every hook it runs, and a shell can carry one
+# left over from an earlier plumbing command; rev-parse honours them over
+# discovery from the cwd. With GIT_DIR naming some repository and the cwd a
+# directory with no .git at all, --show-toplevel returned the cwd, the two git
+# dirs compared equal, and this script laid worktrees out beside an unrelated
+# directory and exited 0 (#94). The loop is the one tests/run.sh and
+# build-adapters.sh use, for the same reason.
+while IFS= read -r variable; do
+  unset "$variable"
+done < <(git rev-parse --local-env-vars)
 toplevel="$(git rev-parse --show-toplevel)"
 git_dir="$(git rev-parse --git-dir)"
 git_dir="$(cd "$git_dir" && pwd -P)"
