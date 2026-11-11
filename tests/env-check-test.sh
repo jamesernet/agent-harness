@@ -40,6 +40,33 @@ run "$d"
 [[ "$status" -eq 0 ]] || fail "a repo with no environment should pass, got $status"
 [[ "$output" == *"declares no environment"* ]] || fail "expected the no-environment message: $output"
 
+# --- no argument: the repository, not the cwd ---------------------------------
+# From a subdirectory, the declaration at the root must be found (#58). The
+# explicit-argument form stays literal, so a wrapper that names a directory
+# keeps meaning that directory.
+d="$(repo rooted '{"schemaVersion":1}')"
+d="$(cd "$d" && pwd)" # $TMPDIR ends in a slash on macOS; the script prints the normalised path
+git -C "$d" init -q
+mkdir -p "$d/pkg/deep"
+set +e
+output="$(cd "$d/pkg/deep" && CI='' HOME="$tmp/home" "$CHECK" check 2>&1)"
+status=$?
+set -e
+[[ "$status" -eq 0 ]] || fail "no-argument check from a subdirectory exited $status: $output"
+[[ "$output" == *"declares no environment"* ]] ||
+  fail "no-argument check from a subdirectory did not find the root declaration: $output"
+run "$d/pkg/deep"
+[[ "$output" == *"no .llmctx.json in $d/pkg/deep"* ]] ||
+  fail "an explicit subdirectory argument was not taken literally: $output"
+# Outside any repository, no argument still means the cwd.
+mkdir -p "$tmp/plain"
+set +e
+output="$(cd "$tmp/plain" && CI='' HOME="$tmp/home" "$CHECK" check 2>&1)"
+status=$?
+set -e
+[[ "$status" -eq 0 && "$output" == *"no .llmctx.json in"* ]] ||
+  fail "no-argument check outside a repository did not fall back to the cwd: $output"
+
 # --- no policy file at all --------------------------------------------------
 mkdir -p "$tmp/bare"
 run "$tmp/bare"

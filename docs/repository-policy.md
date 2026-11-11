@@ -11,7 +11,8 @@
   "branchPolicy": "remind",
   "protectedBranches": ["main", "master"],
   "briefs": "tree",
-  "claudeImport": true
+  "claudeImport": true,
+  "strandedExempt": ["backup/"]
 }
 ```
 
@@ -34,6 +35,8 @@ resolves on this machine; `llmctx env explain` prints it with the steps that
 remain manual.
 
 `claudeImport` is `true` (default) or `false`. `true` expects a `CLAUDE.md` whose body is `@AGENTS.md`. `false` says the repository is deliberately tool-neutral and keeps `AGENTS.md` alone.
+
+`strandedExempt` is a list of branch-name prefixes, empty by default. `bin/worktree.sh status` reports a branch with commits past a protected branch and no pull request as `STRANDED`; a prefix listed here (for example `backup/`, for branches kept on purpose and never meant to merge) suppresses that headline for branches that start with it. The row is still reported, so nothing is hidden; only the judgement is withheld. It is read by `worktree.sh` alone and is not shape-validated, like the two keys above.
 
 These exist because both were being reported against repositories that had chosen otherwise on purpose, and a checker a mature repository must learn to ignore is a checker nobody reads.
 
