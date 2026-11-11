@@ -229,7 +229,13 @@ fi
 if [[ "$policy" == "remind" ]]; then
   session="$(printf '%s' "$input" | jq -r '.session_id // "nosession"')"
   marker_dir="${TMPDIR:-/tmp}/claude-branch-policy"
-  marker="$marker_dir/$(printf '%s|%s' "$session" "$repo" | shasum | cut -d' ' -f1)"
+  # A filename KEY, not a digest. This was `shasum`, which is Perl's and absent
+  # on a minimal Linux; there the substitution failed, the ERR trap exited 0,
+  # and `remind` became `off` with nothing reporting it -- doctor's sha256 check
+  # passes when EITHER tool exists, so it passed on exactly the host where this
+  # broke (#56). cksum is POSIX and ships wherever sh does; a collision costs
+  # one extra reminder, which is the right failure for a once-per-session mark.
+  marker="$marker_dir/$(printf '%s|%s' "$session" "$repo" | cksum | cut -d' ' -f1)"
   mkdir -p "$marker_dir"
   # One marker per (session, repo), and sessions are never revisited — so
   # without this they accumulate indefinitely. Cheap, and keeps the hook from
