@@ -4,21 +4,11 @@
     {
       "name": "cloudflare-skills",
       "repository": "https://github.com/cloudflare/skills",
-      "commit": "27ce0c0e159225caa7ed30ebefd4107aa6c52497",
-      "contentSha256": "0ede6a9468addd521a09b4860cdb3ff34ba019933060f3253ecc8d1aafdb5399",
-      "recordedAt": "2026-07-02",
+      "commit": "cbf893b954222276bf1af57e5f23379231e0efb9",
+      "contentSha256": "f7c140fef36acbd309a8b634bd8911976469fa0497d0671ef61cf05f461cc575",
+      "recordedAt": "2026-11-11",
       "skills": [
-        "agents-sdk",
-        "cloudflare",
-        "cloudflare-email-service",
-        "cloudflare-one",
-        "cloudflare-one-migrations",
-        "durable-objects",
-        "sandbox-sdk",
-        "turnstile-spin",
-        "web-perf",
-        "workers-best-practices",
-        "wrangler"
+        "web-perf"
       ]
     }
   ]

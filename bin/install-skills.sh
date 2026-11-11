@@ -111,19 +111,36 @@ replace_managed_destination() {
   fi
 }
 
+# An unmanaged directory whose content is byte-for-byte what would be installed
+# is ADOPTED: the marker is written and nothing else changes. The Cloudflare
+# plugin writes its skills into the same directory this installer manages, at
+# upstream HEAD, and when our pin is that same commit the two copies differ only
+# by the marker -- reporting that as a conflict stopped bootstrap short of the
+# branch backstop (#104) over bytes that would not have changed. Content that
+# differs is still a conflict, in either direction: an upstream move past our
+# pin surfaces here, which is the signal to re-pin (#36).
+identical_unmanaged() { # <source_dir> <destination> <source hash>
+  [[ -d "$2" && ! -L "$2" ]] || return 1
+  [[ "$(llmctx_skill_hash "$2" 2>/dev/null)" == "$3" ]]
+}
+
 install_copy() {
-  local source_dir="$1" destination="$2" source_path="$3" content_hash staged
+  local source_dir="$1" destination="$2" source_path="$3" content_hash staged adopted=0
+  content_hash="$(llmctx_skill_hash "$source_dir")" || return 1
   if [[ -L "$destination" ]]; then
     if ! is_managed_link "$destination"; then
       echo "conflict: $destination is an unmanaged symlink" >&2
       return 1
     fi
   elif [[ -e "$destination" ]] && ! llmctx_skill_is_managed_copy "$destination"; then
-    echo "conflict: $destination is not managed by agent-harness" >&2
-    return 1
+    if identical_unmanaged "$source_dir" "$destination" "$content_hash"; then
+      adopted=1
+    else
+      echo "conflict: $destination is not managed by agent-harness" >&2
+      return 1
+    fi
   fi
 
-  content_hash="$(llmctx_skill_hash "$source_dir")" || return 1
   staged="$(mktemp -d "$(dirname "$destination")/.llmctx-skill.XXXXXX")" || return 1
   cp -R "$source_dir/." "$staged/" || {
     rm -rf "$staged"
@@ -143,7 +160,11 @@ install_copy() {
 
   if [[ -e "$destination" || -L "$destination" ]]; then
     replace_managed_destination "$staged" "$destination" || return 1
-    echo "updated: $destination ($source_version)"
+    if ((adopted)); then
+      echo "adopted: $destination (identical content; marker written)"
+    else
+      echo "updated: $destination ($source_version)"
+    fi
   else
     mv "$staged" "$destination" || return 1
     echo "installed: $destination ($source_version)"
@@ -161,7 +182,8 @@ install_dev_link() {
     echo "conflict: $destination is an unmanaged symlink" >&2
     return 1
   elif [[ -e "$destination" ]]; then
-    if llmctx_skill_is_managed_copy "$destination"; then
+    if llmctx_skill_is_managed_copy "$destination" ||
+      identical_unmanaged "$source_dir" "$destination" "$(llmctx_skill_hash "$source_dir")"; then
       rm -rf "$destination" || return 1
     else
       echo "conflict: $destination is not managed by agent-harness" >&2

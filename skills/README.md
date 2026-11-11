@@ -171,18 +171,19 @@ harness installs one per Claude account and prunes the rest.
 | `webapp` | a website that holds user data | website + threat-model |
 | `platform` | a backend other things depend on | core + threat-model, data-privacy-review |
 | `fintech` | somewhere money moves (additive) | the payments and fintech family |
-| `cloudflare` | deployed there | the vendored Cloudflare set |
 
 Every skill in this directory must appear in at least one bundle;
 `bin/lint-skills.sh` enforces it.
 
 ## Vendored
 
-`../vendor/` holds Cloudflare's own skills, pinned to an upstream commit in
-`vendor.lock.json` and never edited here: `cloudflare`, `wrangler`,
-`workers-best-practices`, `durable-objects`, `agents-sdk`, `sandbox-sdk`,
-`cloudflare-email-service`, `cloudflare-one`, `cloudflare-one-migrations`,
-`turnstile-spin`, `web-perf`. They keep their upstream licence.
+`../vendor/` holds one of Cloudflare's own skills, `web-perf`, pinned to an
+upstream commit in `vendor.lock.json` and never edited here; it keeps its
+upstream licence. It is vendored because the `website` bundle installs it into
+Codex as well as Claude. The rest of Cloudflare's set was vendored for a
+`cloudflare` bundle that nothing activated, and the Cloudflare plugin keeps the
+full current set in `~/.claude/skills` on its own, so that bundle is gone
+(issue #36).
 
 ## Dropped
 

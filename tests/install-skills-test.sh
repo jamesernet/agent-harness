@@ -63,6 +63,31 @@ if HOME="$copy_home" "$fixture/bin/llmctx" skills install >/dev/null 2>&1; then
 fi
 [[ "$(cat "$copy_home/.claude/skills/local/local.txt")" == "keep me" ]] || fail "unmanaged directory was changed"
 
+# An unmanaged directory whose content is exactly what would be installed is
+# adopted -- marker written, nothing else changed -- instead of being a
+# conflict. This is the Cloudflare plugin writing the same skill at the same
+# upstream commit as our pin; a byte that differs is still a conflict.
+rm -rf "$copy_home/.claude/skills/owned"
+cp -R "$fixture/skills/owned" "$copy_home/.claude/skills/owned"
+[[ ! -f "$copy_home/.claude/skills/owned/.llmctx-managed.json" ]] || fail "test setup: the copy is already marked"
+# (The `local` conflict above is left in place on purpose, so every install
+# from here on exits non-zero; the assertions read the output and the marker.)
+out="$(HOME="$copy_home" "$fixture/bin/llmctx" skills install 2>&1 || true)"
+grep -q "adopted: $copy_home/.claude/skills/owned" <<<"$out" || fail "an identical unmanaged directory was not adopted: $out"
+grep -q "conflict: .*skills/owned" <<<"$out" && fail "an identical unmanaged directory was reported as a conflict"
+jq -e '.managedBy == "jamesernet/llm-context"' "$copy_home/.claude/skills/owned/.llmctx-managed.json" >/dev/null ||
+  fail "adopted directory has no marker"
+rm -rf "$copy_home/.claude/skills/owned"
+cp -R "$fixture/skills/owned" "$copy_home/.claude/skills/owned"
+printf '%s\n' 'one byte more' >>"$copy_home/.claude/skills/owned/SKILL.md"
+out="$(HOME="$copy_home" "$fixture/bin/llmctx" skills install 2>&1 || true)"
+grep -q "conflict: $copy_home/.claude/skills/owned is not managed" <<<"$out" ||
+  fail "an unmanaged directory that DIFFERS was not reported as a conflict: $out"
+grep -q 'one byte more' "$copy_home/.claude/skills/owned/SKILL.md" || fail "a differing unmanaged directory was overwritten"
+rm -rf "$copy_home/.claude/skills/owned"
+HOME="$copy_home" "$fixture/bin/llmctx" skills install >/dev/null 2>&1 || true
+[[ -f "$copy_home/.claude/skills/owned/.llmctx-managed.json" ]] || fail "reinstall after the conflict did not restore the managed copy"
+
 dev_home="$tmp/dev-home"
 HOME="$dev_home" "$fixture/bin/llmctx" skills install --dev >/dev/null
 for target in "$dev_home/.claude/skills" "$dev_home/.codex/skills"; do
