@@ -1,4 +1,8 @@
-# Client profile — the canonical shape.
+# Client profile — compatibility example.
+#
+# New machine configuration should start from work-context.example.toml. This
+# file remains because `llmctx client apply` is a supported compatibility alias
+# for `llmctx context apply` during the migration.
 #
 # THIS FILE IS THE PATTERN. Real profiles live in the workstation repo, at
 # config/clients/<slug>.toml, and are private to that machine. This copy exists
@@ -16,10 +20,11 @@
 # One file per client. Every field below maps to a step in the onboarding
 # checklist that already exists; nothing here is speculative.
 #
-# STATUS: schema + documentation. There is no generator yet — see "Applying a
-# profile" at the bottom. The profile is currently a structured checklist rather
-# than an executable one. That is deliberate: the generator should be written
-# against two real clients, not imagined ones.
+# STATUS: schema + documentation, plus ONE executable slice: `llmctx client
+# apply <profile>` renders the [ai] model policy into the client's Claude
+# account (see "Applying a profile" at the bottom). Everything else is still a
+# structured checklist. That is deliberate: the rest of the generator should be
+# written against two real clients, not imagined ones.
 
 # ---------------------------------------------------------------------------
 [client]
@@ -118,6 +123,20 @@ allow_code_egress = true
 # Never send these even when egress is allowed. Globs, relative to repo root.
 redact = ["**/*.pem", "**/*.key", "docs/legal/**", "**/customer-data/**"]
 
+# WHICH MODELS, HOW HARD. The contract-shaped question "what ran against this
+# client's code" needs an answer that is config, not memory. These three keys
+# are the part of the profile that IS executable today:
+#
+#   llmctx client apply config/clients/<slug>.toml            write
+#   llmctx client apply config/clients/<slug>.toml --check    report drift
+#
+# They land in <account>/settings.json as availableModels + enforceAvailableModels
+# (the /model picker is constrained to this list) and maxEffortLevel (a ceiling
+# the session cannot raise). Nothing else in that file is touched.
+account = "acme"                 # the llmctx Claude account this client runs on
+models = ["opus", "sonnet"]      # aliases or full claude-* ids; omit = no restriction
+max_effort = "high"              # low | medium | high | xhigh | max; omit = no ceiling
+
 # ---------------------------------------------------------------------------
 [infra]
 # ---------------------------------------------------------------------------
@@ -133,9 +152,11 @@ browser_profile = "Acme"
 # APPLYING A PROFILE
 # ===========================================================================
 #
-# There is no generator yet. Today this file is the structured version of the
-# onboarding checklist in the workstation README — fill it in FIRST, then work
-# through the steps, using it as the source for every value.
+# One slice is executable: `llmctx client apply <profile> [--check]` writes the
+# [ai] model policy into the named account's settings and reports drift. For
+# everything else this file is the structured version of the onboarding
+# checklist in the workstation README — fill it in FIRST, then work through the
+# steps, using it as the source for every value.
 #
 # When a generator is written (against real clients, not this example), it
 # should emit rather than interpret, so that everything stays greppable and

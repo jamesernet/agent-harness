@@ -8,13 +8,15 @@ Run `./install.sh` from a checked-out release, then `bin/llmctx doctor`. Install
 
 Installation covers every registered Claude account, not only `~/.claude`. Register one with `bin/llmctx account add <name> <dir>` before installing; `~/.claude` is always covered as `default`. In `doctor --json`, the default account keeps the `claude-skills` check id and each additional account appears as `claude-skills[<name>]`, so existing consumers are unaffected and a lagging second account cannot hide behind an aggregate result.
 
+The `claude-imports` check, named per account the same way, reads the `@import` lines out of each account's generated `CLAUDE.md` and fails on a target that is not on disk. Claude Code reports nothing for an unresolved import — the session runs without those rules — so without this the loss is invisible. It checks **direct** imports only, which the PASS line says in as many words; a target that imports further files is not followed. `build-adapters.sh --check` runs the same scan and reports it separately from drift, because an unresolvable target is the case where the installed file matches what would be generated and is still wrong.
+
 ## Update
 
 Fetch tags, deliberately check out the desired release, run `install.sh`, then run `doctor`. Do not automate `git pull` against `main`. The workstation repository should choose the release; this repository should remain unaware of machine inventory and Git identities.
 
 ## Develop skills
 
-Run `bin/llmctx skills install --dev` to replace managed copies with links into the current checkout. Return to release-like behavior with `bin/llmctx skills install`. Both modes preserve unrelated real directories and fail on name conflicts.
+Run `bin/llmctx skills install --dev` to replace managed copies with links into the current checkout. Return to release-like behavior with `bin/llmctx skills install`. Both modes preserve unrelated real directories and fail on name conflicts. `bin/llmctx agents install --dev` does the same for `agents/`, linking single files; an agent file the installer did not write is preserved, and a source name colliding with one is a conflict.
 
 ## Publish context
 
@@ -28,6 +30,12 @@ Run `bin/llmctx skills install --dev` to replace managed copies with links into 
 4. Create a signed `vMAJOR.MINOR.PATCH` tag on that exact tested commit.
 5. Push `main` and the explicit tag ref, then verify both remote refs.
 6. Let tag CI verify the tag and portable suite before workstation automation adopts it.
+7. Refresh the estate's git hooks from the released checkout: `bin/install-git-hooks.sh`
+   with no arguments walks the built-in repositories and every `llmctx.repo`
+   registration and prints `current`, `refreshed` or `installed` per repository
+   with a summary. The hook and its policy library live in `.git/`, which is
+   never cloned, so a release that changes either leaves every repository's
+   guard behind until this runs; a `refreshed` line is one that had.
 
 If `fetch.pruneTags=true` is configured, do not fetch between creating and
 pushing a new tag: Git may prune the local-only tag because it does not exist on

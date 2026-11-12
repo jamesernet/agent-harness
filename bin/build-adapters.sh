@@ -68,10 +68,9 @@ SHARED=(
 CLAUDE_MD=""
 CLAUDE_SETTINGS_DEST=""
 CLAUDE_HOOKS_DEST=""
-POLICY_LIB_DEST=""
 CLAUDE_CONFIG_PREFIX=""
 CLAUDE_CONFIG_DISPLAY=""
-CODEX_MD="$HOME/.codex/AGENTS.md"
+CODEX_MD=""
 
 # Versioned Claude Code settings (portable safety hooks). Source of truth for the
 # keys it DECLARES; ~/.claude/settings.json is merged from it, not overwritten.
@@ -94,7 +93,17 @@ CLAUDE_SETTINGS_SRC="$SRC/claude/settings.json"
 # was unreadable, untestable, and invisible to both lint-skills.sh and the
 # linter itself.
 CLAUDE_HOOKS_SRC="$SRC/bin/claude-hooks"
-POLICY_LIB_SRC="$SRC/bin/lib/policy.sh"
+
+# Libraries an installed hook may source. An installed hook cannot reach
+# bin/lib, so whatever it needs has to be copied next to it — and this used to
+# be one hardcoded path, which is why two hooks kept private copies of the same
+# command parsing instead of sharing a library. A hook is installed by listing
+# bin/claude-hooks (below); a library is now installed by naming it here.
+#
+#   bin/lib/<name>.sh  ->  <account>/hooks/llmctx-<name>.sh
+HOOK_LIBS=(policy target)
+hook_lib_src() { printf '%s\n' "$SRC/bin/lib/$1.sh"; }
+hook_lib_dest() { printf '%s\n' "$CLAUDE_HOOKS_DEST/llmctx-$1.sh"; }
 
 # Point every per-account destination at one config directory.
 use_account() {
@@ -106,7 +115,6 @@ use_account() {
   CLAUDE_MD="$dir/CLAUDE.md"
   CLAUDE_SETTINGS_DEST="$dir/settings.json"
   CLAUDE_HOOKS_DEST="$dir/hooks"
-  POLICY_LIB_DEST="$CLAUDE_HOOKS_DEST/llmctx-policy.sh"
   CLAUDE_CONFIG_PREFIX="$(llmctx_account_home_path "$dir")"
   # A LITERAL tilde: this one is prose inside the generated CLAUDE.md, read by a
   # human, not a path this script ever opens.
@@ -115,6 +123,11 @@ use_account() {
     "$HOME"/*) CLAUDE_CONFIG_DISPLAY="~/${dir#"$HOME"/}" ;;
     *) CLAUDE_CONFIG_DISPLAY="$dir" ;;
   esac
+}
+
+use_codex_account() {
+  local dir="$1"
+  CODEX_MD="$dir/AGENTS.md"
 }
 
 # jq's `*` is recursive for OBJECTS only. For every other type — arrays
@@ -210,10 +223,19 @@ die() {
 # Fail before touching anything if an input is missing or empty. Cheaper to
 # catch here than to discover a half-rendered adapter later.
 preflight_sources() {
-  local f
+  local f lib
   for f in "${SHARED[@]}"; do
     [[ -f "$GLOBAL_DIR/$f" ]] || die "missing source: $GLOBAL_DIR/$f"
     [[ -s "$GLOBAL_DIR/$f" ]] || die "empty source: $GLOBAL_DIR/$f"
+  done
+  # A library named in HOOK_LIBS but absent from bin/lib would otherwise fail
+  # mid-install, after some accounts had been written, with `install: No such
+  # file or directory` and no mention of HOOK_LIBS. Named here, it fails before
+  # anything is written and says which library and where it was expected.
+  for lib in "${HOOK_LIBS[@]}"; do
+    f="$(hook_lib_src "$lib")"
+    [[ -f "$f" ]] || die "missing hook library: $f (named in HOOK_LIBS)"
+    [[ -s "$f" ]] || die "empty hook library: $f"
   done
 }
 
@@ -299,6 +321,10 @@ render_claude() {
   echo "| \`deny\` | blocks outright — default for committed client profiles |"
   echo
   echo "Repo-local config beats global, so the strict setting lives in the repos that warrant it. The hook is a backstop; the rule in the guidelines is the intent, and it applies even where the policy is \`off\`."
+  echo
+  echo "The same four values govern a second key, \`git config llmctx.irreversiblePolicy\`, behind \`$CLAUDE_CONFIG_DISPLAY/hooks/irreversible-policy.sh\`. It judges the ACTION rather than the branch: force push, hard reset, history rewrite, force branch deletion, remote branch deletion, and a recursive delete reaching outside the repository. Its default is \`ask\` everywhere — \"stop and confirm\" is not a strictness dial, so unlike \`branchPolicy\` it is not derived from the profile, and \`remind\` is treated as \`ask\` because warning once and then allowing every destructive command after it protects nothing."
+  echo
+  echo "Database drops, migrations against a non-local environment, \`git rebase\`, \`commit --amend\`, and opening a PR unasked are NOT checked, deliberately: none is recognisable from a command string without guessing, and a guard that is wrong on ordinary work gets switched off."
 }
 
 render_codex() {
@@ -404,11 +430,16 @@ EOF
 # Resolved once, before anything is written. A malformed registry must stop the
 # run rather than quietly reduce it to the accounts that happened to parse.
 accounts="$(llmctx_accounts_selected "$account")" || exit 1
+codex_accounts=""
+if [[ -z "$account" ]]; then
+  codex_accounts="$(llmctx_accounts codex)" || exit 1
+fi
 
 [[ "$check_only" -eq 1 ]] || refuse_worktree_install
 
 if [[ "$check_only" -eq 1 ]]; then
   drift=0
+  unresolved=0
   while IFS=$'\t' read -r account_name account_dir; do
     [[ -n "$account_name" ]] || continue
     use_account "$account_dir" "$account_name"
@@ -416,6 +447,30 @@ if [[ "$check_only" -eq 1 ]]; then
       echo "drift: $CLAUDE_MD"
       drift=1
     }
+    # NOT drift, and the distinction is the whole point. `drift` means the
+    # installed file differs from what would be generated; an unresolvable
+    # @import is the case where the file IS in sync and still wrong, so
+    # reporting it as drift would be a false diagnosis and the generic remedy
+    # would be wrong too -- for a deleted global/ source, re-running the builder
+    # fails with "missing source:" rather than fixing anything. Guarded on the
+    # file existing so a missing CLAUDE.md reports drift once instead of drift
+    # plus an import flood.
+    if [[ -f "$CLAUDE_MD" ]]; then
+      while IFS=$'\t' read -r kind lineno raw resolved; do
+        case "$kind" in
+          missing | unreadable)
+            echo "$kind import: $CLAUDE_MD:$lineno -> ${resolved:-$raw}"
+            unresolved=1
+            ;;
+          # Said rather than dropped. This is the commit-time path, so a line
+          # nothing could check is worth a word even when it is not a failure --
+          # silence here is what let a wholly unchecked file look clean.
+          unsupported)
+            echo "unsupported import, not checked: $CLAUDE_MD:$lineno -> $raw" >&2
+            ;;
+        esac
+      done < <(llmctx_unresolved_imports "$CLAUDE_MD" || true)
+    fi
     # Compare only the keys this repo declares. A local `theme` is not drift.
     diff <(render_settings_src | jq -S .) <(managed_subset | jq -S .) >/dev/null 2>&1 ||
       {
@@ -430,23 +485,39 @@ if [[ "$check_only" -eq 1 ]]; then
           drift=1
         }
     done
-    diff "$POLICY_LIB_SRC" "$POLICY_LIB_DEST" >/dev/null 2>&1 || {
-      echo "drift: $POLICY_LIB_DEST"
-      drift=1
-    }
+    for lib in "${HOOK_LIBS[@]}"; do
+      diff "$(hook_lib_src "$lib")" "$(hook_lib_dest "$lib")" >/dev/null 2>&1 || {
+        echo "drift: $(hook_lib_dest "$lib")"
+        drift=1
+      }
+    done
   done <<<"$accounts"
 
   # Codex is not a Claude account, so a run narrowed to one has nothing to say
-  # about it either way.
+  # about it either way. A normal run checks every registered Codex home.
   if [[ -z "$account" ]]; then
-    diff <(render_codex) "$CODEX_MD" >/dev/null 2>&1 || {
-      echo "drift: $CODEX_MD"
-      drift=1
-    }
+    while IFS=$'\t' read -r account_name account_dir; do
+      [[ -n "$account_name" ]] || continue
+      use_codex_account "$account_dir"
+      diff <(render_codex) "$CODEX_MD" >/dev/null 2>&1 || {
+        echo "drift: $CODEX_MD"
+        drift=1
+      }
+    done <<<"$codex_accounts"
   fi
 
+  # Both summaries print before exiting: a run with drift AND a dead import has
+  # two separate things wrong and two different remedies. The exit code stays 1
+  # for either, because doctor's adapters check consumes only the status, and a
+  # third code would be a private protocol between two scripts.
+  if [[ "$unresolved" -ne 0 ]]; then
+    echo "an @import target does not resolve; those rules load as nothing, silently." >&2
+    echo "re-run bin/build-adapters.sh from the primary checkout to repair the paths." >&2
+  fi
   if [[ "$drift" -ne 0 ]]; then
     echo "local adapters out of sync. run bin/build-adapters.sh to fix." >&2
+  fi
+  if [[ "$drift" -ne 0 || "$unresolved" -ne 0 ]]; then
     exit 1
   fi
   echo "all local adapters in sync."
@@ -466,8 +537,10 @@ while IFS=$'\t' read -r account_name account_dir; do
     install -m 0755 "$h" "$CLAUDE_HOOKS_DEST/$(basename "$h")"
     echo "built: $CLAUDE_HOOKS_DEST/$(basename "$h")"
   done
-  install -m 0644 "$POLICY_LIB_SRC" "$POLICY_LIB_DEST"
-  echo "built: $POLICY_LIB_DEST"
+  for lib in "${HOOK_LIBS[@]}"; do
+    install -m 0644 "$(hook_lib_src "$lib")" "$(hook_lib_dest "$lib")"
+    echo "built: $(hook_lib_dest "$lib")"
+  done
 
   # Merge, never clobber — see the comment at CLAUDE_SETTINGS_SRC. Written via a
   # temp file so an interrupted or failed jq cannot leave a truncated
@@ -486,5 +559,10 @@ while IFS=$'\t' read -r account_name account_dir; do
 done <<<"$accounts"
 
 if [[ -z "$account" ]]; then
-  install_rendered render_codex "$CODEX_MD" '^## Codex specifics' "$(shared_bytes)"
+  while IFS=$'\t' read -r account_name account_dir; do
+    [[ -n "$account_name" ]] || continue
+    echo "Codex account: $account_name -> $account_dir"
+    use_codex_account "$account_dir"
+    install_rendered render_codex "$CODEX_MD" '^## Codex specifics' "$(shared_bytes)"
+  done <<<"$codex_accounts"
 fi

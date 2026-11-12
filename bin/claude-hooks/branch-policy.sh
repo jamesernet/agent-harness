@@ -52,6 +52,12 @@ POLICY_LIB="$SCRIPT_DIR/llmctx-policy.sh"
 # shellcheck source=../lib/policy.sh
 source "$POLICY_LIB"
 
+TARGET_LIB="$SCRIPT_DIR/llmctx-target.sh"
+[[ -f "$TARGET_LIB" ]] || TARGET_LIB="$SCRIPT_DIR/../lib/target.sh"
+[[ -f "$TARGET_LIB" ]] || exit 0
+# shellcheck source=../lib/target.sh
+source "$TARGET_LIB"
+
 tool="$(printf '%s' "$input" | jq -r '.tool_name // ""')"
 
 # Only mutating tools are in scope. This deliberately re-checks the tool name
@@ -99,123 +105,25 @@ case "$tool" in
     fi
     ;;
   Bash)
-    # `git -C <dir> …` states its own target.
-    scope_dir="$(printf '%s' "$cmd" | sed -n 's/.*git[[:space:]]\{1,\}-C[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' | head -1)"
+    # Which directory the command acts on is bin/lib/target.sh's job: a
+    # `git -C`, else the last statement-initial `cd`, with one level of
+    # same-command variable lookup. The reasoning, and the measured bugs behind
+    # the current form, live there with the code they explain.
+    cd_dir="$(llmctx_target_from_command "$cmd")"
 
-    # A bare `cd <dir>` on its own line counts too. sed reads line by line, so
-    # `$` here is end-of-LINE, and a `cd` terminated by a newline in a
-    # multi-line script is the same statement as one terminated by `&&` — the
-    # commands after it run in that directory either way. Requiring `&&`
-    # rejected the most ordinary shape a multi-line script has:
-    #
-    #     W=/repo-worktrees/feature-x
-    #     cd "$W"
-    #     git commit -m …
-    #
-    # Any `cd` that begins a STATEMENT counts, and the LAST one wins.
-    #
-    # This replaces a leading-only rule. That rule declined to follow a `cd`
-    # through a prefix on the grounds that half-parsing shell is wrong in both
-    # directions — correct as a principle, but leading-only was not the
-    # conservative end of it. Measured against this hook before the change:
-    #
-    #   cd <feature> && git commit                        ALLOW   correct
-    #   lsof … | xargs kill; cd <feature> && git commit    DENY    false positive
-    #   cd <feature> && cd <primary-on-main> && git commit ALLOW   REAL VIOLATION
-    #
-    # The third is the hole: the second `cd` is the one the shell honours, the
-    # commit lands on the trunk, and the guard allowed it — the exact failure the
-    # leading-only comment cited as its reason not to widen. Reported as the
-    # first case of emergent-possibilities/moorerunway.com#68, where a correct
-    # worktree commit was refused for carrying a `lsof` cleanup prefix.
-    #
-    # Last-wins is what the shell does for sequential statements, so it fixes the
-    # false positive and closes the hole together. Separators are treated as
-    # statement boundaries by turning each into a newline, which keeps this to
-    # string work: no eval, no parser.
-    #
-    # Still conservative where it cannot tell: a `cd` whose directory does not
-    # exist, or is built from anything other than a plain variable assigned in
-    # the same command, falls through to the session cwd as before.
-    if [[ -z "$scope_dir" ]]; then
-      # Command substitutions are removed FIRST. A `cd` inside `$( )` or
-      # backticks runs in a subshell whose directory never reaches the outer
-      # command, so honouring it would scope the guard to a directory the git
-      # write never touches — `git commit -m "$(cd /elsewhere && pwd)"` must
-      # still be judged where the commit lands. One level is unwound, which is
-      # what gets written; anything deeper leaves a `cd` that fails the
-      # directory test below and falls through.
-      #
-      # `sed -E`, not BRE. BSD sed — which is what macOS ships, and this repo
-      # supports macOS first — has no `\|` alternation in basic expressions, so
-      # the BRE form matched nothing here and silently fell through to the cwd.
-      # It failed open, which is the safe direction, but it also meant the fix
-      # did nothing at all on the machine it was written on.
-      cd_dir="$(printf '%s' "$cmd" |
-        sed -E -e 's/\$\([^()]*\)//g' -e 's/`[^`]*`//g' |
-        tr ';&|()' '\n\n\n\n\n' |
-        sed -E -n "s/^[[:space:]]*cd[[:space:]]+[\"']?([^\"']*[^\"' ])[\"']?[[:space:]]*\$/\1/p" |
-        tail -1)"
-      # `cd ~/x` is written far more often than the expanded path. Expanding a
-      # leading `~/` keeps this to string work rather than eval.
-      #
-      # The tilde is held in a variable rather than written as a literal in the
-      # pattern: shellcheck reads `"~/"*)` as an attempt to expand a tilde in
-      # quotes (SC2088) and warns, which is a false positive here — we are
-      # matching a literal `~` the user typed, not asking the shell for $HOME —
-      # but a warning that has to be explained every time it is read is worse
-      # than the two lines that remove it.
-      tilde="~"
-      case "$cd_dir" in
-        "$tilde"/*) cd_dir="$HOME/${cd_dir#"$tilde"/}" ;;
-        "$tilde") cd_dir="$HOME" ;;
-      esac
-      # `cd "$WT"` where WT was assigned earlier IN THE SAME COMMAND.
-      #
-      # This is the dominant way an agent addresses a worktree — the path is
-      # long, so it goes in a variable first — and it defeated everything
-      # above: the capture returns the literal string `$WT`, which is not a
-      # directory, so the scope fell back to the session cwd. The result was a
-      # commit in a feature worktree judged against whatever the PRIMARY
-      # checkout happened to have checked out. Under a worktree-per-session
-      # flow the primary checkout sits on the trunk by design, so this denied
-      # every commit from every worktree, and the message pointed at branching
-      # when the session had already branched.
-      #
-      # Still string work, not shell: the assignment is literally present in
-      # the same command text, so this is a lookup rather than an evaluation.
-      # Only a leading run of assignments is honoured, and only a bare
-      # `$VAR`/`${VAR}` — a variable built from other variables, or set in an
-      # earlier tool call, is not visible here and correctly falls through.
-      case "$cd_dir" in
-        '$'*)
-          var="${cd_dir#'$'}"
-          var="${var#\{}"
-          var="${var%\}}"
-          # Assignments only at the start of a STATEMENT, so `--flag=x` is not
-          # read as one. Separators are normalised to newlines exactly as above,
-          # which is what lets `W=/path; cd "$W"` resolve — written on one line
-          # with a `;`, the assignment is not at end-of-line and the previous
-          # pattern could not see it. First wins, matching the shell.
-          assigned="$(printf '%s' "$cmd" |
-            sed -E -e 's/\$\([^()]*\)//g' -e 's/`[^`]*`//g' |
-            tr ';&|()' '\n\n\n\n\n' |
-            sed -E -n "s/^[[:space:]]*${var}=[\"']?([^\"']*[^\"' ])[\"']?[[:space:]]*\$/\1/p" | head -1)"
-          case "$assigned" in
-            "$tilde"/*) assigned="$HOME/${assigned#"$tilde"/}" ;;
-          esac
-          [[ -n "$assigned" && -d "$assigned" ]] && cd_dir="$assigned"
-          ;;
-      esac
+    # A relative cd is relative to the session, so resolve it from there. The
+    # library returns what was written and leaves this to the caller, because
+    # the payload cwd is the only cwd this hook may trust.
+    case "$cd_dir" in
+      "" | /*) ;;
+      *) cd_dir="$(printf '%s' "$input" | jq -r '.cwd // "."')/$cd_dir" ;;
+    esac
 
-      # A relative cd is relative to the session, so resolve it from there.
-      case "$cd_dir" in
-        "" | /*) ;;
-        *) cd_dir="$(printf '%s' "$input" | jq -r '.cwd // "."')/$cd_dir" ;;
-      esac
-
-      [[ -n "$cd_dir" && -d "$cd_dir" ]] && scope_dir="$cd_dir"
-    fi
+    # This hook needs somewhere real for `git -C` to stand, so a path that does
+    # not exist falls through to the session cwd. account-guard.sh wants the
+    # opposite and canonicalises instead; that difference is why the library
+    # does not decide existence.
+    [[ -n "$cd_dir" && -d "$cd_dir" ]] && scope_dir="$cd_dir"
     ;;
 esac
 
@@ -279,8 +187,29 @@ if [[ "$tool" == "Bash" ]]; then
   # it, or `grep -r "git push" .` — and under `deny` every one of those false
   # positives is a hard block on an innocent command, which is how a guard
   # earns its removal. Optional leading `sudo`/`env`; allows `cd x && git commit`.
+  #
+  # Global options between `git` and the subcommand are part of the spelling:
+  # `git -C <dir> commit` is how an agent commits in another checkout, and
+  # `-c <k=v>`, `--no-pager`, `--git-dir=<d>` and `--git-dir <d>` are ordinary.
+  # The guard resolved `-C <dir>` as the TARGET for months (lib/target.sh) while
+  # this matcher could not see the same spelling, so `git -C <dir> commit` on a
+  # protected branch never reached the gate at all (#79). One fragment, defined
+  # beside the target resolver in lib/target.sh and used by both greps below,
+  # so the refspec check sees the same prefix the gate does -- and so the
+  # sibling irreversible-policy hook can see it too, rather than growing a
+  # third hand-rolled matcher.
+  git_opts="$LLMCTX_GIT_GLOBAL_OPTS_RE"
+  # The subcommand must be the whole word: `commit-graph write` and
+  # `commit-tree` are plumbing, not commits, and `\b` let `commit` match the
+  # front of both (`-` is a word boundary). A bare `K=V` assignment is a
+  # prefix the shell allows exactly as `env K=V` is, so it is one too.
+  # The prefix group is lib/target.sh's, shared with irreversible-policy.sh.
+  # The local copy accepted `sudo ` but not `sudo -u root `, so a wrapper flag
+  # with its own value walked a commit on a protected branch straight past the
+  # gate -- found by the review of #103, after the same gap had been fixed in
+  # the resolver and, this morning, in the sibling hook.
   if ! printf '%s' "$cmd" |
-    grep -qE '(^|[;&|]|&&|\|\||[[:space:]]&|^[[:space:]]*)[[:space:]]*(sudo[[:space:]]+|env[[:space:]]+[^[:space:]]+=[^[:space:]]*[[:space:]]+)*git[[:space:]]+(commit|push)\b'; then
+    grep -qE "(^|[;&|]|&&|\|\||[[:space:]]&|^[[:space:]]*)[[:space:]]*${LLMCTX_CMD_PREFIX_RE}git[[:space:]]+${git_opts}(commit|push)([[:space:]]|\$)"; then
     exit 0
   fi
 
@@ -289,7 +218,7 @@ if [[ "$tool" == "Bash" ]]; then
   # publish work, and denying it was the second false block this hook produced.
   # Only an explicit refspec counts: a bare `git push` on a protected branch
   # still pushes the protected branch, and is still caught.
-  if printf '%s' "$cmd" | grep -qE 'git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?push\b'; then
+  if printf '%s' "$cmd" | grep -qE "git[[:space:]]+${git_opts}push([[:space:]]|\$)"; then
     pushed_ref="$(printf '%s' "$cmd" |
       sed -n 's/.*push[[:space:]]\{1,\}\(-[^[:space:]]*[[:space:]]\{1,\}\)*[^[:space:]-][^[:space:]]*[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\2/p' | head -1)"
     pushed_ref="${pushed_ref#*:}" # src:dst — the destination is what lands
@@ -309,7 +238,13 @@ fi
 if [[ "$policy" == "remind" ]]; then
   session="$(printf '%s' "$input" | jq -r '.session_id // "nosession"')"
   marker_dir="${TMPDIR:-/tmp}/claude-branch-policy"
-  marker="$marker_dir/$(printf '%s|%s' "$session" "$repo" | shasum | cut -d' ' -f1)"
+  # A filename KEY, not a digest. This was `shasum`, which is Perl's and absent
+  # on a minimal Linux; there the substitution failed, the ERR trap exited 0,
+  # and `remind` became `off` with nothing reporting it -- doctor's sha256 check
+  # passes when EITHER tool exists, so it passed on exactly the host where this
+  # broke (#56). cksum is POSIX and ships wherever sh does; a collision costs
+  # one extra reminder, which is the right failure for a once-per-session mark.
+  marker="$marker_dir/$(printf '%s|%s' "$session" "$repo" | cksum | cut -d' ' -f1)"
   mkdir -p "$marker_dir"
   # One marker per (session, repo), and sessions are never revisited — so
   # without this they accumulate indefinitely. Cheap, and keeps the hook from

@@ -101,6 +101,115 @@ else
     "create and review $root/docs/briefs/README.md, or set \"briefs\": \"tracker\" in .llmctx.json"
 fi
 
+# A repository under a file-sync root is not a style question. iCloud created
+# collision-duplicate files named "<name> 2" inside .git/refs of a checkout kept
+# in ~/Documents; `git fetch` then failed with "fatal: bad object
+# refs/heads/... 2" and the checkout reported a stale origin/main for days with
+# no visible error. The same sync duplicated a tracked document, preserving a
+# superseded copy beside the corrected one, and local Terraform state sat in the
+# same tree.
+#
+# Checked per repository rather than in `doctor` because location is a property
+# of a repository, and the estate audit runs `repo diff` on each one, so this
+# covers both a single repository and the fleet.
+#
+# BOTH the working tree and the common Git directory are tested. For a linked
+# worktree they are different places, and the refs that actually corrupt live in
+# the common directory, so testing the checkout alone reported OK for a worktree
+# whose shared .git sat in a synced tree — backwards from the incident above.
+#
+# Canonicalising never aborts the command. `cd` into a candidate can fail on an
+# unreadable directory or a stalled network mount, and a failed command
+# substitution under `set -e` took the whole of `repo diff` down with it,
+# including every unrelated finding. An uncheckable candidate is skipped.
+#
+# ~/Documents and ~/Desktop are synced only when iCloud's Desktop & Documents
+# option is on, and the CloudDocs mirror directory is what indicates that: the
+# home directory keeps its ordinary path either way, so testing the path alone
+# would report every Mac.
+sync_canonical() { # <dir> -> resolved path, or the input when it cannot be read
+  (cd "$1" 2>/dev/null && pwd -P) || printf '%s' "$1"
+}
+
+sync_declared="$(declared syncLocation)"
+if [[ "$sync_declared" == "false" ]]; then
+  # Declarable for the same reason claudeImport and briefs are: a checker a
+  # mature repository must learn to ignore is a checker nobody reads. Moving the
+  # repository is the fix; saying so out loud is the alternative.
+  add_finding sync-location OVERRIDE "repository outside any file-sync root" \
+    "declined; the owner accepts the sync risk for this repository" repo-policy ""
+else
+  home="${HOME:-}"
+  sync_prefixes=()
+  sync_labels=()
+  if [[ -n "$home" ]]; then
+    sync_prefixes+=("$home/Library/Mobile Documents") && sync_labels+=("iCloud Drive")
+    sync_prefixes+=("$home/Library/CloudStorage") && sync_labels+=("a CloudStorage provider")
+    # A second linked account renames these: Dropbox becomes "Dropbox (Personal)"
+    # and "Dropbox (Business)", and OneDrive appends the organisation name as
+    # "OneDrive - Example Org". Matching only the bare path missed all of those.
+    #
+    # The separator is matched rather than globbed open, because a bare trailing
+    # `*` also matches a directory that merely STARTS with the vendor name:
+    # ~/Dropbox-notes is an ordinary folder no sync client owns, and it was
+    # reported CONFLICT with "synced by Dropbox-notes", failing `repo diff` for
+    # a repository whose location is fine. Only the spellings a client actually
+    # creates count: the bare name, " (" for Dropbox, " - " for OneDrive.
+    for vendor in Dropbox OneDrive "Google Drive"; do
+      for candidate_dir in "$home/$vendor" "$home/$vendor "\(*\) "$home/$vendor - "*; do
+        [[ -d "$candidate_dir" ]] || continue
+        sync_prefixes+=("$candidate_dir") && sync_labels+=("$(basename "$candidate_dir")")
+      done
+    done
+    if [[ -d "$home/Library/Mobile Documents/com~apple~CloudDocs/Documents" ]]; then
+      sync_prefixes+=("$home/Documents") && sync_labels+=("iCloud Desktop & Documents")
+      sync_prefixes+=("$home/Desktop") && sync_labels+=("iCloud Desktop & Documents")
+    fi
+  fi
+
+  common_dir="$(git -C "$root" rev-parse --git-common-dir 2>/dev/null || printf '%s' "$root/.git")"
+  case "$common_dir" in /*) ;; *) common_dir="$root/$common_dir" ;; esac
+  # Parallel arrays, for the same reason sync_prefixes/sync_labels are: packing
+  # "path|label" into one string and splitting on "|" truncates a path that
+  # contains a literal pipe, so the finding named a directory that was not the
+  # one tested.
+  checked_targets=("$(sync_canonical "$root")")
+  checked_whats=("working tree")
+  git_state_dir="$(sync_canonical "$(dirname "$common_dir")")"
+  if [[ "$git_state_dir" != "${checked_targets[0]}" ]]; then
+    checked_targets+=("$git_state_dir") && checked_whats+=("shared Git directory")
+  fi
+
+  sync_hit=""
+  entry=0
+  while [[ "$entry" -lt "${#checked_targets[@]}" ]]; do
+    target="${checked_targets[entry]}"
+    what="${checked_whats[entry]}"
+    index=0
+    while [[ "$index" -lt "${#sync_prefixes[@]}" ]]; do
+      prefix="$(sync_canonical "${sync_prefixes[index]}")"
+      if [[ -d "$prefix" ]]; then
+        case "$target/" in
+          "$prefix"/*)
+            sync_hit="$target is under $prefix, synced by ${sync_labels[index]} ($what)"
+            break 2
+            ;;
+        esac
+      fi
+      index=$((index + 1))
+    done
+    entry=$((entry + 1))
+  done
+
+  if [[ -n "$sync_hit" ]]; then
+    add_finding sync-location CONFLICT "repository outside any file-sync root" \
+      "$sync_hit" filesystem \
+      "move the repository outside that directory, for example under ~/repos/github.com/<org>/, then run git worktree repair; or set \"syncLocation\": false in .llmctx.json to accept the risk"
+  else
+    add_finding sync-location OK "repository outside any file-sync root" "not under a known sync root" filesystem ""
+  fi
+fi
+
 hooks_path="$(git -C "$root" config --get core.hooksPath || true)"
 if [[ -n "$hooks_path" ]]; then
   add_finding git-hook UNKNOWN "agent-harness branch backstop" "managed by core.hooksPath=$hooks_path" git-local "integrate the branch check through that hook framework"
@@ -139,6 +248,11 @@ else
 
   if [[ ! -f "$installed_hook" ]]; then
     add_finding git-hook MISSING "agent-harness branch backstop" missing git-hooks "$remediation"
+  elif grep -q 'scaffold-hook-shim' "$installed_hook"; then
+    # project-scaffold's placeholder, asking to be replaced by the installer.
+    # Reported identically to a husky hook, it looked like an integration a
+    # person had to investigate; it is a one-command fix, so it is MISSING.
+    add_finding git-hook MISSING "agent-harness branch backstop" "scaffold placeholder, not yet replaced" git-hooks "$remediation"
   elif ! grep -q 'llmctx-hook' "$installed_hook"; then
     add_finding git-hook UNKNOWN "agent-harness branch backstop" "foreign pre-commit hook" git-hooks "$remediation"
   elif cmp "$SRC/bin/git-hooks/pre-commit" "$installed_hook" >/dev/null 2>&1; then

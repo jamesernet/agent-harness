@@ -70,5 +70,25 @@ if HOME="$test_home" "$SRC/bin/build-adapters.sh" --check >/dev/null 2>&1; then
   fail "an edited managed hook entry was not reported as drift"
 fi
 
+# An unresolvable @import is reported as its own failure, not as drift. The
+# vocabulary is the assertion: `drift` means the installed file differs from
+# what would be generated, and this is the case where it does not differ and is
+# still wrong -- so calling it drift would send the reader to a remedy that
+# cannot fix it. $SRC/global cannot be renamed from here, so the dead target is
+# introduced by hand instead; that also makes it drift, which is why the test
+# looks for the import line rather than merely a non-zero exit.
+HOME="$test_home" "$SRC/bin/build-adapters.sh" >/dev/null
+printf '@%s\n' "$tmp/not-a-real-file.md" >>"$test_home/.claude/CLAUDE.md"
+out="$(HOME="$test_home" "$SRC/bin/build-adapters.sh" --check 2>&1)" &&
+  fail "--check accepted an unresolvable @import target"
+case "$out" in
+  *"missing import:"*) ;;
+  *) fail "--check did not report an unresolved import: $out" ;;
+esac
+case "$out" in
+  *"those rules load as nothing, silently."*) ;;
+  *) fail "--check did not explain what an unresolved import costs" ;;
+esac
+
 rm -rf "$tmp"
 echo "build-adapters tests passed."

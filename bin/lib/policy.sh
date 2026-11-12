@@ -21,7 +21,7 @@ llmctx_policy_file() {
 }
 
 llmctx_policy_validate() {
-  local root="$1" file schema profile branch_policy invalid_branch invalid_environment
+  local root="$1" file schema profile branch_policy irreversible_policy merge_policy invalid_branch invalid_environment
   file="$(llmctx_policy_file "$root")"
   LLMCTX_POLICY_ERROR=""
   [[ -f "$file" ]] || return 0
@@ -55,6 +55,28 @@ llmctx_policy_validate() {
     "" | off | remind | ask | deny) ;;
     *)
       llmctx_policy_error "invalid branchPolicy in $file: $branch_policy"
+      return 1
+      ;;
+  esac
+
+  irreversible_policy="$(jq -r '.irreversiblePolicy // empty' "$file")"
+  case "$irreversible_policy" in
+    "" | off | remind | ask | deny) ;;
+    *)
+      llmctx_policy_error "invalid irreversiblePolicy in $file: $irreversible_policy"
+      return 1
+      ;;
+  esac
+
+  # mergePolicy is validated here, loudly, although no hook reads it: a
+  # repository that misspells what a session may do with a finished pull
+  # request should hear about it from `repo diff` rather than have the value
+  # silently ignored by the skill that was meant to obey it.
+  merge_policy="$(jq -r '.mergePolicy // empty' "$file")"
+  case "$merge_policy" in
+    "" | hold | review-and-merge | queue) ;;
+    *)
+      llmctx_policy_error "invalid mergePolicy in $file: $merge_policy"
       return 1
       ;;
   esac
@@ -134,6 +156,88 @@ llmctx_policy_validate() {
   }
 }
 
+# irreversiblePolicy: the SAME ladder, a different tenant. Governs commands
+# that cannot be undone — force-push, history rewrite, branch deletion,
+# recursive delete outside the repository.
+#
+# Its built-in default is `ask` for BOTH profiles, deliberately unlike
+# branchPolicy. Branch protection is a strictness dial: a client engagement
+# reasonably forbids what a personal repo merely reminds about. "Confirm
+# before you destroy something" is not a dial — it is the same answer
+# everywhere, and behavioural-guidelines §6 words it as "stop and confirm"
+# rather than "never". Deriving it from the profile would have made the
+# personal default `remind`, which for a destructive command means warning
+# once and then allowing every one that follows.
+#
+# Resolved ON ITS OWN, not behind the file-level validation that
+# llmctx_policy_resolve runs first. That validation returns 1 on a bad
+# branchPolicy, and the hook that guards destructive commands fails open on a
+# non-zero return — so one typo in an unrelated key (`branchPolicy: stirct`)
+# switched this gate off (#77 review). This function validates only its own
+# key; an unreadable file is treated as "nothing declared here" and resolution
+# falls through to global config and the built-in, which is what makes the
+# catastrophic-target rule apply anywhere. An explicit value still wins at
+# every tier, so a repository that wants `deny` says so.
+llmctx_policy_resolve_irreversible() {
+  local root="$1" file value
+  file="$(llmctx_policy_file "$root")"
+  if value="$(git -C "$root" config --local --get llmctx.irreversiblePolicy 2>/dev/null)"; then
+    LLMCTX_IRREVERSIBLE_POLICY="$value"
+    LLMCTX_IRREVERSIBLE_POLICY_SOURCE="git-local"
+  elif [[ -f "$file" ]] && value="$(jq -r '.irreversiblePolicy // empty' "$file" 2>/dev/null)" && [[ -n "$value" ]]; then
+    LLMCTX_IRREVERSIBLE_POLICY="$value"
+    LLMCTX_IRREVERSIBLE_POLICY_SOURCE="repo-policy"
+  elif value="$(git config --global --get llmctx.irreversiblePolicy 2>/dev/null)"; then
+    LLMCTX_IRREVERSIBLE_POLICY="$value"
+    LLMCTX_IRREVERSIBLE_POLICY_SOURCE="git-global"
+  else
+    LLMCTX_IRREVERSIBLE_POLICY="ask"
+    LLMCTX_IRREVERSIBLE_POLICY_SOURCE="built-in"
+  fi
+  case "$LLMCTX_IRREVERSIBLE_POLICY" in
+    off | remind | ask | deny) ;;
+    *) llmctx_policy_error "invalid resolved irreversiblePolicy: $LLMCTX_IRREVERSIBLE_POLICY" || return 1 ;;
+  esac
+}
+
+# mergePolicy: what a session may do with a pull request it has finished.
+# The same four tiers, a fourth tenant -- and the first one no hook reads: this
+# is about what a session CHOOSES, not what it is stopped from doing, so the
+# readers are skills (grab, start-a-session, the merge-queue pass).
+#
+#   hold              open it, record the review on it, say it is ready, stop.
+#   review-and-merge  dispatch a FRESH reviewer, never the authoring context;
+#                     merge only on a clean verdict, after CI, then clean up.
+#   queue             someone else merges; say it is ready and move on.
+#
+# The built-in is `hold` for both profiles. A merge is the one step in the
+# whole flow where a person in the loop costs least and protects most, so the
+# cautious answer is the one a repository gets for saying nothing; the other
+# two are a committed, reviewable decision rather than a sentence in a chat
+# log. Resolved on its own, like irreversiblePolicy, so a typo in an
+# unrelated key cannot decide it.
+llmctx_policy_resolve_merge() {
+  local root="$1" file value
+  file="$(llmctx_policy_file "$root")"
+  if value="$(git -C "$root" config --local --get llmctx.mergePolicy 2>/dev/null)"; then
+    LLMCTX_MERGE_POLICY="$value"
+    LLMCTX_MERGE_POLICY_SOURCE="git-local"
+  elif [[ -f "$file" ]] && value="$(jq -r '.mergePolicy // empty' "$file" 2>/dev/null)" && [[ -n "$value" ]]; then
+    LLMCTX_MERGE_POLICY="$value"
+    LLMCTX_MERGE_POLICY_SOURCE="repo-policy"
+  elif value="$(git config --global --get llmctx.mergePolicy 2>/dev/null)"; then
+    LLMCTX_MERGE_POLICY="$value"
+    LLMCTX_MERGE_POLICY_SOURCE="git-global"
+  else
+    LLMCTX_MERGE_POLICY="hold"
+    LLMCTX_MERGE_POLICY_SOURCE="built-in"
+  fi
+  case "$LLMCTX_MERGE_POLICY" in
+    hold | review-and-merge | queue) ;;
+    *) llmctx_policy_error "invalid resolved mergePolicy: $LLMCTX_MERGE_POLICY" || return 1 ;;
+  esac
+}
+
 llmctx_policy_resolve() {
   local root="$1" file value profile_default
   llmctx_policy_validate "$root" || return 1
@@ -172,6 +276,9 @@ llmctx_policy_resolve() {
     off | remind | ask | deny) ;;
     *) llmctx_policy_error "invalid resolved branchPolicy: $LLMCTX_BRANCH_POLICY" || return 1 ;;
   esac
+
+  llmctx_policy_resolve_irreversible "$root" || return 1
+  llmctx_policy_resolve_merge "$root" || return 1
 
   if value="$(git -C "$root" config --local --get llmctx.protectedBranches 2>/dev/null)"; then
     LLMCTX_PROTECTED_BRANCHES="$value"

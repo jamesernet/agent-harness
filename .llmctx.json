@@ -3,5 +3,6 @@
   "profile": "personal",
   "branchPolicy": "remind",
   "briefs": "tracker",
-  "protectedBranches": ["main"]
+  "protectedBranches": ["main"],
+  "strandedExempt": ["backup/"]
 }

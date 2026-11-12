@@ -111,19 +111,36 @@ replace_managed_destination() {
   fi
 }
 
+# An unmanaged directory whose content is byte-for-byte what would be installed
+# is ADOPTED: the marker is written and nothing else changes. The Cloudflare
+# plugin writes its skills into the same directory this installer manages, at
+# upstream HEAD, and when our pin is that same commit the two copies differ only
+# by the marker -- reporting that as a conflict stopped bootstrap short of the
+# branch backstop (#104) over bytes that would not have changed. Content that
+# differs is still a conflict, in either direction: an upstream move past our
+# pin surfaces here, which is the signal to re-pin (#36).
+identical_unmanaged() { # <source_dir> <destination> <source hash>
+  [[ -d "$2" && ! -L "$2" ]] || return 1
+  [[ "$(llmctx_skill_hash "$2" 2>/dev/null)" == "$3" ]]
+}
+
 install_copy() {
-  local source_dir="$1" destination="$2" source_path="$3" content_hash staged
+  local source_dir="$1" destination="$2" source_path="$3" content_hash staged adopted=0
+  content_hash="$(llmctx_skill_hash "$source_dir")" || return 1
   if [[ -L "$destination" ]]; then
     if ! is_managed_link "$destination"; then
       echo "conflict: $destination is an unmanaged symlink" >&2
       return 1
     fi
   elif [[ -e "$destination" ]] && ! llmctx_skill_is_managed_copy "$destination"; then
-    echo "conflict: $destination is not managed by agent-harness" >&2
-    return 1
+    if identical_unmanaged "$source_dir" "$destination" "$content_hash"; then
+      adopted=1
+    else
+      echo "conflict: $destination is not managed by agent-harness" >&2
+      return 1
+    fi
   fi
 
-  content_hash="$(llmctx_skill_hash "$source_dir")" || return 1
   staged="$(mktemp -d "$(dirname "$destination")/.llmctx-skill.XXXXXX")" || return 1
   cp -R "$source_dir/." "$staged/" || {
     rm -rf "$staged"
@@ -143,7 +160,11 @@ install_copy() {
 
   if [[ -e "$destination" || -L "$destination" ]]; then
     replace_managed_destination "$staged" "$destination" || return 1
-    echo "updated: $destination ($source_version)"
+    if ((adopted)); then
+      echo "adopted: $destination (identical content; marker written)"
+    else
+      echo "updated: $destination ($source_version)"
+    fi
   else
     mv "$staged" "$destination" || return 1
     echo "installed: $destination ($source_version)"
@@ -161,7 +182,8 @@ install_dev_link() {
     echo "conflict: $destination is an unmanaged symlink" >&2
     return 1
   elif [[ -e "$destination" ]]; then
-    if llmctx_skill_is_managed_copy "$destination"; then
+    if llmctx_skill_is_managed_copy "$destination" ||
+      identical_unmanaged "$source_dir" "$destination" "$(llmctx_skill_hash "$source_dir")"; then
       rm -rf "$destination" || return 1
     else
       echo "conflict: $destination is not managed by agent-harness" >&2
@@ -238,9 +260,9 @@ duplicate_names="$(LC_ALL=C sort "$available" | uniq -d)"
   exit 1
 }
 
-# One skills directory per registered Claude account, because the alternative
-# is a machine where `llmctx skills install` reports success and one account
-# has no skills at all — which is the state this replaced.
+# One skills directory per registered provider account, because the alternative
+# is a machine where `llmctx skills install` reports success and one login has
+# no skills at all — which is the state this replaced.
 accounts="$(llmctx_accounts_selected "$account")" || exit 1
 targets=()
 target_accounts=()
@@ -249,12 +271,17 @@ while IFS=$'\t' read -r account_name account_dir; do
   targets+=("$account_dir/skills")
   target_accounts+=("$account_name")
 done <<<"$accounts"
-# Codex has no config-directory switching, so it gets one copy — and a run
-# narrowed to a single Claude account is not about Codex at all. It has no
-# account of its own, so it follows the global key.
+# A run narrowed to one Claude account remains Claude-only for compatibility.
+# A normal run covers every registered Codex home. Codex homes follow the
+# global bundle: account-specific bundle keys predate provider-qualified names
+# and silently sharing that namespace would let a Claude choice narrow Codex.
 if [[ -z "$account" ]]; then
-  targets+=("$HOME/.codex/skills")
-  target_accounts+=("")
+  codex_accounts="$(llmctx_accounts codex)" || exit 1
+  while IFS=$'\t' read -r account_name account_dir; do
+    [[ -n "$account_name" ]] || continue
+    targets+=("$account_dir/skills")
+    target_accounts+=("")
+  done <<<"$codex_accounts"
 fi
 
 # Validate every target's bundle up front: a typo on the second account must

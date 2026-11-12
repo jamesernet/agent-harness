@@ -10,6 +10,26 @@
             "statusMessage": "Checking branch policy..."
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/account-guard.sh",
+            "statusMessage": "Checking the Claude account for this path..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/irreversible-policy.sh",
+            "statusMessage": "Checking for an action that cannot be undone..."
+          }
+        ]
       }
     ]
   },

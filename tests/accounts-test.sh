@@ -36,6 +36,24 @@ output="$(run "$CLI" account list)"
 [[ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" == 1 ]] || fail "empty registry listed more than the default"
 printf '%s\n' "$output" | grep -q "^default .*$test_home/.claude" || fail "default account missing: $output"
 
+# Codex homes are a separate provider registry. The existing account interface
+# remains Claude by default, while an explicit provider exposes Codex's own
+# default home and registrations.
+codex_output="$(run "$CLI" account list --provider codex)"
+[[ "$(printf '%s\n' "$codex_output" | wc -l | tr -d ' ')" == 1 ]] ||
+  fail "empty Codex registry listed more than the default"
+printf '%s\n' "$codex_output" | grep -q "^default .*$test_home/.codex" ||
+  fail "default Codex account missing: $codex_output"
+codex_acme_dir="$test_home/.codex-acme"
+run "$CLI" account add --provider codex acme "$codex_acme_dir" >/dev/null ||
+  fail "could not register a Codex account"
+run "$CLI" account list --provider codex | grep -q "^acme " ||
+  fail "registered Codex account was not listed"
+[[ "$(run "$CLI" account list | wc -l | tr -d ' ')" == 1 ]] ||
+  fail "Codex registration leaked into the Claude registry"
+! run "$CLI" account add --provider other nope "$tmp/nope" 2>/dev/null ||
+  fail "unknown provider was accepted"
+
 run "$CLI" account add acme "$acme_dir" >/dev/null || fail "could not register an account"
 run "$CLI" account list | grep -q "^acme " || fail "registered account was not listed"
 
@@ -70,6 +88,10 @@ for dir in "$test_home/.claude" "$acme_dir"; do
   [[ -x "$dir/hooks/branch-policy.sh" ]] || fail "$dir has no branch-policy hook"
   [[ -d "$dir/skills/codebase-design" ]] || fail "$dir has no skills"
 done
+for dir in "$test_home/.codex" "$codex_acme_dir"; do
+  [[ -f "$dir/AGENTS.md" ]] || fail "$dir has no AGENTS.md"
+  [[ -d "$dir/skills/codebase-design" ]] || fail "$dir has no skills"
+done
 
 # Each account's settings must point at ITS OWN hooks. Borrowing the default
 # account's directory works until that one is reset, and then the guard is
@@ -93,6 +115,10 @@ jq -e 'any(.checks[]; .id == "claude-skills[acme]" and .status == "PASS")' "$tmp
   fail "doctor did not check the second account"
 jq -e 'any(.checks[]; .id == "accounts" and (.detail | test("acme")))' "$tmp/health.json" >/dev/null ||
   fail "doctor did not report the account list"
+jq -e 'any(.checks[]; .id == "codex-accounts" and (.detail | test("acme")))' "$tmp/health.json" >/dev/null ||
+  fail "doctor did not report the Codex account list"
+jq -e 'any(.checks[]; .id == "codex-skills[acme]" and .status == "PASS")' "$tmp/health.json" >/dev/null ||
+  fail "doctor did not check the second Codex account"
 
 # A missing skill in ONE account is a failure, even when the other is complete.
 rm -rf "$acme_dir/skills/codebase-design"
@@ -108,6 +134,52 @@ run "$CLI" account remove acme >/dev/null || fail "could not unregister"
 if run "$CLI" account list | grep -q "^acme "; then fail "unregistered account still listed"; fi
 [[ -d "$acme_dir/skills" ]] || fail "unregistering deleted the config directory"
 ! run "$CLI" account remove default 2>/dev/null || fail "the default account was unregistered"
+
+run "$CLI" account remove --provider codex acme >/dev/null || fail "could not unregister Codex account"
+if run "$CLI" account list --provider codex | grep -q "^acme "; then
+  fail "unregistered Codex account still listed"
+fi
+[[ -d "$codex_acme_dir/skills" ]] || fail "unregistering deleted the Codex home"
+
+# --- a tilde this tool does not expand is named, not misdescribed (#92) -----
+#
+# `~other/cfg` is a path a shell would have made absolute. The registry used
+# to refuse it with "is not absolute", which says nothing about the tilde, and
+# `account add` did the same.
+# shellcheck disable=SC2088  # a literal tilde is what gets stored and typed
+git config --global --add llmctx.claudeAccount 'other=~someone-else/cfg'
+set +e
+out="$(HOME="$test_home" "$CLI" account list 2>&1)"
+status=$?
+set -e
+[[ "$status" -ne 0 ]] || fail "a ~user account directory was accepted"
+grep -q 'unexpanded tilde' <<<"$out" || fail "the registry did not name the tilde: $out"
+grep -q 'is not absolute' <<<"$out" && fail "the registry still blamed absoluteness"
+git config --global --unset llmctx.claudeAccount 'other=~someone-else/cfg'
+
+set +e
+out="$(HOME="$test_home" "$CLI" account add other '~someone-else/cfg' 2>&1)"
+status=$?
+set -e
+[[ "$status" -ne 0 ]] || fail "account add accepted a ~user directory"
+grep -q 'unexpanded tilde' <<<"$out" || fail "account add did not name the tilde: $out"
+
+# ...while the two forms this tool DOES expand keep working.
+# shellcheck disable=SC2088  # a literal tilde is what a person types here
+HOME="$test_home" "$CLI" account add tildeok '~/.claude-tildeok' >/dev/null ||
+  fail "a ~/ directory was refused"
+HOME="$test_home" "$CLI" account list | grep -q "$test_home/.claude-tildeok" ||
+  fail "a ~/ directory was not expanded against HOME"
+HOME="$test_home" "$CLI" account remove tildeok >/dev/null
+
+# A `~user` @import target inside a generated CLAUDE.md is reported as
+# unsupported rather than resolved against the file's own directory, which is
+# a path nobody wrote.
+mkdir -p "$tmp/imports"
+printf '%s\n' '# Account' '' '@~someone-else/rules.md' >"$tmp/imports/CLAUDE.md"
+out="$(bash -c "source '$copy/bin/lib/accounts.sh'; llmctx_unresolved_imports '$tmp/imports/CLAUDE.md'")"
+grep -q '^unsupported' <<<"$out" ||
+  fail "a ~user @import target was not reported unsupported: $out"
 
 rm -rf "$tmp"
 echo "accounts tests: passed"

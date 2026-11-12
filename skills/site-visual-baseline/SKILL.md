@@ -1,6 +1,7 @@
 ---
 name: site-visual-baseline
 description: Capture a reproducible visual record of a website across viewports — for before/after comparison, design-degradation evidence, QA rounds, client onboarding, or competitive teardowns. Use when asked to screenshot a site, capture pages at desktop/tablet/mobile, build a before-and-after set, document how a site looks today, or gather visual evidence of layout, contrast, or consistency problems. Covers the capture traps that silently produce wrong screenshots.
+effort: medium
 ---
 
 # Site Visual Baseline

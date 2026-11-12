@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example Daily</title>
+  <link href="https://example.net/"/>
+  <updated>2026-11-03T05:00:00Z</updated>
+  <id>https://example.net/daily.atom</id>
+  <entry>
+    <title>Supplement labelling rules proposed by regulator</title>
+    <link href="https://example.org/news/supplement-rules/?utm_campaign=daily&amp;fbclid=abc123"/>
+    <id>https://example.net/entries/1</id>
+    <updated>2026-11-03T04:30:00Z</updated>
+    <summary>Example Daily's rewrite of the same consultation announcement, linking to the same page with different tracking parameters.</summary>
+  </entry>
+  <entry>
+    <title>Payment processor raises fees for small merchants from January</title>
+    <link href="https://example.net/payments-fees"/>
+    <id>https://example.net/entries/2</id>
+    <updated>2026-11-03T01:00:00Z</updated>
+    <content type="html">&lt;p&gt;Example Payments will raise its per-transaction fee from 1.9 percent to 2.4 percent for merchants under $1 million in annual volume, effective 1 January. Merchants above that line keep the current rate. The change was announced in a &lt;a href="https://example.net/blog"&gt;blog post&lt;/a&gt; with no notice period beyond the sixty days required by its terms.&lt;/p&gt;</content>
+  </entry>
+</feed>

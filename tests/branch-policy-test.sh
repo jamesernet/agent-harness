@@ -81,6 +81,136 @@ for c in "git commit -m x" "git push" "git push origin main"; do
   [[ "$(decision "$payload")" == deny ]] || fail "allowed '$c' on a protected branch"
 done
 
+# --- global git options between `git` and the subcommand (#79) --------------
+#
+# `git -C <dir> commit` is the spelling lib/target.sh resolves as the TARGET,
+# and for months the action matcher could not see it, so the one spelling the
+# scope code handled most carefully never reached the gate. The option forms
+# must be judged exactly as their bare equivalents, under every policy value.
+# Negative first: each spelling IS caught on the protected checkout. These
+# payloads stand IN the protected repository; the --git-dir rows depend on
+# that, because the scope resolver reads -C and cd but not --git-dir, so from
+# elsewhere they fall back to the cwd (see the issue filed from PR #96's review).
+for c in \
+  "git -C $repo commit -m x" \
+  "git -C $repo push" \
+  "git -C $repo push origin main" \
+  "git -c user.name=t commit -m x" \
+  "git -c user.name=t -c user.email=t@t push" \
+  "git --no-pager commit -m x" \
+  "git --git-dir=$repo/.git commit -m x" \
+  "git --git-dir $repo/.git push" \
+  "git -C $repo --no-pager -c core.pager=cat commit -m x" \
+  "cd /tmp && git -C $repo commit -m x" \
+  "sudo git -C $repo push" \
+  "sudo -u root git commit -m x" \
+  "sudo -n git commit -m x" \
+  "timeout 10 git commit -m x" \
+  "nice -n 10 git push" \
+  "env GIT_TRACE=1 git commit -m x" \
+  "command git commit -m x" \
+  "git -P commit -m x" \
+  "git -p -C $repo commit -m x" \
+  "GIT_TRACE=1 git commit -m x" \
+  "GIT_DIR=$repo/.git git -C $repo push"; do
+  payload="$(jq -nc --arg c "$repo" --arg cmd "$c" \
+    '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
+  [[ "$(decision "$payload")" == deny ]] || fail "allowed '$c' on a protected branch (#79)"
+done
+# Positive: the option forms are not false positives — a non-mutating
+# subcommand behind the same options, and the words inside other commands.
+for c in \
+  "git -C $repo status" \
+  "git -C $repo log --oneline" \
+  "git --no-pager -C $repo diff" \
+  "echo 'git -C $repo commit'" \
+  "grep -r 'git -c x=y push' ." \
+  "git commit-tree HEAD^{tree} -m x" \
+  "git -C $repo commit-graph write" \
+  "git -C $repo push-to-nowhere"; do
+  payload="$(jq -nc --arg c "$repo" --arg cmd "$c" \
+    '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
+  [[ -z "$(hook_with "$payload")" ]] || fail "denied '$c', which mutates nothing"
+done
+# The refspec exemption must see the same prefix the gate does: a push that
+# names an unprotected branch is how work is published, with or without -C.
+for c in \
+  "git -C $repo push -u origin feature/x" \
+  "git -c push.default=current push origin feature/x" \
+  "git --no-pager push origin HEAD:feature/x"; do
+  payload="$(jq -nc --arg c "$repo" --arg cmd "$c" \
+    '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
+  [[ -z "$(hook_with "$payload")" ]] || fail "denied '$c', which pushes an unprotected branch"
+done
+# --- judged where the command ACTS, from a cwd that is not there (#103) -----
+#
+# #96 taught the gate `--git-dir` and `GIT_DIR=`; its test payloads stood IN
+# the protected repository, so they passed while the scope resolver still read
+# only -C and cd. From anywhere else those spellings fell back to the session
+# cwd and the gate never reached the branch. These payloads stand OUTSIDE the
+# target, which is the shape that was missing.
+outside_cwd="$(mktemp -d)"
+for c in \
+  "git --git-dir=$repo/.git commit -m x" \
+  "git --git-dir $repo/.git commit -m x" \
+  "git --git-dir=$repo/.git push" \
+  "git -C /tmp --git-dir=$repo/.git commit -m x" \
+  "GIT_DIR=$repo/.git git commit -m x" \
+  "sudo git --git-dir=$repo/.git push"; do
+  payload="$(jq -nc --arg c "$outside_cwd" --arg cmd "$c" \
+    '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
+  [[ "$(decision "$payload")" == deny ]] ||
+    fail "allowed '$c' from outside the repository (#103)"
+done
+# A wrapper's own argument, and a `/.` segment on the git dir, each used to
+# hide the spelling entirely -- both silent allows on a protected branch,
+# both found by review of this change rather than by its author.
+for c in \
+  "sudo -u root git --git-dir=$repo/.git push" \
+  "timeout 10 git --git-dir=$repo/.git commit -m x" \
+  "nice -n 10 git --git-dir=$repo/.git commit -m x" \
+  "sudo -u root GIT_DIR=$repo/.git git commit -m x" \
+  "git --git-dir=$repo/.git/./ commit -m x"; do
+  payload="$(jq -nc --arg c "$outside_cwd" --arg cmd "$c" \
+    '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
+  [[ "$(decision "$payload")" == deny ]] ||
+    fail "allowed '$c' from outside the repository (#103, review)"
+done
+
+# ...and the same spelling naming a repository on a FEATURE branch is allowed
+# from the same cwd, so this is scope resolution and not a blanket deny.
+feature_elsewhere="$(mktemp -d)/repo"
+mkdir -p "$feature_elsewhere"
+git -C "$feature_elsewhere" init -q
+git -C "$feature_elsewhere" symbolic-ref HEAD refs/heads/feature/ok
+printf '%s\n' '{"schemaVersion":1,"profile":"client"}' >"$feature_elsewhere/.llmctx.json"
+payload="$(jq -nc --arg c "$outside_cwd" --arg cmd "git --git-dir=$feature_elsewhere/.git commit -m x" \
+  '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
+[[ -z "$(hook_with "$payload")" ]] ||
+  fail "denied a commit in a repository on a feature branch, named by --git-dir"
+# A commit message that merely NAMES the protected repository's git dir is a
+# message: the scope stays the session's cwd, which is not a repository here,
+# so the hook has no opinion.
+payload="$(jq -nc --arg c "$outside_cwd" --arg cmd "git commit -m \"see --git-dir=$repo/.git\"" \
+  '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
+[[ -z "$(hook_with "$payload")" ]] ||
+  fail "a commit message naming a git dir redirected the judgement"
+rm -rf "$outside_cwd" "$(dirname "$feature_elsewhere")"
+
+# Under every policy value, the option form decides exactly as the bare form.
+# Fresh session ids, because `remind` fires once per session and would make
+# the second call differ from the first for a reason that is not the spelling.
+for policy in off remind ask deny; do
+  git -C "$repo" config --local llmctx.branchPolicy "$policy"
+  bare="$(decision "$(jq -nc --arg c "$repo" --arg cmd "git commit -m x" \
+    '{tool_name:"Bash",session_id:"bare-\($cmd)",tool_input:{command:$cmd},cwd:$c}')")"
+  dashc="$(decision "$(jq -nc --arg c "$repo" --arg cmd "git -C $repo commit -m x" \
+    '{tool_name:"Bash",session_id:"opt-\($cmd)",tool_input:{command:$cmd},cwd:$c}')")"
+  [[ "$bare" == "$dashc" ]] ||
+    fail "under $policy, 'git -C <dir> commit' decided $dashc but bare decided $bare"
+  git -C "$repo" config --local --unset llmctx.branchPolicy
+done
+
 # A push naming a DIFFERENT repository is judged by that repository's branch.
 other="$(mktemp -d)"
 git -C "$other" init -q -b main
@@ -258,6 +388,32 @@ git -C "$wt_main" -c user.email=t@t -c user.name=t merge side >/dev/null 2>&1 ||
 [[ -e "$wt_main/.git/MERGE_HEAD" ]] || fail "test setup: no merge in progress"
 [[ -z "$(cd / && hook_with "$(edit_payload "$wt_feature" "$wt_main/conflict.txt")")" ]] ||
   fail "denied a conflict resolution mid-merge on the trunk"
+
+# --- remind without shasum ----------------------------------------------------
+#
+# The once-per-session marker was keyed with `shasum`, which a minimal Linux
+# does not ship. There the command substitution failed, the ERR trap exited 0,
+# and `remind` -- this repository's own default -- silently became `off`. A
+# guard that fails open cannot report its own absence, so this runs the hook
+# with both hashing tools masked off PATH and asks for the reminder (#56).
+minbin="$(mktemp -d)"
+for tool in bash git jq grep sed awk cut cat find mkdir rm head tail tr sort uniq wc dirname basename cksum env; do
+  real="$(command -v "$tool" 2>/dev/null)" || continue
+  ln -sf "$real" "$minbin/$tool"
+done
+[[ ! -e "$minbin/shasum" && ! -e "$minbin/sha256sum" ]] || fail "test setup: a hashing tool leaked into the minimal PATH"
+remind_repo="$(mktemp -d)"
+git -C "$remind_repo" init -q -b main
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","branchPolicy":"remind"}' >"$remind_repo/.llmctx.json"
+remind_payload="$(jq -nc --arg c "$remind_repo" --arg cmd "git commit -m x" \
+  '{tool_name:"Bash",session_id:"no-shasum-session",tool_input:{command:$cmd},cwd:$c}')"
+first="$(printf '%s' "$remind_payload" | PATH="$minbin" TMPDIR="$minbin/tmp" "$HOOK" 2>"$minbin/err")"
+[[ "$first" == *'"permissionDecision": "ask"'* ]] ||
+  fail "remind did not fire without shasum on PATH (output: ${first:-<empty>}; stderr: $(cat "$minbin/err")) -- the marker key fell open"
+second="$(printf '%s' "$remind_payload" | PATH="$minbin" TMPDIR="$minbin/tmp" "$HOOK" 2>/dev/null)"
+[[ -z "$second" ]] || fail "remind fired twice for one session -- the marker was not written: $second"
+[[ -n "$(find "$minbin/tmp/claude-branch-policy" -type f 2>/dev/null)" ]] || fail "no marker file was written"
+rm -rf "$minbin" "$remind_repo"
 
 # --- fail open --------------------------------------------------------------
 #
