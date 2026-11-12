@@ -45,6 +45,7 @@ from gemini_common import (  # noqa: E402
     upload_file,
     usage_summary,
     video_block_from_upload,
+    positive_timeout,
 )
 
 RESOLUTIONS = ("360p", "720p", "1080p", "4k")
@@ -129,7 +130,7 @@ def main() -> int:
                     help="the price you agreed to pay, as the exact token this script prints\n"
                          "(for example 6s@360p); it carries BOTH numbers, because seconds\n"
                          "alone approved a figure that --resolution could still multiply")
-    ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S["video"],
+    ap.add_argument("--timeout", type=positive_timeout, default=DEFAULT_TIMEOUT_S["video"],
                     help="seconds to wait for the API before giving up "
                          f"(default {DEFAULT_TIMEOUT_S['video']}); the SDK sets none, so without this a stall hangs forever")
     ap.add_argument("--json", action="store_true", help="print a JSON summary only")

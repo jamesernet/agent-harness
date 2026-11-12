@@ -21,6 +21,7 @@ Video/GIF export also needs ffmpeg on PATH.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -121,7 +122,24 @@ def main() -> int:
             page.screenshot(path=str(out_dir / f"frame_{i:04d}.png"))
         browser.close()
 
-    print(f"captured {len(times)} frames to {out_dir}/ (t = {times[0]}..{times[-1]} ms)")
+    # How many of those frames actually differ. Seeking can succeed and still
+    # produce one image N times -- an animation whose only motion is driven by
+    # something the seek does not move, or a page that renders its first frame
+    # and never advances. "captured 24 frames" then reads as a working capture,
+    # and the stitched mp4 is a still. Counted by content, so it costs one read
+    # per frame and cannot be fooled by a timestamp.
+    digests = {
+        hashlib.sha256(f.read_bytes()).hexdigest()
+        for f in sorted(out_dir.glob("frame_*.png"))
+    }
+    print(f"captured {len(times)} frames to {out_dir}/ (t = {times[0]}..{times[-1]} ms), "
+          f"{len(digests)} distinct")
+    if len(times) > 1 and len(digests) == 1:
+        hint = ("this page was captured in real time, so nothing on it is animating"
+                if args.realtime else
+                "the animations seeked but did not move; try --realtime")
+        print(f"warning: all {len(times)} frames are identical -- {hint}. A video stitched "
+              "from these is a still image.", file=sys.stderr)
 
     if args.mp4 or args.gif:
         if not shutil.which("ffmpeg"):

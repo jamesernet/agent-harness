@@ -40,6 +40,7 @@ from gemini_common import (  # noqa: E402
     log_run,
     read_text_arg,
     usage_summary,
+    positive_timeout,
 )
 
 FORMATS = {
@@ -98,7 +99,7 @@ def main() -> int:
                     help="fail instead of trying the fallback models on a 503")
     ap.add_argument("--thinking", choices=("low", "medium", "high"), default="medium")
     ap.add_argument("--previous-id", help="iterate on an earlier result (keeps Gemini's context)")
-    ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S["text"],
+    ap.add_argument("--timeout", type=positive_timeout, default=DEFAULT_TIMEOUT_S["text"],
                     help="total seconds to wait across every model tried, not per model "
                          f"(default {DEFAULT_TIMEOUT_S['text']}); the SDK sets none, so without this a stall hangs forever")
     ap.add_argument("--json", action="store_true", help="print a JSON summary only")

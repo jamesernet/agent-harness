@@ -8,6 +8,7 @@ chain on `previous_interaction_id`.
 
 from __future__ import annotations
 
+import argparse
 import base64
 import json
 import mimetypes
@@ -126,6 +127,25 @@ class Timeout(Exception):
     """A call exceeded its wall-clock deadline and was abandoned locally."""
 
 
+def positive_timeout(value: str) -> float:
+    """argparse type for --timeout: a deadline has to be a positive number.
+
+    `--timeout 0` read as "do not wait" and did the opposite: setitimer(0)
+    DISABLES the timer, so the one value a user would reach for to fail fast
+    removed the only deadline the call had. Zero and negatives are refused by
+    name instead.
+    """
+    try:
+        seconds = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number: {value!r}") from None
+    if seconds <= 0:
+        raise argparse.ArgumentTypeError(
+            f"a deadline must be positive; {value} would remove the deadline, not shorten it"
+        )
+    return seconds
+
+
 def create(client, timeout: float, **kwargs):
     """client.interactions.create under a hard local deadline.
 
@@ -144,6 +164,9 @@ def create(client, timeout: float, **kwargs):
     SIGALRM is Unix-only and must run on the main thread, which is how these
     scripts run. Elsewhere this degrades to the SDK's own behaviour.
     """
+    if timeout <= 0:
+        raise ValueError(f"create() needs a positive deadline, got {timeout}")
+
     def _fire(signum, frame):
         raise Timeout(
             f"no response after {timeout:.0f}s; abandoned locally because the SDK's "

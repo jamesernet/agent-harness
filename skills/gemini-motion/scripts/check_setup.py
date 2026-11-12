@@ -60,11 +60,16 @@ def main() -> int:
         ok = False
 
     if args.ping and ok:
-        from gemini_common import MODELS, get_client
+        # Through create(), not client.interactions.create(): the wrapper is
+        # where the local deadline lives, and a setup check that hangs forever
+        # is the failure this script exists to rule out. Observed on a text
+        # call: 26 minutes, no error, no return.
+        from gemini_common import DEFAULT_TIMEOUT_S, MODELS, create, get_client
 
         try:
             client = get_client()
-            r = client.interactions.create(model=MODELS["ping"], input="Reply with the single word: ready")
+            r = create(client, DEFAULT_TIMEOUT_S["text"],
+                       model=MODELS["ping"], input="Reply with the single word: ready")
             text = (r.output_text or "").strip()
             print(f"[ok] API reachable with {MODELS['ping']}: {text[:40]!r}")
         except Exception as e:  # noqa: BLE001

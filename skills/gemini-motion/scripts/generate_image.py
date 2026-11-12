@@ -33,6 +33,7 @@ from gemini_common import (  # noqa: E402
     read_text_arg,
     save_b64,
     usage_summary,
+    positive_timeout,
 )
 
 ASPECTS = ("1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9", "1:8", "8:1")
@@ -50,7 +51,7 @@ def main() -> int:
     ap.add_argument("--previous-id", help="edit the image from an earlier call")
     ap.add_argument("--model", default=MODELS["image"])
     ap.add_argument("--thinking", choices=("minimal", "medium", "high"))
-    ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S["image"],
+    ap.add_argument("--timeout", type=positive_timeout, default=DEFAULT_TIMEOUT_S["image"],
                     help="seconds to wait for the API before giving up "
                          f"(default {DEFAULT_TIMEOUT_S['image']}); the SDK sets none, so without this a stall hangs forever")
     ap.add_argument("--json", action="store_true")
