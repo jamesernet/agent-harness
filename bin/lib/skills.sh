@@ -72,6 +72,30 @@ llmctx_bundle_is_known() {
   return 0
 }
 
+# The reserved bundle whose members `all` subtracts. A skill that bills a
+# third-party API per run must not arrive because nobody chose a bundle: opt-in
+# is enforced here rather than asserted in the skill's own prose. Naming the
+# bundle still installs them, and a spec that names anything is never filtered.
+LLMCTX_METERED_BUNDLE=metered
+
+# Removes every member of the metered bundle from the name file <names>, in
+# place. A bundles.conf with no metered block leaves the file untouched.
+llmctx_bundle_drop_metered() {
+  local bundles_file="$1" names="$2" metered seen kept
+  [[ -f "$bundles_file" ]] || return 0
+  metered="$(mktemp "${TMPDIR:-/tmp}/llmctx-metered.XXXXXX")"
+  seen="$(mktemp "${TMPDIR:-/tmp}/llmctx-metered-seen.XXXXXX")"
+  kept="$(mktemp "${TMPDIR:-/tmp}/llmctx-metered-kept.XXXXXX")"
+  llmctx_bundle_expand "$bundles_file" "$LLMCTX_METERED_BUNDLE" "$seen" "$metered"
+  LC_ALL=C sort -u "$metered" -o "$metered"
+  if [[ -s "$metered" ]]; then
+    LC_ALL=C sort -u "$names" -o "$names"
+    comm -23 "$names" "$metered" >"$kept"
+    cat "$kept" >"$names"
+  fi
+  rm -f "$metered" "$seen" "$kept"
+}
+
 # Which skills a bundle spec installs, one name per line, into <out>.
 llmctx_bundle_skills() {
   local src="$1" spec="$2" out="$3"
@@ -87,6 +111,7 @@ llmctx_bundle_skills() {
   LC_ALL=C sort -u "$available" -o "$available"
   if [[ "$spec" == all ]]; then
     cp "$available" "$out"
+    llmctx_bundle_drop_metered "$bundles_file" "$out"
   else
     IFS=',' read -r -a list <<<"$spec"
     for b in "${list[@]}"; do

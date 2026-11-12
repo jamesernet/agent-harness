@@ -233,6 +233,11 @@ resolve_skills() {
   if [[ "$spec" == all ]]; then
     cp "$available" "$skill_names"
     LC_ALL=C sort -o "$skill_names" "$skill_names"
+    # `all` is everything this repository ships EXCEPT what bills money. The
+    # subtraction is code rather than a line in bundles.conf because `all` does
+    # not read that file, which is how "opt-in, never bundled by default" came
+    # to be true of a bundle nobody had selected and false of the default.
+    llmctx_bundle_drop_metered "$bundles_file" "$skill_names"
     return
   fi
   # A bundle naming a skill this release does not ship is a stale bundles.conf,
