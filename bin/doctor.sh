@@ -486,13 +486,80 @@ check_agent_target() {
   fi
 }
 
+# An account's hooks/ directory is installed into and never pruned, on purpose:
+# a hook written by hand must survive a reinstall, and the settings merge keeps
+# a PreToolUse entry naming a script this repository does not ship. The gap was
+# that nothing ever SAID such a script was there (#52).
+#
+# Found live on this machine: two predecessors, one from July registered
+# nowhere, one from August still listed in PreToolUse and so running on every
+# Edit, Write and Bash call beside its managed successor -- which it could
+# disagree with, because it hardcoded as a literal the path the managed guard
+# reads from config. `doctor` reported healthy throughout.
+#
+# Reports, never prunes: an installer that deletes files it did not write is
+# how a tool eats its user's own work. A script kept deliberately is declared
+# with `git config --global --add llmctx.accountHook <basename>`, the same
+# idiom as llmctx.repo, so this does not become a check a mature machine must
+# learn to ignore.
+#
+# Managed is derived, not listed: a hook is managed when bin/claude-hooks has
+# that basename, and a library when it is llmctx-<name>.sh and bin/lib/<name>.sh
+# exists. A hardcoded list here would drift the first time HOOK_LIBS changed.
+check_account_hooks() { # <hooks dir> <check id> <settings file>
+  local hooks_dir="$1" id="$2" settings="$3" f base lib declared referenced
+  local unmanaged="" registered=""
+  if [[ ! -d "$hooks_dir" ]]; then
+    add_check "$id" PASS "no hooks directory" ""
+    return
+  fi
+  declared="$(git config --global --get-all llmctx.accountHook 2>/dev/null || true)"
+  for f in "$hooks_dir"/*.sh; do
+    [[ -e "$f" ]] || continue
+    base="$(basename "$f")"
+    [[ ! -f "$SRC/bin/claude-hooks/$base" ]] || continue
+    case "$base" in
+      llmctx-*)
+        lib="${base#llmctx-}"
+        lib="${lib%.sh}"
+        [[ ! -f "$SRC/bin/lib/$lib.sh" ]] || continue
+        ;;
+    esac
+    grep -qxF "$base" <<<"$declared" && continue
+    # A script a settings entry still names is a second enforcer, which is a
+    # different thing from clutter and is worth saying separately.
+    referenced=0
+    if [[ -f "$settings" ]] && jq -e --arg b "$base" '
+      [(.hooks // {}) | .[]? | .[]? | (.hooks // [])[]? | .command // ""]
+      | any(. | split("/") | last == $b)' "$settings" >/dev/null 2>&1; then
+      referenced=1
+    fi
+    if [[ "$referenced" -eq 1 ]]; then
+      registered="$registered $base"
+    else
+      unmanaged="$unmanaged $base"
+    fi
+  done
+  if [[ -n "$registered" ]]; then
+    add_check "$id" FAIL "unmanaged hook(s) STILL REGISTERED, running beside the managed ones:$registered${unmanaged:+; unregistered:$unmanaged}" \
+      "remove the script and its settings entry, or keep it: git config --global --add llmctx.accountHook <basename>"
+  elif [[ -n "$unmanaged" ]]; then
+    add_check "$id" FAIL "unmanaged hook(s) present, registered nowhere:$unmanaged" \
+      "rm the script, or keep it: git config --global --add llmctx.accountHook <basename>"
+  else
+    add_check "$id" PASS "no unmanaged hooks" ""
+  fi
+}
+
 if [[ "$hash_available" -eq 1 ]] && [[ -n "$accounts" ]]; then
   while IFS=$'\t' read -r account_name account_dir; do
     [[ -n "$account_name" ]] || continue
     if [[ "$account_name" == "$LLMCTX_ACCOUNT_DEFAULT_NAME" ]]; then
       check_agent_target "$account_dir/agents" claude-agents
+      check_account_hooks "$account_dir/hooks" claude-hooks "$account_dir/settings.json"
     else
       check_agent_target "$account_dir/agents" "claude-agents[$account_name]"
+      check_account_hooks "$account_dir/hooks" "claude-hooks[$account_name]" "$account_dir/settings.json"
     fi
   done <<<"$accounts"
 else

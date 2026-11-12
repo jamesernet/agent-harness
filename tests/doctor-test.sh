@@ -51,6 +51,55 @@ jq -e '.healthy == true and all(.checks[]; .status == "PASS")' "$tmp/healthy.jso
 HOME="$test_home" "$copy/bin/llmctx" doctor --quiet || fail "quiet check failed"
 [[ -z "$(HOME="$test_home" "$copy/bin/llmctx" doctor --quiet)" ]] || fail "quiet check produced output"
 
+# --- an unmanaged hook in an account's hooks directory (#52) -----------------
+#
+# The directory is installed into and never pruned, on purpose, so a hook
+# written by hand survives a reinstall. Nothing used to SAY one was there:
+# this machine carried two predecessors for months, one of them still
+# registered and running beside its managed successor, while doctor reported
+# healthy. It reports and never prunes, and a deliberate script is declared.
+hooks_dir="$test_home/.claude/hooks"
+printf '%s\n' '#!/bin/sh' 'exit 0' >"$hooks_dir/left-over-guard.sh"
+chmod +x "$hooks_dir/left-over-guard.sh"
+HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/hook-unreg.json" 2>/dev/null || true
+jq -e '.healthy == false and any(.checks[]; .id == "claude-hooks" and .status == "FAIL"
+  and (.detail | contains("left-over-guard.sh")) and (.detail | contains("registered nowhere")))' \
+  "$tmp/hook-unreg.json" >/dev/null ||
+  fail "an unmanaged hook was not reported: $(jq -c '[.checks[] | select(.id == "claude-hooks")]' "$tmp/hook-unreg.json")"
+[[ -f "$hooks_dir/left-over-guard.sh" ]] || fail "doctor deleted an unmanaged hook; it must only report"
+
+# Still registered in settings is a second enforcer, not clutter, and is said
+# differently -- that is the state that ran on every Edit, Write and Bash call.
+settings_tmp="$tmp/settings-with-leftover.json"
+jq '.hooks.PreToolUse += [{"matcher":"Bash","hooks":[{"type":"command","command":"$HOME/.claude/hooks/left-over-guard.sh"}]}]' \
+  "$test_home/.claude/settings.json" >"$settings_tmp"
+cp "$settings_tmp" "$test_home/.claude/settings.json"
+HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/hook-reg.json" 2>/dev/null || true
+jq -e 'any(.checks[]; .id == "claude-hooks" and .status == "FAIL"
+  and (.detail | contains("STILL REGISTERED")) and (.detail | contains("left-over-guard.sh")))' \
+  "$tmp/hook-reg.json" >/dev/null ||
+  fail "a registered unmanaged hook was not distinguished: $(jq -c '[.checks[] | select(.id == "claude-hooks")]' "$tmp/hook-reg.json")"
+
+# Declared deliberate: the same idiom as llmctx.repo, so this does not become
+# a check a mature machine must learn to ignore.
+git config --global --add llmctx.accountHook left-over-guard.sh
+HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/hook-ok.json" 2>/dev/null || true
+jq -e 'any(.checks[]; .id == "claude-hooks" and .status == "PASS")' "$tmp/hook-ok.json" >/dev/null ||
+  fail "a declared hook was still reported: $(jq -c '[.checks[] | select(.id == "claude-hooks")]' "$tmp/hook-ok.json")"
+git config --global --unset-all llmctx.accountHook
+rm -f "$hooks_dir/left-over-guard.sh"
+
+# The managed libraries are managed, not unmanaged: llmctx-<name>.sh is ours
+# when bin/lib/<name>.sh exists, derived rather than listed so it cannot drift.
+[[ -f "$hooks_dir/llmctx-policy.sh" ]] || fail "test setup: the policy library was not installed"
+cp "$test_home/.claude/settings.json" "$tmp/settings-restore.json"
+jq 'del(.hooks.PreToolUse[] | select(.hooks[].command | test("left-over-guard")))' \
+  "$tmp/settings-restore.json" >"$test_home/.claude/settings.json"
+HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/hook-clean.json" 2>/dev/null || true
+jq -e 'any(.checks[]; .id == "claude-hooks" and .status == "PASS" and .detail == "no unmanaged hooks")' \
+  "$tmp/hook-clean.json" >/dev/null ||
+  fail "a clean hooks directory did not pass: $(jq -c '[.checks[] | select(.id == "claude-hooks")]' "$tmp/hook-clean.json")"
+
 # An unresolved @import is SILENT in a session: the rules simply do not load.
 # The installed file is byte-identical to a correct render, because render_claude
 # names these paths without ever reading them.
