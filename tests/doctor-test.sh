@@ -88,13 +88,99 @@ jq -e 'any(.checks[]; .id == "claude-hooks" and .status == "PASS")' "$tmp/hook-o
   fail "a declared hook was still reported: $(jq -c '[.checks[] | select(.id == "claude-hooks")]' "$tmp/hook-ok.json")"
 git config --global --unset-all llmctx.accountHook
 rm -f "$hooks_dir/left-over-guard.sh"
+# The settings entry goes too. Left behind it is a registration with no file,
+# which the check reports in its own right -- correctly, and it would mask
+# every assertion after this one.
+jq 'del(.hooks.PreToolUse[] | select(.hooks[].command | test("left-over-guard")))' \
+  "$test_home/.claude/settings.json" >"$tmp/s0.json"
+cp "$tmp/s0.json" "$test_home/.claude/settings.json"
+HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/hook-gone.json" 2>/dev/null || true
+jq -e 'any(.checks[]; .id == "claude-hooks" and .status == "PASS")' "$tmp/hook-gone.json" >/dev/null ||
+  fail "removing both the script and its entry did not clear the check: $(jq -c '[.checks[] | select(.id == "claude-hooks")]' "$tmp/hook-gone.json")"
+
+# --- what the review of this change found ---------------------------------
+#
+# A registered hook with NO .sh extension was invisible: the walk globbed
+# *.sh, which is what both of the predecessors that motivated this happened
+# to be called, so the check passed on the exact state it exists to catch.
+# The walk now takes every file, and the settings are read from the other
+# side too, so a registration into this directory is caught whatever its
+# name.
+hook_settings() { # <jq filter> -- rewrite the account's settings.json
+  jq "$1" "$test_home/.claude/settings.json" >"$tmp/s.json"
+  cp "$tmp/s.json" "$test_home/.claude/settings.json"
+}
+hook_check() { # -> the claude-hooks check as compact JSON
+  HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/h.json" 2>/dev/null || true
+  jq -c '[.checks[] | select(.id == "claude-hooks")][0]' "$tmp/h.json"
+}
+printf '%s\n' '#!/bin/sh' 'exit 0' >"$hooks_dir/no-extension"
+chmod +x "$hooks_dir/no-extension"
+hook_settings '.hooks.PreToolUse += [{"matcher":"Bash","hooks":[{"type":"command","command":"$HOME/.claude/hooks/no-extension"}]}]'
+r="$(hook_check)"
+[[ "$(jq -r .status <<<"$r")" == FAIL && "$(jq -r .detail <<<"$r")" == *"STILL REGISTERED"*"no-extension"* ]] ||
+  fail "a registered hook with no .sh extension was not reported: $r"
+hook_settings 'del(.hooks.PreToolUse[] | select(.hooks[].command | test("no-extension")))'
+# ...and the same file with no registration at all, which only the directory
+# walk can see. Without this the widened glob is not pinned: the registered
+# case above is caught from the settings side whatever the walk globs.
+r="$(hook_check)"
+[[ "$(jq -r .detail <<<"$r")" == *"registered nowhere"*"no-extension"* ]] ||
+  fail "an unregistered hook with no .sh extension was not reported: $r"
+rm -f "$hooks_dir/no-extension"
+r="$(hook_check)"
+[[ "$(jq -r .status <<<"$r")" == PASS ]] || fail "removing it did not clear the check: $r"
+
+# A command may be an ARRAY. The old filter's split() errored on one, silently,
+# so a hook that WAS registered read as "registered nowhere" -- the lesser
+# remediation for the more dangerous state.
+printf '%s\n' '#!/bin/sh' 'exit 0' >"$hooks_dir/array-form.sh"
+hook_settings '.hooks.PreToolUse += [{"matcher":"Bash","hooks":[{"type":"command","command":["$HOME/.claude/hooks/array-form.sh","--flag"]}]}]'
+r="$(hook_check)"
+[[ "$(jq -r .detail <<<"$r")" == *"STILL REGISTERED"*"array-form.sh"* ]] ||
+  fail "an array-form command did not count as a registration: $r"
+hook_settings 'del(.hooks.PreToolUse[] | select(.hooks[].command | if type == "array" then any(test("array-form")) else test("array-form") end))'
+rm -f "$hooks_dir/array-form.sh"
+
+# The reference test is by PATH, not basename. A settings entry naming a
+# same-named script in another directory does not make this one a second
+# enforcer, and saying it does gives the wrong remediation.
+printf '%s\n' '#!/bin/sh' 'exit 0' >"$hooks_dir/samename.sh"
+hook_settings '.hooks.PreToolUse += [{"matcher":"Bash","hooks":[{"type":"command","command":"/elsewhere/entirely/samename.sh"}]}]'
+r="$(hook_check)"
+[[ "$(jq -r .detail <<<"$r")" == *"registered nowhere"*"samename.sh"* ]] ||
+  fail "a same-named script elsewhere was conflated with this one: $r"
+hook_settings 'del(.hooks.PreToolUse[] | select(.hooks[].command | if type == "array" then any(test("samename")) else test("samename") end))'
+rm -f "$hooks_dir/samename.sh"
+
+# A registration into this directory whose FILE IS GONE is a hook that fails
+# every call it was meant to guard, and the directory walk cannot see it.
+hook_settings '.hooks.PreToolUse += [{"matcher":"Bash","hooks":[{"type":"command","command":"$HOME/.claude/hooks/vanished.sh"}]}]'
+r="$(hook_check)"
+[[ "$(jq -r .detail <<<"$r")" == *"registered but MISSING"*"vanished.sh"* ]] ||
+  fail "a registration with no file was not reported: $r"
+hook_settings 'del(.hooks.PreToolUse[] | select(.hooks[].command | if type == "array" then any(test("vanished")) else test("vanished") end))'
+
+# A directory that happens to end in .sh is not a script.
+mkdir -p "$hooks_dir/notascript.sh"
+r="$(hook_check)"
+[[ "$(jq -r .detail <<<"$r")" != *notascript* ]] || fail "a directory was reported as a hook: $r"
+rmdir "$hooks_dir/notascript.sh"
+
+# The opt-out is declarable PER ACCOUNT as well as globally: each account's
+# hooks/ is its own, and a global-only list would couple them.
+printf '%s\n' '#!/bin/sh' 'exit 0' >"$hooks_dir/mine.sh"
+git config --global --add llmctx.accountHook.default mine.sh
+r="$(hook_check)"
+[[ "$(jq -r .status <<<"$r")" == PASS ]] || fail "a per-account declaration was ignored: $r"
+git config --global --unset-all llmctx.accountHook.default
+r="$(hook_check)"
+[[ "$(jq -r .status <<<"$r")" == FAIL ]] || fail "removing the declaration did not restore the report: $r"
+rm -f "$hooks_dir/mine.sh"
 
 # The managed libraries are managed, not unmanaged: llmctx-<name>.sh is ours
 # when bin/lib/<name>.sh exists, derived rather than listed so it cannot drift.
 [[ -f "$hooks_dir/llmctx-policy.sh" ]] || fail "test setup: the policy library was not installed"
-cp "$test_home/.claude/settings.json" "$tmp/settings-restore.json"
-jq 'del(.hooks.PreToolUse[] | select(.hooks[].command | test("left-over-guard")))' \
-  "$tmp/settings-restore.json" >"$test_home/.claude/settings.json"
 HOME="$test_home" "$copy/bin/llmctx" doctor --json >"$tmp/hook-clean.json" 2>/dev/null || true
 jq -e 'any(.checks[]; .id == "claude-hooks" and .status == "PASS" and .detail == "no unmanaged hooks")' \
   "$tmp/hook-clean.json" >/dev/null ||
