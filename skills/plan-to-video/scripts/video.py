@@ -10,8 +10,8 @@ judgment: it validates, renders what is missing, and records what it did.
 
 Usage:
     python3 video.py check  plan.json                  # validate, print what a render would cost
-    uv run  video.py render plan.json --approve 24     # render; 24 = seconds the user approved
-    uv run  video.py render plan.json --approve 8 --only intro
+    uv run  video.py render plan.json --approve 24s@720p   # the token `check` printed
+    uv run  video.py render plan.json --approve 8s@720p --only intro
     python3 video.py stitch plan.json                  # ffmpeg concat into out/<slug>.mp4
 
 `check` and `stitch` are stdlib only. `render` needs google-genai (uv resolves it
@@ -41,6 +41,18 @@ MODELS = {
 }
 ASPECTS = {"16:9", "9:16"}
 RESOLUTIONS = {"720p", "1080p", "4k"}
+
+def approval_token(plan, total_seconds: int) -> str:
+    """What `check` prints and `render` demands back, as one string.
+
+    The approval has to carry every input the price is made of, and the price
+    is seconds TIMES a per-second rate that depends on the resolution. The
+    resolution lives in the plan file, so a plan edited between `check` and
+    `render` could keep the same total seconds and bill several times as much
+    against an approval that still matched. The token names both.
+    """
+    return f"{total_seconds}s@{plan.get('resolution', '720p')}"
+
 DURATIONS = {4, 6, 8}
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 POLL_SECONDS = 10
@@ -190,7 +202,7 @@ def cmd_check(args):
         print(f"  {i:02d} {shot['id']:<20} {shot.get('duration', 8)}s")
     print(f"to render: {len(todo)} shots, {total}s of video")
     flag = f" --only {' '.join(sorted(only))}" if only else ""
-    print(f"approve with: render {args.plan}{flag} --approve {total}")
+    print(f"approve with: render {args.plan}{flag} --approve {approval_token(plan, total)}")
 
 
 def cmd_render(args):
@@ -201,10 +213,16 @@ def cmd_render(args):
     if not todo:
         print("video: nothing to render")
         return
-    # The approval is the seconds the user agreed to pay for. A mismatch means
-    # the plan changed after they looked, so stop rather than guess.
-    if args.approve != total:
-        die(f"this render is {total}s but --approve says {args.approve}s; run check and re-confirm")
+    # The approval is the price the user agreed to pay, and a price needs the
+    # resolution as well as the seconds. A mismatch means the plan changed
+    # after they looked, so stop rather than guess.
+    token = approval_token(plan, total)
+    if args.approve != token:
+        if args.approve.rstrip("s").isdigit():
+            die(f"--approve now takes the whole token, {token}, not seconds alone: "
+                "the plan's resolution sets the per-second rate, so seconds alone "
+                "approved a price the plan could still multiply")
+        die(f"this render is {token} but --approve says {args.approve!r}; run check and re-confirm")
     if not os.environ.get("GEMINI_API_KEY"):
         die("GEMINI_API_KEY is not set")
 
@@ -307,8 +325,9 @@ def main():
     r = sub.add_parser("render", help="render shots that are missing or changed")
     r.add_argument("plan")
     r.add_argument("--only", nargs="+", metavar="ID")
-    r.add_argument("--approve", type=int, required=True, metavar="SECONDS",
-                   help="seconds of video the user approved; must equal what check reports")
+    r.add_argument("--approve", required=True, metavar="<N>s@<resolution>",
+                   help="the price the user approved, as the exact token `check` prints;\n"
+                        "it carries the resolution too, because that sets the rate")
     s = sub.add_parser("stitch", help="concatenate rendered shots in plan order")
     s.add_argument("plan")
     args = p.parse_args()

@@ -12,7 +12,7 @@ between them: a JSON file a human can read, edit and approve before any money
 is spent.
 
 ```
-brief  →  plan.json  →  check  →  user approves N seconds  →  render  →  review  →  stitch
+brief  →  plan.json  →  check  →  user approves the price  →  render  →  review  →  stitch
           (Claude)      (free)                                 (Veo, billed)          (ffmpeg)
 ```
 
@@ -67,12 +67,14 @@ memory). **Wait for an explicit yes in chat.**
 ## 4. Render
 
 ```sh
-uv run <skill>/scripts/video.py render plan.json --approve <seconds>
+uv run <skill>/scripts/video.py render plan.json --approve <N>s@<resolution>
 ```
 
-`--approve` must equal the seconds `check` reported. If the plan changed after
-the user approved, the script refuses — re-run `check` and ask again rather than
-adjusting the number yourself. Run it in the background; each shot takes from
+`--approve` must be the exact token `check` printed. It carries the resolution
+as well as the seconds, because the resolution sets the per-second rate and
+lives in the plan file: the same total seconds at a higher resolution is a
+different bill. If the plan changed after the user approved, the script refuses
+— re-run `check` and ask again rather than adjusting the token yourself. Run it in the background; each shot takes from
 seconds to several minutes.
 
 Rendering is resumable and incremental: unchanged shots are skipped, edited
