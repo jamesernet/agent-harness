@@ -75,6 +75,66 @@ llmctx_policy_validate "$repo" && fail "an environment without a target must be 
 
 rm -f "$repo/.llmctx.json"
 
+# --- mergePolicy: the same four tiers, read by skills rather than hooks ------
+#
+# What a session may do with a pull request it has finished. The default is
+# `hold` for both profiles: a merge is where a person in the loop costs least,
+# so the cautious answer is what saying nothing gets you. Validated by value,
+# unlike briefs/claudeImport, because a misspelling should be heard from
+# `repo diff` rather than silently ignored by the skill meant to obey it.
+
+mrepo="$tmp/mergerepo"
+mkdir -p "$mrepo"
+git -C "$mrepo" init -q
+
+llmctx_policy_resolve "$mrepo" || fail "resolve failed with nothing declared: $LLMCTX_POLICY_ERROR"
+[[ "$LLMCTX_MERGE_POLICY" == hold ]] || fail "built-in mergePolicy was $LLMCTX_MERGE_POLICY, expected hold"
+[[ "$LLMCTX_MERGE_POLICY_SOURCE" == built-in ]] || fail "built-in source was $LLMCTX_MERGE_POLICY_SOURCE"
+
+# ...for a client profile too: unlike branchPolicy, this is not a strictness dial.
+printf '%s\n' '{"schemaVersion":1,"profile":"client"}' >"$mrepo/.llmctx.json"
+llmctx_policy_resolve "$mrepo" || fail "resolve failed for a client profile: $LLMCTX_POLICY_ERROR"
+[[ "$LLMCTX_MERGE_POLICY" == hold ]] || fail "client default mergePolicy was $LLMCTX_MERGE_POLICY, expected hold"
+
+for v in hold review-and-merge queue; do
+  printf '{"schemaVersion":1,"mergePolicy":"%s"}\n' "$v" >"$mrepo/.llmctx.json"
+  llmctx_policy_resolve "$mrepo" || fail "resolve failed for mergePolicy $v: $LLMCTX_POLICY_ERROR"
+  [[ "$LLMCTX_MERGE_POLICY" == "$v" ]] || fail "committed mergePolicy $v resolved as $LLMCTX_MERGE_POLICY"
+  [[ "$LLMCTX_MERGE_POLICY_SOURCE" == repo-policy ]] || fail "committed source was $LLMCTX_MERGE_POLICY_SOURCE"
+done
+
+# An invalid value is LOUD, at validation, before anything resolves.
+printf '%s\n' '{"schemaVersion":1,"mergePolicy":"merge-it-and-hope"}' >"$mrepo/.llmctx.json"
+if llmctx_policy_resolve "$mrepo" 2>/dev/null; then
+  fail "an invalid mergePolicy resolved instead of erroring"
+fi
+[[ "$LLMCTX_POLICY_ERROR" == *"invalid mergePolicy"* ]] ||
+  fail "the error did not name the key: $LLMCTX_POLICY_ERROR"
+
+# Tier order: repo-local git config outranks the committed file, which
+# outranks global config.
+printf '%s\n' '{"schemaVersion":1,"mergePolicy":"queue"}' >"$mrepo/.llmctx.json"
+git config --global llmctx.mergePolicy review-and-merge
+llmctx_policy_resolve "$mrepo" || fail "resolve failed with a global set: $LLMCTX_POLICY_ERROR"
+[[ "$LLMCTX_MERGE_POLICY" == queue ]] || fail "the committed file did not outrank global config"
+rm -f "$mrepo/.llmctx.json"
+llmctx_policy_resolve "$mrepo" || fail "resolve failed with only a global set: $LLMCTX_POLICY_ERROR"
+[[ "$LLMCTX_MERGE_POLICY" == review-and-merge && "$LLMCTX_MERGE_POLICY_SOURCE" == git-global ]] ||
+  fail "global mergePolicy was $LLMCTX_MERGE_POLICY (source $LLMCTX_MERGE_POLICY_SOURCE)"
+git -C "$mrepo" config --local llmctx.mergePolicy hold
+llmctx_policy_resolve "$mrepo" || fail "resolve failed with a local set: $LLMCTX_POLICY_ERROR"
+[[ "$LLMCTX_MERGE_POLICY" == hold && "$LLMCTX_MERGE_POLICY_SOURCE" == git-local ]] ||
+  fail "repo-local mergePolicy did not win: $LLMCTX_MERGE_POLICY ($LLMCTX_MERGE_POLICY_SOURCE)"
+git -C "$mrepo" config --local --unset llmctx.mergePolicy
+git config --global --unset llmctx.mergePolicy
+
+# A typo in an unrelated key must not decide this one: resolved on its own,
+# the way irreversiblePolicy is.
+printf '%s\n' '{"schemaVersion":1,"branchPolicy":"stirct","mergePolicy":"queue"}' >"$mrepo/.llmctx.json"
+llmctx_policy_resolve_merge "$mrepo" || fail "resolve_merge failed behind a bad branchPolicy: $LLMCTX_POLICY_ERROR"
+[[ "$LLMCTX_MERGE_POLICY" == queue ]] || fail "a typo in branchPolicy changed mergePolicy to $LLMCTX_MERGE_POLICY"
+rm -f "$mrepo/.llmctx.json"
+
 # --- irreversiblePolicy: the same four tiers, a different default -----------
 #
 # In its OWN repository. Earlier cases in this file leave local and global
