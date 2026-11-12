@@ -32,8 +32,25 @@ Constraints:
   - CSS only if possible (no JS)
   - respect prefers-reduced-motion: show the static logo
   - expose --duration, --glow-color, --scale-max on :root
+  - if JS drives the motion, expose window.__seek(ms) that places it at t
 Do not: add particles, text, extra shapes, or sound.
 ```
+
+**Ask for the seek hook whenever the motion is JS-driven.** A runtime with its
+own timeline -- GSAP, Lottie, anything stepping on requestAnimationFrame -- is
+invisible to `document.getAnimations()`, so the capture tool cannot place it at
+a time and falls back to the wall clock, which gives a different set of frames
+every run. One line in the page fixes it:
+
+```js
+window.__seek = (ms) => tl.time(ms / 1000, false);   // GSAP
+window.__seek = (ms) => anim.goToAndStop(ms, false); // Lottie
+```
+
+`snapshot_animation.py` drives that hook when it is there, in preference to the
+Web Animations API. Measured against GSAP 3.15 and Lottie 5.13: 90 of 90 frames
+identical across two renders with the hook, and reproducibility is the thing
+that makes a captured frame usable as evidence.
 
 Checklist of things that go wrong when left out:
 - Canvas size / aspect and whether it scales.

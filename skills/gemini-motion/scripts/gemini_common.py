@@ -54,6 +54,15 @@ the remaining budget and reports the same failure later."""
 MAX_CLIP_SECONDS = 10
 """One Omni call tops out here; longer needs --previous-id to extend."""
 
+MAX_EXTENDED_SECONDS = 40
+"""What an extended clip tops out at, and therefore what an extend can bill.
+
+A rate quoted per second of OUTPUT means an extend is priced by the length of
+the video that comes back, not by the increment added. The skill documents
+extension to 40 s, so pricing an extend at MAX_CLIP_SECONDS quoted a tenth of
+the clip on the one mode whose output this script cannot measure in advance.
+"""
+
 VIDEO_RATES_USD = {"360p": 0.03, "720p": 0.10, "1080p": 0.15, "4k": 0.30}
 """USD per second of OUTPUT video, by resolution.
 
@@ -284,25 +293,32 @@ def extract_code(text: str, prefer: tuple[str, ...] = ()) -> tuple[str, str]:
     return body.strip("\n"), lang.lower()
 
 
+def log_dir() -> Path:
+    """./.gemini-motion/, created if absent, ignoring itself.
+
+    The directory holds whole prompts and the raw model reply. Keeping it out
+    of git was documented in references/setup.md and nothing enforced it, which
+    is a line in a file nobody reads at the moment it matters. The protection
+    has to arrive with the directory rather than after it, so every writer goes
+    through here -- the run log is not the only one, and the other writer ran
+    first.
+    """
+    d = Path.cwd() / LOG_DIR_NAME
+    d.mkdir(exist_ok=True)
+    ignore = d / ".gitignore"
+    if not ignore.exists():
+        ignore.write_text("# written by the gemini-motion skill: this is local run state\n*\n",
+                          encoding="utf-8")
+    return d
+
+
 def log_run(kind: str, **fields) -> Path:
     """Append one JSON line to ./.gemini-motion/runs.jsonl and return its path.
 
     The log is how a later turn finds the interaction id to chain on, and how
     the user can see what was generated, from which prompt, at what settings.
     """
-    log_dir = Path.cwd() / LOG_DIR_NAME
-    log_dir.mkdir(exist_ok=True)
-    # The log holds whole prompts and, for the animation path, the raw model
-    # reply. Keeping it out of git was documented in references/setup.md and
-    # nothing enforced it, which is a line in a file nobody reads at the moment
-    # it matters. The directory ignores itself instead, so the protection
-    # arrives with the thing it protects and needs no cooperation from whatever
-    # repository happens to be the working directory.
-    ignore = log_dir / ".gitignore"
-    if not ignore.exists():
-        ignore.write_text("# written by the gemini-motion skill: this is local run state\n*\n",
-                          encoding="utf-8")
-    log_path = log_dir / LOG_FILE_NAME
+    log_path = log_dir() / LOG_FILE_NAME
     entry = {"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"), "kind": kind, **fields}
     with log_path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, ensure_ascii=False) + "\n")

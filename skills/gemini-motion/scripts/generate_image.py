@@ -78,12 +78,15 @@ def main() -> int:
     if args.thinking:
         kwargs["generation_config"] = {"thinking_level": args.thinking}
 
-    client = get_client()
     if not args.json:
         print(f"generating image with {args.model} ...", flush=True)
     t0 = time.time()
     try:
-        interaction = create(client, args.timeout, **kwargs)
+        # Billed, so the SDK's retries are off: a generation the server
+        # completed but whose response was lost would be charged once per
+        # attempt. The reference images above are inlined rather than uploaded,
+        # so nothing else in this script needs a retrying client.
+        interaction = create(get_client(retries=False), args.timeout, **kwargs)
     except Exception as e:  # noqa: BLE001
         die(f"{type(e).__name__}: {e}")
 

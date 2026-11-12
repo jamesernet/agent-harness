@@ -73,8 +73,6 @@ def main() -> int:
     sync_playwright = need_playwright()
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    for old in out_dir.glob("frame_*.png"):
-        old.unlink()
 
     total_ms = int(args.duration * 1000)
     if args.fps:
@@ -86,6 +84,11 @@ def main() -> int:
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
+        # Only now are the previous frames removed. Clearing them first meant a
+        # machine without Chromium installed lost the last good capture and got
+        # nothing in return.
+        for stale in out_dir.glob("frame_*.png"):
+            stale.unlink()
         page = browser.new_page(viewport={"width": args.width, "height": args.height})
         if src.suffix.lower() == ".svg":
             # A standalone SVG document has no <head>, so add_style_tag throws
@@ -105,15 +108,32 @@ def main() -> int:
             page.goto(src.as_uri())
             page.add_style_tag(content=f"html{{background:{args.background}}}")
         page.wait_for_timeout(100)
+        # Three ways to place the animation at time t, in order of authority.
+        #
+        # A runtime that drives itself from requestAnimationFrame -- GSAP,
+        # Lottie, anything with its own timeline -- is invisible to
+        # document.getAnimations(), so the Web Animations seek below finds
+        # nothing and the capture falls back to the wall clock, which is not
+        # reproducible frame to frame. A page that knows how to seek itself
+        # says so by exposing window.__seek(ms); measured against GSAP 3.15 and
+        # Lottie 5.13, driving that hook gives byte-identical frames across two
+        # renders, where wall-clock capture of the same pages does not.
+        hooked = page.evaluate("() => typeof window.__seek === 'function'")
         seekable = 0
-        if not args.realtime:
+        if hooked:
+            args.realtime = False
+        elif not args.realtime:
             seekable = page.evaluate(SEEK_JS, 0)
             if seekable == 0:
-                print("note: no seekable animations found (JS-driven?); falling back to --realtime", file=sys.stderr)
+                print("note: no seekable animations and no window.__seek(ms) hook; "
+                      "falling back to --realtime, which is not reproducible", file=sys.stderr)
                 args.realtime = True
         last = 0
         for i, t in enumerate(times):
-            if args.realtime:
+            if hooked:
+                page.evaluate("(t) => window.__seek(t)", t)
+                page.wait_for_timeout(16)
+            elif args.realtime:
                 page.wait_for_timeout(t - last)
                 last = t
             else:
@@ -138,6 +158,8 @@ def main() -> int:
         hint = ("this page was captured in real time, so nothing on it is animating"
                 if args.realtime else
                 "the animations seeked but did not move; try --realtime")
+        if hooked:
+            hint = "the page's own window.__seek(ms) ran but moved nothing"
         print(f"warning: all {len(times)} frames are identical -- {hint}. A video stitched "
               "from these is a still image.", file=sys.stderr)
 

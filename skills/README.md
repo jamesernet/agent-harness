@@ -181,7 +181,7 @@ harness installs one per Claude account and prunes the rest.
 | `webapp` | a website that holds user data | website + threat-model |
 | `platform` | a backend other things depend on | core + threat-model, data-privacy-review |
 | `fintech` | somewhere money moves (additive) | the payments and fintech family |
-| `metered` | a skill that bills a third-party API per run (additive) | the motion family; `all` excludes these, so they install only when this bundle is named |
+| `metered` | willing to spend on a third-party API (additive) | the motion family; `all` excludes these, so they arrive only when the bundle is named. Name it persistently — `git config --global llmctx.skillBundle webapp,metered` — because `--bundle` is one-shot and the next plain install prunes them again |
 
 Every skill in this directory must appear in at least one bundle;
 `bin/lint-skills.sh` enforces it.

@@ -63,4 +63,30 @@ out="$(gate "a cat" --draft)"
 grep -q 'bills 10s at 360p' <<<"$out" ||
   fail "an unpinned length was not priced at the worst case: $out"
 
+# 7. An extend returns the whole clip, and the rate is per second of OUTPUT, so
+#    the price of a continuation is not the increment. Pricing it from the
+#    10-second single-clip ceiling understated a 40-second result by 4x.
+out="$(gate "extend this" --previous-id v1_abc)"
+grep -q 'bills 40s at 720p, about \$4.00' <<<"$out" ||
+  fail "an extend was not priced by the whole output: $out"
+grep -q 'the rate applies to the WHOLE' <<<"$out" ||
+  fail "an extend did not say what it is pricing: $out"
+
+# 8. --output-seconds pins the finished length, so a user who knows it approves
+#    less than the ceiling.
+out="$(gate "extend this" --previous-id v1_abc --output-seconds 24)"
+grep -q 'bills 24s at 720p, about \$2.40' <<<"$out" ||
+  fail "--output-seconds did not pin the price: $out"
+
+# 9. --task extend takes the same path with no --previous-id.
+out="$(gate "extend this" --task extend)"
+grep -q 'bills 40s at 720p' <<<"$out" ||
+  fail "--task extend was priced as a fresh clip: $out"
+
+# 10. Two flags that set the resolution to different values are refused rather
+#     than silently ranked: --draft won, and the user was told nothing.
+out="$(gate "a cat" --draft --resolution 4k --duration 6)"
+grep -q 'pass one of them' <<<"$out" ||
+  fail "--draft silently overrode an explicit --resolution: $out"
+
 echo "gemini-motion gate tests: passed"

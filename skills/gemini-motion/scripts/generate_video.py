@@ -32,6 +32,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gemini_common import (  # noqa: E402
     MAX_CLIP_SECONDS,
+    MAX_EXTENDED_SECONDS,
     DEFAULT_TIMEOUT_S,
     MODELS,
     VIDEO_RATES_USD,
@@ -126,6 +127,9 @@ def main() -> int:
     ap.add_argument("--task", choices=TASKS, help="force a mode; normally the prompt is enough")
     ap.add_argument("--uri", action="store_true", help="force URI delivery (auto for 1080p/4k)")
     ap.add_argument("--no-store", action="store_true", help="faster, but the result cannot be edited later")
+    ap.add_argument("--output-seconds", type=int, metavar="SECONDS",
+                    help="on an extend or upscale, the length of the FINISHED clip, which is\n"
+                         "what the rate applies to. Without it the worst case is priced")
     ap.add_argument("--approve", metavar="<N>s@<resolution>",
                     help="the price you agreed to pay, as the exact token this script prints\n"
                          "(for example 6s@360p); it carries BOTH numbers, because seconds\n"
@@ -137,6 +141,9 @@ def main() -> int:
     args = ap.parse_args()
 
     prompt = read_text_arg(args.prompt, args.prompt_file, "prompt")
+    if args.draft and args.resolution:
+        die(f"--draft IS --resolution 360p, and you also passed --resolution {args.resolution}; "
+            "pass one of them")
     resolution = "360p" if args.draft else (args.resolution or "720p")
     out = Path(args.out) if args.out else default_out(prompt)
     if out.suffix.lower() != ".mp4":
@@ -152,12 +159,25 @@ def main() -> int:
     #
     # Without --duration the model picks the length, so the only honest figure
     # to price is the worst case.
-    billable = args.duration or MAX_CLIP_SECONDS
+    # An extend or an upscale returns the WHOLE clip, not the increment, and
+    # the rate is per second of output -- so on that path the thing being
+    # billed is a length this script never sees. --duration is the increment
+    # there and bounds nothing, so pricing from it, or from MAX_CLIP_SECONDS,
+    # quoted up to a tenth of the real bill on a clip extended to 40s.
+    extending = bool(args.previous_id) or args.task in ("extend", "upscale")
+    if extending:
+        billable = args.output_seconds or MAX_EXTENDED_SECONDS
+    else:
+        billable = args.duration or MAX_CLIP_SECONDS
     estimate = billable * VIDEO_RATES_USD[resolution]
     token = f"{billable}s@{resolution}"
     if args.approve is None:
         print(f"this render bills {billable}s at {resolution}, about ${estimate:.2f}")
-        if not args.duration:
+        if extending and not args.output_seconds:
+            print(f"  this continues an existing clip, and the rate applies to the WHOLE")
+            print(f"  result, not the part added; {MAX_EXTENDED_SECONDS}s is the worst case.")
+            print("  pass --output-seconds N with the finished length to approve less.")
+        elif not extending and not args.duration:
             print(f"  length is unset, so the model chooses it; {MAX_CLIP_SECONDS}s is the worst case.")
             print("  pass --duration 3..10 to pin it and approve a smaller number.")
         print(f"approve with: --approve {token}")
@@ -230,6 +250,7 @@ def main() -> int:
         "aspect": args.aspect or "16:9",
         "duration": f"{args.duration}s" if args.duration else None,
         "billed_seconds": billable,
+        "priced_as": "whole output (extend/upscale)" if extending else "this clip",
         "estimate_usd": round(estimate, 2),
         "previous_id": args.previous_id,
         "seconds": elapsed,

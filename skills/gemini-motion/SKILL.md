@@ -72,6 +72,15 @@ recipe and limits there are what separate a usable clip from a generic one.
 5. **Final.** Same prompt at `--resolution 720p` (or 1080p/4k if they need
    it; both are upscales). Extend with `--previous-id` + "Extend this video:
    …" when they need more than 10 s, up to 40 s.
+
+   **An extend is priced by the whole clip, not the part added.** The rate is
+   per second of output and an extend returns the finished video, so a fourth
+   extend of a 30-second clip is a 40-second bill. The gate prices that path at
+   the 40 s ceiling unless you pass `--output-seconds` with the finished
+   length. That ceiling is the conservative reading rather than a measured
+   invoice: if Omni turns out to bill only the increment, the gate overstates,
+   which is the direction to be wrong in. Tell the user which number they are
+   approving and why it looks large.
 6. **Hand over:** file path, prompt path, interaction id, resolution/aspect,
    approximate cost, and the SynthID note if it's going somewhere public.
 
@@ -97,9 +106,13 @@ are the method.
    `--format svg` for scalable icons/loaders, `--format lottie` only when the
    user's stack is Lottie.
 4. **Look at it.** `snapshot_animation.py motion/x.html --duration 4 --frames 6`
-   and Read the PNGs. No Playwright → read the code against the brief and say
-   so. Check: nothing extra, timeline matches, loop seamless, no external
-   URLs, reduced-motion branch present.
+   and Read the PNGs. The summary says how many frames are DISTINCT; if that is
+   1, nothing moved and the capture is worthless whatever it looks like. A
+   JS-driven animation needs a `window.__seek(ms)` hook in the page or the
+   capture falls back to wall-clock timing — ask for it in the brief. No
+   Playwright → read the code against the brief and say so. Check: nothing
+   extra, timeline matches, loop seamless, no external URLs, reduced-motion
+   branch present.
 5. **Iterate** with `--previous-id`, one concrete change per turn. If a fix is
    a two-line edit, make it yourself and say you did.
 6. **Hand over:** file path, how to embed it (one line), brief path,

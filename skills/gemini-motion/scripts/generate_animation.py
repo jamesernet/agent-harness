@@ -42,6 +42,7 @@ from gemini_common import (  # noqa: E402
     usage_summary,
     positive_timeout,
     VISION_IMAGE_MIMES,
+    log_dir,
 )
 
 FORMATS = {
@@ -208,20 +209,25 @@ def main() -> int:
     if not raw.strip():
         die(f"empty reply (status={getattr(interaction, 'status', '?')})")
 
+    # Saved before anything can reject it. The Lottie check below used to die
+    # pointing at this file while the write was fifteen lines further down, so
+    # on a first run the file did not exist and on a later one it held the
+    # PREVIOUS reply -- which is worse, because the user then debugs the wrong
+    # text. log_dir() also writes the .gitignore, which a bare mkdir did not.
+    raw_path = log_dir() / "last_raw.txt"
+    raw_path.write_text(raw, encoding="utf-8")
+
     code, lang = extract_code(raw, prefer=fmt["fences"])
     if args.format == "lottie":
         try:
             json.loads(code)
         except json.JSONDecodeError as e:
-            die(f"Lottie output is not valid JSON ({e}); raw reply saved to .gemini-motion/last_raw.txt")
+            die(f"Lottie output is not valid JSON ({e}); raw reply saved to {raw_path}")
     if assets and not args.no_inline:
         code = inline_assets(code, assets)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(code, encoding="utf-8")
-    raw_path = Path(".gemini-motion") / "last_raw.txt"
-    raw_path.parent.mkdir(exist_ok=True)
-    raw_path.write_text(raw, encoding="utf-8")
 
     elapsed = round(time.time() - t0, 1)
     summary = {
