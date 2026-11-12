@@ -136,6 +136,46 @@ for c in \
     '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
   [[ -z "$(hook_with "$payload")" ]] || fail "denied '$c', which pushes an unprotected branch"
 done
+# --- judged where the command ACTS, from a cwd that is not there (#103) -----
+#
+# #96 taught the gate `--git-dir` and `GIT_DIR=`; its test payloads stood IN
+# the protected repository, so they passed while the scope resolver still read
+# only -C and cd. From anywhere else those spellings fell back to the session
+# cwd and the gate never reached the branch. These payloads stand OUTSIDE the
+# target, which is the shape that was missing.
+outside_cwd="$(mktemp -d)"
+for c in \
+  "git --git-dir=$repo/.git commit -m x" \
+  "git --git-dir $repo/.git commit -m x" \
+  "git --git-dir=$repo/.git push" \
+  "git -C /tmp --git-dir=$repo/.git commit -m x" \
+  "GIT_DIR=$repo/.git git commit -m x" \
+  "sudo git --git-dir=$repo/.git push"; do
+  payload="$(jq -nc --arg c "$outside_cwd" --arg cmd "$c" \
+    '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
+  [[ "$(decision "$payload")" == deny ]] ||
+    fail "allowed '$c' from outside the repository (#103)"
+done
+# ...and the same spelling naming a repository on a FEATURE branch is allowed
+# from the same cwd, so this is scope resolution and not a blanket deny.
+feature_elsewhere="$(mktemp -d)/repo"
+mkdir -p "$feature_elsewhere"
+git -C "$feature_elsewhere" init -q
+git -C "$feature_elsewhere" symbolic-ref HEAD refs/heads/feature/ok
+printf '%s\n' '{"schemaVersion":1,"profile":"client"}' >"$feature_elsewhere/.llmctx.json"
+payload="$(jq -nc --arg c "$outside_cwd" --arg cmd "git --git-dir=$feature_elsewhere/.git commit -m x" \
+  '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
+[[ -z "$(hook_with "$payload")" ]] ||
+  fail "denied a commit in a repository on a feature branch, named by --git-dir"
+# A commit message that merely NAMES the protected repository's git dir is a
+# message: the scope stays the session's cwd, which is not a repository here,
+# so the hook has no opinion.
+payload="$(jq -nc --arg c "$outside_cwd" --arg cmd "git commit -m \"see --git-dir=$repo/.git\"" \
+  '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
+[[ -z "$(hook_with "$payload")" ]] ||
+  fail "a commit message naming a git dir redirected the judgement"
+rm -rf "$outside_cwd" "$(dirname "$feature_elsewhere")"
+
 # Under every policy value, the option form decides exactly as the bare form.
 # Fresh session ids, because `remind` fires once per session and would make
 # the second call differ from the first for a reason that is not the spelling.

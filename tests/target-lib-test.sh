@@ -101,4 +101,76 @@ want "a relative cd is returned unresolved" \
 want "a non-existent absolute path is returned" \
   "$tmp/nope" "cd $tmp/nope && git commit -m x"
 
+# --- --git-dir names the repository, and outranks everything -------------
+#
+# #103: the gate learned these spellings in #96 while this resolver still read
+# only -C and cd, so from a cwd outside the target they fell back to that cwd
+# and the gate never reached the branch. The answer is the directory
+# CONTAINING the git dir, because `rev-parse --show-toplevel` is fatal from
+# inside a `.git` and that call is the first thing branch-policy.sh makes with
+# it -- the git dir itself would make it exit 0, which is the bypass.
+want "--git-dir=<x>/.git resolves to <x>" \
+  "$tmp/a" "git --git-dir=$tmp/a/.git commit -m x"
+want "--git-dir <x>/.git, two words" \
+  "$tmp/a" "git --git-dir $tmp/a/.git commit -m x"
+want "--git-dir outranks -C, which only moves where it is read from" \
+  "$tmp/a" "git -C $tmp/b --git-dir=$tmp/a/.git commit -m x"
+want "--git-dir outranks a cd" \
+  "$tmp/a" "cd $tmp/b && git --git-dir=$tmp/a/.git commit -m x"
+want "--git-dir behind other global options" \
+  "$tmp/a" "git -c core.pager=cat --no-pager --git-dir=$tmp/a/.git commit"
+want "--git-dir behind a prefix" \
+  "$tmp/a" "sudo git --git-dir=$tmp/a/.git push"
+want "--git-dir with a leading path on the verb" \
+  "$tmp/a" "/usr/bin/git --git-dir=$tmp/a/.git commit"
+want "a tilde in the git dir is expanded" \
+  "$HOME/r" "git --git-dir=~/r/.git commit"
+
+# A git dir that is not a `.git` has no work tree containing it -- bare, or
+# --separate-git-dir -- so it is returned as-is. The callers' --show-toplevel
+# then fails exactly as it would have anyway.
+want "a bare git dir is returned as itself" \
+  "$tmp/bare.git" "git --git-dir=$tmp/bare.git push"
+
+# --work-tree alone is NOT read: without --git-dir, git still discovers the
+# repository from the cwd and only takes the files from there, so the
+# repository being acted on is unchanged.
+want "--work-tree alone does not set the scope" \
+  "" "git --work-tree=$tmp/b commit -m x"
+want "--work-tree alongside --git-dir loses to it" \
+  "$tmp/a" "git --git-dir=$tmp/a/.git --work-tree=$tmp/b commit"
+want "--work-tree does not override a cd either" \
+  "$tmp/b" "cd $tmp/b && git --work-tree=$tmp/a commit"
+
+# --- GIT_DIR= in front of a git verb, one tier lower --------------------
+# Measured: `GIT_DIR=a git --git-dir=b rev-parse` answers for b, so the
+# option wins when both are present.
+want "a GIT_DIR= prefix is read" \
+  "$tmp/a" "GIT_DIR=$tmp/a/.git git commit -m x"
+want "the option beats the environment" \
+  "$tmp/b" "GIT_DIR=$tmp/a/.git git --git-dir=$tmp/b/.git commit"
+want "a GIT_DIR= prefix after a cd" \
+  "$tmp/a" "cd $tmp/b && GIT_DIR=$tmp/a/.git git commit"
+want "GIT_DIR= in front of something that is not git is not read" \
+  "" "GIT_DIR=$tmp/a/.git make build"
+
+# --- the verb must be git, and the option must precede the subcommand ---
+# Without both, a commit message sets the scope: the message below names a
+# real repository, and judging the commit there instead would be a bypass.
+want "the option inside a commit message is a message" \
+  "" "git commit -m \"use --git-dir=$tmp/a/.git next time\""
+want "GIT_DIR= inside a commit message is a message" \
+  "" "git commit -m \"GIT_DIR=$tmp/a/.git\""
+want "echoing the option is echo's business" \
+  "" "echo git --git-dir=$tmp/a/.git"
+want "grepping for it is grep's business" \
+  "" "grep -r '--git-dir=$tmp/a/.git' ."
+
+# A quoted path containing whitespace stays "cannot tell": it truncates to a
+# non-directory and every caller's own existence test rejects it. Capturing it
+# needs a tokenizer, and a guard that half-parses shell is wrong both ways.
+got="$(llmctx_target_from_command "git --git-dir=\"$tmp/a dir/.git\" commit")"
+[[ "$got" != "$tmp/a dir" ]] ||
+  fail "a quoted path with a space was captured whole, which this does not claim to do"
+
 echo "target lib tests: passed"
