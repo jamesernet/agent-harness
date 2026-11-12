@@ -126,7 +126,7 @@ are the method.
   and it edits surgically instead of reinterpreting the whole brief. But it
   pins you to the model that started the thread, so when that model degrades
   iteration is simply unavailable. The brief is the recovery path; keep it.
-  Keep `.gemini-motion/runs.jsonl` out of git.
+  The log keeps itself out of git; see references/setup.md.
 - **Never pass `--model` on a fresh generation.** An explicit model is
   honoured literally and disables the fallback chain, which turns a
   recoverable 503 into a dead run. Pin the model only when continuing a

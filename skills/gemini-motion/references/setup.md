@@ -76,7 +76,10 @@ https://ai.google.dev/gemini-api/docs/pricing when it matters.
   later call edit or extend a clip (`--previous-id`), so keep the log.
 - Raw model reply for the last animation call: `./.gemini-motion/last_raw.txt`.
 
-Add `.gemini-motion/` to `.gitignore` if the project is under version control.
+`.gemini-motion/` ignores itself: a `.gitignore` containing `*` is written beside
+the log the first time one is created, so prompts and raw replies cannot be
+committed by accident from a project under version control. Delete that file if
+you actually want the log in git.
 
 ## Troubleshooting
 

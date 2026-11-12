@@ -41,6 +41,7 @@ from gemini_common import (  # noqa: E402
     read_text_arg,
     usage_summary,
     positive_timeout,
+    VISION_IMAGE_MIMES,
 )
 
 FORMATS = {
@@ -139,13 +140,22 @@ def main() -> int:
         names = ", ".join(a.name for a in assets)
         user_text += f"\n\nAssets available (reference by exact filename): {names}"
 
-    # Send the asset images too, so Gemini can see what it is animating.
+    # Send the asset images too, so Gemini can see what it is animating -- but
+    # only the types it accepts. An SVG or a GIF is an image by any local test
+    # and is rejected by the API, which used to fail the whole call over an
+    # asset that only needed inlining. Those are still listed by name above and
+    # still inlined into the result below.
+    unshown = [a.name for a in assets if guess_mime(a, "image/png") not in VISION_IMAGE_MIMES]
+    if unshown:
+        user_text += ("\n\nNot shown to you (the API does not accept the format), so animate "
+                      "them as opaque rectangles of the right aspect and leave the reference "
+                      f"by filename: {', '.join(unshown)}")
     inp: list[dict] | str = user_text
     if assets:
         blocks = []
         for a in assets:
             mime = guess_mime(a, "image/png")
-            if mime.startswith("image/"):
+            if mime in VISION_IMAGE_MIMES:
                 blocks.append({"type": "image", "data": base64.b64encode(a.read_bytes()).decode("ascii"), "mime_type": mime})
         blocks.append({"type": "text", "text": user_text})
         inp = blocks

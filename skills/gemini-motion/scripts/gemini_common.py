@@ -192,6 +192,17 @@ def guess_mime(path: Path, default: str = "application/octet-stream") -> str:
     return mime or default
 
 
+VISION_IMAGE_MIMES = ("image/png", "image/jpeg", "image/webp", "image/heic", "image/heif")
+"""Image types the models accept as INPUT, per Gemini's documented list.
+
+Not every image is one of these. `image/svg+xml` and `image/gif` pass any
+"is it an image" test and are rejected by the API, so a perfectly reasonable
+`--asset logo.svg` failed at the far end with an error about the image rather
+than about its type. An SVG is still a fine asset for a code animation -- it
+just gets inlined rather than shown to the model.
+"""
+
+
 def image_block(path: str | Path) -> dict:
     """Inline image content block (base64). Fine for images up to a few MB."""
     p = Path(path)
@@ -200,6 +211,10 @@ def image_block(path: str | Path) -> dict:
     mime = guess_mime(p, "image/png")
     if not mime.startswith("image/"):
         die(f"not an image mime type ({mime}): {p}")
+    if mime not in VISION_IMAGE_MIMES:
+        die(f"the model does not accept {mime} as input ({p.name}); it takes "
+            + ", ".join(m.split("/")[1] for m in VISION_IMAGE_MIMES)
+            + ". Convert it first, or pass it as an asset to be inlined instead of shown.")
     if p.stat().st_size == 0:
         # An empty file passes is_file(), encodes to "", and comes back from the
         # API as "Unable to process input image" with nothing pointing at the
@@ -277,6 +292,16 @@ def log_run(kind: str, **fields) -> Path:
     """
     log_dir = Path.cwd() / LOG_DIR_NAME
     log_dir.mkdir(exist_ok=True)
+    # The log holds whole prompts and, for the animation path, the raw model
+    # reply. Keeping it out of git was documented in references/setup.md and
+    # nothing enforced it, which is a line in a file nobody reads at the moment
+    # it matters. The directory ignores itself instead, so the protection
+    # arrives with the thing it protects and needs no cooperation from whatever
+    # repository happens to be the working directory.
+    ignore = log_dir / ".gitignore"
+    if not ignore.exists():
+        ignore.write_text("# written by the gemini-motion skill: this is local run state\n*\n",
+                          encoding="utf-8")
     log_path = log_dir / LOG_FILE_NAME
     entry = {"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"), "kind": kind, **fields}
     with log_path.open("a", encoding="utf-8") as fh:
