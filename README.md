@@ -106,6 +106,13 @@ the adopting machine before relying on it as a security boundary.
 
 Each account gets its own `hooks/`, so no account depends on another's directory surviving. An account created by copying another arrives holding the original's hook paths; `install` re-points them rather than leaving both wired.
 
+That directory is **installed into and never pruned**, on purpose: a hook you wrote by hand must survive a reinstall, and the settings merge keeps a `PreToolUse` entry naming a script this repository does not ship. What nothing used to do is *say* one was there — this machine carried two predecessors for months, one of them still registered and so running on every `Edit`, `Write` and `Bash` call beside its managed successor, while `doctor` reported healthy. `doctor` now reports an unmanaged hook per account — any filename, since a registered hook called `foo` with no extension is the same problem as one called `foo.sh` — and it reads the account's settings from the other side too, so a registration pointing into that directory is caught even when the file is missing. It says which state each is in, because a second enforcer, clutter, and a registration whose file is gone need different answers. It deletes nothing. Keep one deliberately, for every account or for one:
+
+```sh
+git config --global --add llmctx.accountHook my-own-guard.sh
+git config --global --add llmctx.accountHook.verse client-only-guard.sh
+```
+
 `account remove` unregisters a directory. It never deletes one — dropping a credential store as a side effect of a config change is not a trade this tool makes for you.
 
 **`account` is not `profile` or `context`.** A *profile* (`personal` / `client`) describes repository policy. A *context* describes a work identity and security boundary. An *account* describes which provider login a session runs on. Different axes, deliberately different words.

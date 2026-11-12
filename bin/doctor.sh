@@ -486,13 +486,153 @@ check_agent_target() {
   fi
 }
 
+# An account's hooks/ directory is installed into and never pruned, on purpose:
+# a hook written by hand must survive a reinstall, and the settings merge keeps
+# a PreToolUse entry naming a script this repository does not ship. The gap was
+# that nothing ever SAID such a script was there (#52).
+#
+# Found live on this machine: two predecessors, one from July registered
+# nowhere, one from August still listed in PreToolUse and so running on every
+# Edit, Write and Bash call beside its managed successor -- which it could
+# disagree with, because it hardcoded as a literal the path the managed guard
+# reads from config. `doctor` reported healthy throughout.
+#
+# Reports, never prunes: an installer that deletes files it did not write is
+# how a tool eats its user's own work. A script kept deliberately is declared
+# with `git config --global --add llmctx.accountHook <basename>`, the same
+# idiom as llmctx.repo, so this does not become a check a mature machine must
+# learn to ignore.
+#
+# Managed is derived, not listed: a hook is managed when bin/claude-hooks has
+# that basename, and a library when it is llmctx-<name>.sh and bin/lib/<name>.sh
+# exists. A hardcoded list here would drift the first time HOOK_LIBS changed.
+check_account_hooks() { # <hooks dir> <check id> <settings file> <account name>
+  local hooks_dir="$1" id="$2" settings="$3" account="$4"
+  local f base declared referenced cmd tok path
+  local hook_tilde="~"
+  local unmanaged="" registered="" dangling=""
+
+  # Declared deliberate, globally or for this account. Additive rather than an
+  # override: a per-account list is the point (each account's hooks/ is its
+  # own, which the global key alone would couple), and a machine-wide script
+  # should not have to be repeated per account.
+  declared="$(
+    git config --global --get-all llmctx.accountHook 2>/dev/null || true
+    git config --global --get-all "llmctx.accountHook.$account" 2>/dev/null || true
+  )"
+
+  is_managed_hook() { # <basename>
+    local b="$1" l
+    [[ ! -f "$SRC/bin/claude-hooks/$b" ]] || return 0
+    case "$b" in
+      llmctx-*.sh)
+        l="${b#llmctx-}"
+        l="${l%.sh}"
+        [[ ! -f "$SRC/bin/lib/$l.sh" ]] || return 0
+        ;;
+    esac
+    grep -qxF "$b" <<<"$declared"
+  }
+
+  # Every path a settings hook command names, with the two spellings of home a
+  # rendered settings file uses expanded, one per line. A command may be a
+  # shell line rather than a bare path, so each whitespace-delimited token is
+  # considered; a command may also be an ARRAY, which the previous filter's
+  # split() errored on -- silently, so a registered hook read as unregistered.
+  settings_hook_paths() {
+    [[ -f "$settings" ]] || return 0
+    jq -r '[(.hooks // {}) | .[]? | .[]? | (.hooks // [])[]? | .command]
+      | map(if type == "array" then .[] else . end)
+      | .[] | select(type == "string")' "$settings" 2>/dev/null |
+      while IFS= read -r cmd; do
+        for tok in $cmd; do
+          tok="${tok%\"}"
+          tok="${tok#\"}"
+          tok="${tok%\'}"
+          tok="${tok#\'}"
+          tok="${tok//\$HOME/$HOME}"
+          # The tilde is held in a variable: shellcheck reads a quoted literal
+          # `~` as a failed expansion (SC2088), but this matches a tilde that
+          # was TYPED into a settings file.
+          case "$tok" in
+            "$hook_tilde"/*) tok="$HOME/${tok#"$hook_tilde"/}" ;;
+          esac
+          printf '%s\n' "$tok"
+        done
+      done
+  }
+
+  if [[ ! -d "$hooks_dir" ]]; then
+    add_check "$id" PASS "no hooks directory" ""
+    return
+  fi
+
+  # FROM THE DIRECTORY: every file, whatever it is called. This was `*.sh`, and
+  # a registered hook with no extension was therefore invisible -- a PASS on
+  # the exact state this check exists to catch, because the two predecessors
+  # that motivated it both happened to end in .sh. Directories are skipped; a
+  # symlink to a script is a hook.
+  for f in "$hooks_dir"/* "$hooks_dir"/.[!.]*; do
+    [[ -e "$f" || -L "$f" ]] || continue
+    [[ ! -d "$f" ]] || continue
+    base="$(basename "$f")"
+    is_managed_hook "$base" && continue
+    referenced=0
+    while IFS= read -r path; do
+      [[ -n "$path" ]] || continue
+      case "$path" in
+        */*) [[ "$path" != "$hooks_dir/$base" ]] || referenced=1 ;;
+        *) [[ "$path" != "$base" ]] || referenced=1 ;;
+      esac
+      [[ "$referenced" -eq 0 ]] || break
+    done < <(settings_hook_paths)
+    if [[ "$referenced" -eq 1 ]]; then
+      registered="$registered $base"
+    else
+      unmanaged="$unmanaged $base"
+    fi
+  done
+
+  # FROM THE SETTINGS: a registration pointing INTO this directory at something
+  # that is not a managed name is a second enforcer even when the file is gone
+  # -- and a registration whose file is missing is a hook that fails every call
+  # it is supposed to guard. Either way the directory walk above cannot see it.
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    [[ "$path" == "$hooks_dir/"* ]] || continue
+    base="${path#"$hooks_dir/"}"
+    [[ "$base" != */* ]] || continue
+    is_managed_hook "$base" && continue
+    if [[ -e "$path" || -L "$path" ]]; then
+      case " $registered " in *" $base "*) continue ;; esac
+      registered="$registered $base"
+    else
+      case " $dangling " in *" $base "*) continue ;; esac
+      dangling="$dangling $base"
+    fi
+  done < <(settings_hook_paths)
+
+  if [[ -n "$registered" || -n "$dangling" ]]; then
+    add_check "$id" FAIL \
+      "unmanaged hook(s) STILL REGISTERED, running beside the managed ones:$registered${dangling:+; registered but MISSING:$dangling}${unmanaged:+; present but unregistered:$unmanaged}" \
+      "remove the script and its settings entry, or keep it: git config --global --add llmctx.accountHook.$account <basename>"
+  elif [[ -n "$unmanaged" ]]; then
+    add_check "$id" FAIL "unmanaged hook(s) present, registered nowhere:$unmanaged" \
+      "rm the script, or keep it: git config --global --add llmctx.accountHook.$account <basename>"
+  else
+    add_check "$id" PASS "no unmanaged hooks" ""
+  fi
+}
+
 if [[ "$hash_available" -eq 1 ]] && [[ -n "$accounts" ]]; then
   while IFS=$'\t' read -r account_name account_dir; do
     [[ -n "$account_name" ]] || continue
     if [[ "$account_name" == "$LLMCTX_ACCOUNT_DEFAULT_NAME" ]]; then
       check_agent_target "$account_dir/agents" claude-agents
+      check_account_hooks "$account_dir/hooks" claude-hooks "$account_dir/settings.json" "$account_name"
     else
       check_agent_target "$account_dir/agents" "claude-agents[$account_name]"
+      check_account_hooks "$account_dir/hooks" "claude-hooks[$account_name]" "$account_dir/settings.json" "$account_name"
     fi
   done <<<"$accounts"
 else
