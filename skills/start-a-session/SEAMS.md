@@ -26,10 +26,10 @@ evidence from step 1, never by taste.
 | stranded work, no ticket | [to-issues](../to-issues/) for the work's own ticket — or an explicit "abandoned" note, so abandoning is a decision rather than a disk event | the row, and which of the two |
 | ticket hygiene | [triage](../triage/) | the bucket (unlabelled, suspect) and the issue numbers |
 | a decision to walk | [interview-me](../interview-me/) on the issue, then the decision as a comment | the issue, and step 2's case against |
-| merge queue | the built-in `/code-review <PR>` dispatched as a fresh reviewer, then whatever `mergePolicy` says — `hold` stops at the review, `review-and-merge` merges on a clean verdict after CI, `queue` hands off; a stacked child is retargeted with `gh pr edit <n> --base <trunk>` *between* the two merges | PR number, `mergeStateStatus`, the last blocking comment, the resolved `mergePolicy` |
+| merge queue | [review-merge-queue](../review-merge-queue/), which triages the queue first and briefs one fresh reviewer per reviewable PR, then whatever `mergePolicy` says — `hold` stops at the review, `review-and-merge` merges on a clean verdict after CI, `queue` hands off; a stacked child is retargeted with `gh pr edit <n> --base <trunk>` *between* the two merges | PR number, `mergeStateStatus`, the last blocking comment, the resolved `mergePolicy` |
 | grabbable work | [grab](../grab/) `<issue>` — one worktree per issue; several → a list of sessions to open, or the managed `implementer` agent | issue numbers; never more than one per session |
 | blocked on access or a key | a comment on the issue stating the exact action a person must take | the ask, the account, the path |
-| sensitive-code review | `/code-review <PR>` as a fresh reviewer, never the authoring session | PR number and the paths touched |
+| sensitive-code review | `/code-review <PR>` as a fresh reviewer, never the authoring session, briefed per [BRIEF](../review-merge-queue/BRIEF.md) | PR number and the paths touched |
 | architecture (nudge) | [improve-codebase-architecture](../improve-codebase-architecture/) | the module or seam the nudge named, if any |
 | ux (nudge) | [product-ux-review](../product-ux-review/) | the running URL |
 | docs (nudge), or policy drift | [docs-drift-audit](../docs-drift-audit/); `bin/llmctx repo diff` remediation for policy findings | the `repo diff` findings, by id |
