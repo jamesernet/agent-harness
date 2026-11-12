@@ -103,6 +103,12 @@ for c in \
   "git -C $repo --no-pager -c core.pager=cat commit -m x" \
   "cd /tmp && git -C $repo commit -m x" \
   "sudo git -C $repo push" \
+  "sudo -u root git commit -m x" \
+  "sudo -n git commit -m x" \
+  "timeout 10 git commit -m x" \
+  "nice -n 10 git push" \
+  "env GIT_TRACE=1 git commit -m x" \
+  "command git commit -m x" \
   "git -P commit -m x" \
   "git -p -C $repo commit -m x" \
   "GIT_TRACE=1 git commit -m x" \
@@ -156,6 +162,21 @@ for c in \
   [[ "$(decision "$payload")" == deny ]] ||
     fail "allowed '$c' from outside the repository (#103)"
 done
+# A wrapper's own argument, and a `/.` segment on the git dir, each used to
+# hide the spelling entirely -- both silent allows on a protected branch,
+# both found by review of this change rather than by its author.
+for c in \
+  "sudo -u root git --git-dir=$repo/.git push" \
+  "timeout 10 git --git-dir=$repo/.git commit -m x" \
+  "nice -n 10 git --git-dir=$repo/.git commit -m x" \
+  "sudo -u root GIT_DIR=$repo/.git git commit -m x" \
+  "git --git-dir=$repo/.git/./ commit -m x"; do
+  payload="$(jq -nc --arg c "$outside_cwd" --arg cmd "$c" \
+    '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')"
+  [[ "$(decision "$payload")" == deny ]] ||
+    fail "allowed '$c' from outside the repository (#103, review)"
+done
+
 # ...and the same spelling naming a repository on a FEATURE branch is allowed
 # from the same cwd, so this is scope resolution and not a blanket deny.
 feature_elsewhere="$(mktemp -d)/repo"

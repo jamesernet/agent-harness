@@ -203,8 +203,13 @@ if [[ "$tool" == "Bash" ]]; then
   # `commit-tree` are plumbing, not commits, and `\b` let `commit` match the
   # front of both (`-` is a word boundary). A bare `K=V` assignment is a
   # prefix the shell allows exactly as `env K=V` is, so it is one too.
+  # The prefix group is lib/target.sh's, shared with irreversible-policy.sh.
+  # The local copy accepted `sudo ` but not `sudo -u root `, so a wrapper flag
+  # with its own value walked a commit on a protected branch straight past the
+  # gate -- found by the review of #103, after the same gap had been fixed in
+  # the resolver and, this morning, in the sibling hook.
   if ! printf '%s' "$cmd" |
-    grep -qE "(^|[;&|]|&&|\|\||[[:space:]]&|^[[:space:]]*)[[:space:]]*(sudo[[:space:]]+|env[[:space:]]+[^[:space:]]+=[^[:space:]]*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*git[[:space:]]+${git_opts}(commit|push)([[:space:]]|\$)"; then
+    grep -qE "(^|[;&|]|&&|\|\||[[:space:]]&|^[[:space:]]*)[[:space:]]*${LLMCTX_CMD_PREFIX_RE}git[[:space:]]+${git_opts}(commit|push)([[:space:]]|\$)"; then
     exit 0
   fi
 

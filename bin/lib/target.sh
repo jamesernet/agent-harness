@@ -14,6 +14,7 @@
 #   llmctx_target_from_command "<command text>"
 #   llmctx_target_action_statements "<command text>"   (one statement per line, nothing removed)
 #   $LLMCTX_GIT_GLOBAL_OPTS_RE   (an ERE fragment, see below)
+#   $LLMCTX_CMD_PREFIX_RE        (an ERE fragment, see below)
 #
 # Prints the directory the command names, or nothing when it cannot tell.
 # "Cannot tell" is a first-class answer and the caller must handle it.
@@ -55,6 +56,22 @@ llmctx_target_tilde="~"
 
 # `cd ~/x` is written far more often than the expanded path. Expanding a
 # leading `~/` keeps this to string work rather than eval.
+# What a shell allows in FRONT of a verb, as an ERE fragment for the action
+# matchers: `sudo`/`doas`/`command`/`exec`/`nohup`/`nice`/`ionice`/`time` with
+# their own flags and a flag's separate value, `timeout` with its duration,
+# `env` with assignments, and a bare `K=V` assignment. Zero or more, each
+# ending in whitespace, so it slots between a statement start and the verb.
+#
+# One definition, three consumers. This was written three times -- in
+# branch-policy.sh's gate, in irreversible-policy.sh, and (as awk) in the
+# resolver below -- and each copy was found to miss a different spelling. The
+# review of #103 found `sudo -u root git --git-dir=…` still walking past the
+# branch guard after the resolver had learned it, which is the same bug one
+# door over for the third time. It is defined here, beside the resolver that
+# answers the other half of the question.
+# shellcheck disable=SC2034  # consumed by the hooks that source this file
+LLMCTX_CMD_PREFIX_RE='((sudo|doas|command|exec|nohup|nice|ionice|time)[[:space:]]+(-[^[:space:]]+[[:space:]]+([^-[:space:]][^[:space:]]*[[:space:]]+)?)*|timeout[[:space:]]+(-[^[:space:]]+[[:space:]]+)*[^-[:space:]][^[:space:]]*[[:space:]]+|env[[:space:]]+(-[^[:space:]]+[[:space:]]+|[^[:space:]]+=[^[:space:]]*[[:space:]]+)*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
+
 # Global options git accepts between `git` and the subcommand: `-C <dir>`,
 # `-c <k=v>`, the lone flags `-p` and `-P`, `--<long>`, `--<long>=<v>`, and a
 # long option's separate value. An ERE fragment for the ACTION matchers in
@@ -211,13 +228,33 @@ llmctx_target_git_option() { # <command text> <long-option-name>
       gsub(/^["'"'"']|["'"'"']$/, "", v)
       return v
     }
-    {
+    # Where the verb starts: past the assignments and the wrappers the shell
+    # allows in front of it, INCLUDING a wrapper flag that takes its own
+    # separate value and timeout\x27s bare duration. `sudo -u root git …` and
+    # `timeout 10 git …` stopped the scan one token early and the spelling was
+    # never seen -- a silent allow on a protected branch, and `timeout 10` is
+    # an ordinary shape in a script rather than an evasion. A value is only
+    # consumed when it is not itself the git verb, so `sudo -n git` keeps git.
+    function verb_at(      i, flag) {
       i = 1
-      # Prefixes the shell allows in front of a verb: assignments, and the
-      # wrappers that take the real command as their argument.
-      while (i <= NF && ($i ~ /^[A-Za-z_][A-Za-z0-9_]*=/ ||
-                         $i ~ /^(sudo|doas|command|exec|nohup|nice|ionice|time|timeout|env)$/ ||
-                         $i ~ /^-/)) i++
+      while (i <= NF) {
+        if ($i ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { i++; continue }
+        if ($i ~ /^(sudo|doas|command|exec|nohup|nice|ionice|time|timeout|env)$/) {
+          if ($i == "timeout") { i++; if (i <= NF && $i ~ /^[0-9]+(\.[0-9]+)?[smhd]?$/) i++ }
+          else i++
+          while (i <= NF && $i ~ /^-/) {
+            flag = $i; i++
+            if (flag !~ /=/ && i <= NF && $i !~ /^-/ && $i != "git" && $i !~ /\/git$/) i++
+          }
+          continue
+        }
+        if ($i ~ /^-/) { i++; continue }
+        break
+      }
+      return i
+    }
+    {
+      i = verb_at()
       if (i > NF) next
       if ($i != "git" && $i !~ /\/git$/) next
       for (j = i + 1; j <= NF; j++) {
@@ -236,7 +273,15 @@ llmctx_target_git_option() { # <command text> <long-option-name>
 # tree. See the header on why the containing directory and not the git dir.
 llmctx_target_repo_of_git_dir() { # <git dir>
   local d="$1"
+  # `/r/.git/./` and `/r/.git` are the same directory, and the first used to
+  # answer `/r/.git/.` -- the git dir itself, where `--show-toplevel` is fatal,
+  # which is precisely the bypass this function exists to avoid. Trailing
+  # slashes and `/.` segments are collapsed until neither is left.
   d="$(llmctx_target_strip_slashes "$d")"
+  while [[ "$d" == */. && "$d" != "/." ]]; do
+    d="$(llmctx_target_strip_slashes "${d%/.}")"
+  done
+  [[ "$d" != "/." ]] || d="/"
   case "$d" in
     */.git) printf '%s\n' "${d%/.git}" ;;
     .git) printf '%s\n' "." ;;
@@ -262,13 +307,31 @@ llmctx_target_from_command() {
   # assignment in front of a git VERB counts -- `git commit -m "GIT_DIR=x"`
   # is a message, and `GIT_DIR=x make` is not git's business.
   dir="$(llmctx_target_statements "$cmd" | awk '
-    {
-      i = 1; d = ""
-      while (i <= NF && ($i ~ /^[A-Za-z_][A-Za-z0-9_]*=/ ||
-                         $i ~ /^(sudo|doas|command|exec|nohup|nice|ionice|time|timeout|env)$/)) {
-        if (index($i, "GIT_DIR=") == 1) d = substr($i, 9)
-        i++
+    # The same prefix discipline as llmctx_target_git_option: a wrapper flag
+    # may take a separate value, and timeout a bare duration, or
+    # `sudo -u root GIT_DIR=… git …` is never seen.
+    function verb_at(      i, flag) {
+      i = 1
+      while (i <= NF) {
+        if ($i ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { i++; continue }
+        if ($i ~ /^(sudo|doas|command|exec|nohup|nice|ionice|time|timeout|env)$/) {
+          if ($i == "timeout") { i++; if (i <= NF && $i ~ /^[0-9]+(\.[0-9]+)?[smhd]?$/) i++ }
+          else i++
+          while (i <= NF && $i ~ /^-/) {
+            flag = $i; i++
+            if (flag !~ /=/ && i <= NF && $i !~ /^-/ && $i != "git" && $i !~ /\/git$/) i++
+          }
+          continue
+        }
+        if ($i ~ /^-/) { i++; continue }
+        break
       }
+      return i
+    }
+    {
+      v = verb_at(); d = ""
+      for (i = 1; i < v; i++) if (index($i, "GIT_DIR=") == 1) d = substr($i, 9)
+      i = v
       if (i <= NF && ($i == "git" || $i ~ /\/git$/) && d != "") {
         gsub(/^["'"'"']|["'"'"']$/, "", d)
         found = d

@@ -166,6 +166,45 @@ want "echoing the option is echo's business" \
 want "grepping for it is grep's business" \
   "" "grep -r '--git-dir=$tmp/a/.git' ."
 
+# --- a wrapper's own argument does not hide the verb ---------------------
+#
+# Found by review: the prefix scan stopped at the first bare word, so
+# `sudo -u root git …` and `timeout 10 git …` were never read -- a silent
+# allow on a protected branch, and `timeout 10` is an ordinary shape in a
+# script rather than an evasion. A flag's value is consumed only when it is
+# not itself the git verb, so a valueless flag keeps git.
+want "sudo with a separate flag value" \
+  "$tmp/a" "sudo -u root git --git-dir=$tmp/a/.git push"
+want "sudo with a valueless flag" \
+  "$tmp/a" "sudo -n git --git-dir=$tmp/a/.git push"
+want "timeout with a bare duration" \
+  "$tmp/a" "timeout 10 git --git-dir=$tmp/a/.git commit"
+want "timeout with a suffixed duration" \
+  "$tmp/a" "timeout 30s git --git-dir=$tmp/a/.git commit"
+want "nice with a separate flag value" \
+  "$tmp/a" "nice -n 10 git --git-dir=$tmp/a/.git commit"
+want "ionice with a separate flag value" \
+  "$tmp/a" "ionice -c 3 git --git-dir=$tmp/a/.git commit"
+want "a wrapper in front of a GIT_DIR= assignment" \
+  "$tmp/a" "sudo -u root GIT_DIR=$tmp/a/.git git commit"
+# ...and a wrapper does not make the NEXT bare word a verb: echo still prints.
+want "a wrapper in front of echo is still echo" \
+  "" "sudo echo git --git-dir=$tmp/a/.git"
+want "timeout in front of echo is still echo" \
+  "" "timeout 10 echo git --git-dir=$tmp/a/.git"
+
+# --- `/.` is the same directory, and must not read as the git dir --------
+#
+# Also found by review: `/r/.git/./` answered `/r/.git/.` -- the git dir
+# itself, where --show-toplevel is fatal -- which is exactly the bypass the
+# containing-directory rule exists to avoid.
+want "a trailing /./ on the git dir" \
+  "$tmp/a" "git --git-dir=$tmp/a/.git/./ commit"
+want "a trailing /. on the git dir" \
+  "$tmp/a" "git --git-dir=$tmp/a/.git/. commit"
+want "a trailing slash on the git dir" \
+  "$tmp/a" "git --git-dir=$tmp/a/.git/ commit"
+
 # A quoted path containing whitespace stays "cannot tell": it truncates to a
 # non-directory and every caller's own existence test rejects it. Capturing it
 # needs a tokenizer, and a guard that half-parses shell is wrong both ways.
