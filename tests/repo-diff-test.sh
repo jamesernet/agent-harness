@@ -99,4 +99,134 @@ printf '%s\n' '#!/bin/sh' 'git symbolic-ref --short HEAD' >"$hp/.githooks/pre-co
 jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "UNKNOWN")' "$tmp/hp-own.json" >/dev/null ||
   fail "a foreign branch check was not distinguished from none at all"
 
+# --- a scaffold shim is MISSING, a foreign hook is UNKNOWN -------------------
+#
+# Both used to report one undifferentiated UNKNOWN. The shim is asking to be
+# replaced by one command; the husky hook is an integration a person must look
+# at. Reporting them identically is what kept the stalled handoff invisible.
+shim="$tmp/shim"
+mkdir -p "$shim"
+git -C "$shim" init -q -b main
+git -C "$shim" checkout -q -b feature/t
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","briefs":"tracker","claudeImport":false}' >"$shim/.llmctx.json"
+printf '%s\n' '# Project instructions' >"$shim/AGENTS.md"
+shim_hooks="$(git -C "$shim" rev-parse --git-path hooks)"
+case "$shim_hooks" in /*) ;; *) shim_hooks="$shim/$shim_hooks" ;; esac
+mkdir -p "$shim_hooks"
+printf '%s\n' '#!/bin/sh' '# scaffold-hook-shim — placeholder' 'exec "$(dirname "$0")/pre-commit.local" "$@"' >"$shim_hooks/pre-commit"
+"$CLI" repo diff "$shim" --json >"$tmp/shim.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "MISSING" and (.actual | test("scaffold")))' "$tmp/shim.json" >/dev/null ||
+  fail "a scaffold shim was not reported as MISSING: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/shim.json")"
+printf '%s\n' '#!/bin/sh' '# husky' 'echo husky' >"$shim_hooks/pre-commit"
+"$CLI" repo diff "$shim" --json >"$tmp/husky.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN" and .actual == "foreign pre-commit hook")' "$tmp/husky.json" >/dev/null ||
+  fail "a foreign hook was not reported as UNKNOWN: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/husky.json")"
+
+# sync-location. HOME is overridden rather than writing into the real home, and
+# the repository is created under the fake HOME so the resolved path genuinely
+# sits beneath a sync root. The OK case matters as much as the CONFLICT one: the
+# iCloud Desktop & Documents arm keys off the CloudDocs mirror directory, so
+# without that marker a repository in $HOME/Documents must NOT be flagged,
+# otherwise every Mac reports a conflict it cannot act on.
+synced_home="$tmp/fakehome"
+mkdir -p "$synced_home/Dropbox/project"
+git -C "$synced_home/Dropbox/project" init -q
+if HOME="$synced_home" "$CLI" repo diff "$synced_home/Dropbox/project" --json >"$tmp/synced.json"; then
+  fail "a repository inside Dropbox was reported compliant"
+fi
+jq -e 'any(.findings[]; .id == "sync-location" and .status == "CONFLICT")' "$tmp/synced.json" >/dev/null ||
+  fail "a repository inside a sync root was not flagged"
+
+mkdir -p "$synced_home/Documents/project"
+git -C "$synced_home/Documents/project" init -q
+HOME="$synced_home" "$CLI" repo diff "$synced_home/Documents/project" --json >"$tmp/docs-nosync.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "sync-location" and .status == "OK")' "$tmp/docs-nosync.json" >/dev/null ||
+  fail "Documents was flagged without the iCloud Desktop & Documents marker"
+
+mkdir -p "$synced_home/Library/Mobile Documents/com~apple~CloudDocs/Documents"
+HOME="$synced_home" "$CLI" repo diff "$synced_home/Documents/project" --json >"$tmp/docs-sync.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "sync-location" and .status == "CONFLICT")' "$tmp/docs-sync.json" >/dev/null ||
+  fail "Documents was not flagged once the iCloud mirror directory existed"
+
+# An unreadable candidate must not take the command down. `cd` into it fails,
+# and a failed command substitution under set -e aborted every finding, not just
+# this one.
+locked_home="$tmp/lockedhome"
+mkdir -p "$locked_home/Dropbox" "$tmp/plain"
+git -C "$tmp/plain" init -q
+chmod 000 "$locked_home/Dropbox"
+HOME="$locked_home" "$CLI" repo diff "$tmp/plain" --json >"$tmp/locked.json" 2>/dev/null || true
+chmod 755 "$locked_home/Dropbox"
+jq -e 'any(.findings[]; .id == "sync-location")' "$tmp/locked.json" >/dev/null ||
+  fail "an unreadable sync-root candidate suppressed the whole report"
+
+# A linked worktree keeps its refs in the shared Git directory, so a worktree
+# outside a sync root whose shared .git is inside one is still at risk. Testing
+# the checkout alone reported OK here, which is backwards.
+wt_home="$tmp/wthome"
+mkdir -p "$wt_home/Dropbox/upstream"
+git -C "$wt_home/Dropbox/upstream" init -q
+git -C "$wt_home/Dropbox/upstream" config user.email wt@example.test
+git -C "$wt_home/Dropbox/upstream" config user.name "Worktree Test"
+git -C "$wt_home/Dropbox/upstream" commit -q --allow-empty -m base
+git -C "$wt_home/Dropbox/upstream" worktree add -q "$tmp/outside-wt" -b parked
+HOME="$wt_home" "$CLI" repo diff "$tmp/outside-wt" --json >"$tmp/wt.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "sync-location" and .status == "CONFLICT" and (.actual | test("shared Git directory")))' "$tmp/wt.json" >/dev/null ||
+  fail "a worktree whose shared Git directory is synced was not flagged"
+
+# A second linked account renames the vendor folder, and matching only the bare
+# path missed every such case.
+variant_home="$tmp/varianthome"
+for variant in "Dropbox (Personal)" "OneDrive - Example Org"; do
+  mkdir -p "$variant_home/$variant/project"
+  git -C "$variant_home/$variant/project" init -q
+  HOME="$variant_home" "$CLI" repo diff "$variant_home/$variant/project" --json >"$tmp/variant.json" 2>/dev/null || true
+  jq -e 'any(.findings[]; .id == "sync-location" and .status == "CONFLICT")' "$tmp/variant.json" >/dev/null ||
+    fail "a repository under '$variant' was not flagged"
+done
+
+# A directory that merely STARTS with a vendor name is nobody's sync folder. A
+# bare trailing glob flagged ~/Dropbox-notes as CONFLICT with "synced by
+# Dropbox-notes", which fails `repo diff` for a repository whose location is
+# fine — the false positive that teaches an owner to ignore this check.
+prefix_home="$tmp/prefixhome"
+for ordinary in "Dropbox-notes" "OneDriveBackup"; do
+  mkdir -p "$prefix_home/$ordinary/project"
+  git -C "$prefix_home/$ordinary/project" init -q
+  HOME="$prefix_home" "$CLI" repo diff "$prefix_home/$ordinary/project" --json >"$tmp/prefix.json" 2>/dev/null || true
+  jq -e 'any(.findings[]; .id == "sync-location" and .status == "OK")' "$tmp/prefix.json" >/dev/null ||
+    fail "'$ordinary' is an ordinary directory and was flagged as a sync root"
+done
+
+# The vendor spellings a client really creates must still be caught, so the
+# anchoring above cannot be mistaken for switching the check off.
+mkdir -p "$prefix_home/Dropbox/project" "$prefix_home/Google Drive/project"
+for real in "Dropbox" "Google Drive"; do
+  git -C "$prefix_home/$real/project" init -q
+  HOME="$prefix_home" "$CLI" repo diff "$prefix_home/$real/project" --json >"$tmp/realvendor.json" 2>/dev/null || true
+  jq -e 'any(.findings[]; .id == "sync-location" and .status == "CONFLICT")' "$tmp/realvendor.json" >/dev/null ||
+    fail "a repository under '$real' was not flagged"
+done
+
+# A literal pipe in the path must not truncate the reported path. The prefix
+# list was moved to parallel arrays for this reason; the checked paths were
+# still packed into one string and split on "|", so the finding named a
+# directory that was not the one tested.
+pipe_home="$tmp/pipehome"
+mkdir -p "$pipe_home/Dropbox/weird|name/project"
+git -C "$pipe_home/Dropbox/weird|name/project" init -q
+HOME="$pipe_home" "$CLI" repo diff "$pipe_home/Dropbox/weird|name/project" --json >"$tmp/pipe.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "sync-location" and (.actual | contains("weird|name/project")))' "$tmp/pipe.json" >/dev/null ||
+  fail "a path containing a pipe was truncated in the sync-location finding"
+
+# Declarable, like claudeImport and briefs: moving the repository is the fix, and
+# saying so out loud is the alternative.
+optout_home="$tmp/optouthome"
+mkdir -p "$optout_home/Dropbox/accepted"
+git -C "$optout_home/Dropbox/accepted" init -q
+printf '%s\n' '{"schemaVersion":1,"syncLocation":false}' >"$optout_home/Dropbox/accepted/.llmctx.json"
+HOME="$optout_home" "$CLI" repo diff "$optout_home/Dropbox/accepted" --json >"$tmp/optout.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "sync-location" and .status == "OVERRIDE")' "$tmp/optout.json" >/dev/null ||
+  fail "the declared sync-location opt-out was not honoured"
+
 echo "repo diff tests: passed"

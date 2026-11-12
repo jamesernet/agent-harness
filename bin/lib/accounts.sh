@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Claude accounts: one Claude Code config directory per login.
+# Provider accounts: one config directory per login.
 #
 # Claude Code keys its credential store by CLAUDE_CONFIG_DIR, so a second
 # directory is a second, fully independent login rather than a swapped token.
@@ -14,21 +14,81 @@
 # config beside llmctx.skillBundle:
 #
 #   git config --global --add llmctx.claudeAccount acme=~/.claude-acme
+#   git config --global --add llmctx.codexAccount acme=~/.codex-acme
 #
-# $HOME/.claude is always installed into, as `default`, registered or not.
+# $HOME/.claude and $HOME/.codex are always installed into, as `default`,
+# registered or not.
 # Registration is purely additive. A list that could omit the primary would
 # reintroduce the failure this exists to fix: an install that silently skips a
 # config directory and reports success.
+#
+# This file also owns resolution of the `@import` targets inside an account's
+# generated CLAUDE.md, because that is the same subject matter — an account's
+# config directory and the path forms it is written in — and the tilde
+# expansion the resolver needs already lives here.
 
 LLMCTX_ACCOUNT_KEY="llmctx.claudeAccount"
 LLMCTX_ACCOUNT_DEFAULT_NAME="default"
 
+llmctx_account_validate_provider() {
+  case "$1" in
+    claude | codex) ;;
+    *)
+      echo "error: provider '$1' must be claude or codex" >&2
+      return 1
+      ;;
+  esac
+}
+
+llmctx_account_key() {
+  local provider="${1:-claude}"
+  llmctx_account_validate_provider "$provider" || return 1
+  case "$provider" in
+    claude) printf '%s\n' "$LLMCTX_ACCOUNT_KEY" ;;
+    codex) printf '%s\n' "llmctx.codexAccount" ;;
+  esac
+}
+
 llmctx_account_default_dir() {
-  printf '%s\n' "$HOME/.claude"
+  local provider="${1:-claude}"
+  llmctx_account_validate_provider "$provider" || return 1
+  case "$provider" in
+    claude) printf '%s\n' "$HOME/.claude" ;;
+    codex) printf '%s\n' "$HOME/.codex" ;;
+  esac
+}
+
+# Does this path still begin with a tilde THIS TOOL does not expand?
+#
+# A predicate rather than a failing expander: `~other/path` is a path a shell
+# would have turned into an absolute one, and every site that refuses it was
+# naming the wrong cause. The hook installer said `skip: ~other/path (not a
+# git repo)` -- which may be a perfectly good repository -- and the account
+# registry said `is not absolute`, which says nothing about the tilde (#92).
+#
+# Only `~` and `~/...` are expanded, deliberately. `~user` needs the password
+# database: `getent` is absent on macOS and `dscl` on Linux, and `eval` is not
+# a tool a path helper should reach for. So it is refused BY NAME instead,
+# which is the honest answer and is all any of these call sites needed.
+# shellcheck disable=SC2088  # matching a LITERAL tilde is the point here
+llmctx_path_unexpanded_tilde() {
+  case "$1" in
+    '~' | '~/'*) return 1 ;;
+    '~'*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# The one sentence every caller should print about such a path, so the three
+# that refuse it do not each invent their own wording.
+llmctx_path_tilde_reason() {
+  printf 'unexpanded tilde: only ~ and ~/... are expanded here; store the absolute path
+'
 }
 
 # Absolute, `~` expanded, no trailing slash. The directory need not exist yet —
-# installing is what creates it.
+# installing is what creates it. Never fails: the caller decides what an
+# unexpandable path means, with llmctx_path_unexpanded_tilde above.
 llmctx_account_expand_dir() {
   local dir="$1"
   # shellcheck disable=SC2088  # matching a LITERAL tilde is the point here
@@ -41,13 +101,14 @@ llmctx_account_expand_dir() {
 }
 
 llmctx_account_validate_name() {
-  local name="$1"
+  local name="$1" provider="${2:-claude}" default_dir
+  default_dir="$(llmctx_account_default_dir "$provider")" || return 1
   [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || {
     echo "error: account name '$name' must be lowercase letters, digits and hyphens" >&2
     return 1
   }
   [[ "$name" != "$LLMCTX_ACCOUNT_DEFAULT_NAME" ]] || {
-    echo "error: '$LLMCTX_ACCOUNT_DEFAULT_NAME' is reserved for $HOME/.claude" >&2
+    echo "error: '$LLMCTX_ACCOUNT_DEFAULT_NAME' is reserved for $default_dir" >&2
     return 1
   }
 }
@@ -57,8 +118,9 @@ llmctx_account_validate_name() {
 # into fewer directories than asked for and still exit 0, which is the exact
 # shape of the bug that made accounts necessary.
 llmctx_accounts() {
-  local entry name dir seen_names seen_dirs default_dir
-  default_dir="$(llmctx_account_default_dir)"
+  local provider="${1:-claude}" key entry name dir seen_names seen_dirs default_dir
+  key="$(llmctx_account_key "$provider")" || return 1
+  default_dir="$(llmctx_account_default_dir "$provider")" || return 1
   printf '%s\t%s\n' "$LLMCTX_ACCOUNT_DEFAULT_NAME" "$default_dir"
   seen_names=" $LLMCTX_ACCOUNT_DEFAULT_NAME "
   seen_dirs="	$default_dir	"
@@ -66,12 +128,16 @@ llmctx_accounts() {
   while IFS= read -r entry; do
     [[ -n "$entry" ]] || continue
     [[ "$entry" == *=* ]] || {
-      echo "error: $LLMCTX_ACCOUNT_KEY entry '$entry' is not <name>=<dir>" >&2
+      echo "error: $key entry '$entry' is not <name>=<dir>" >&2
       return 1
     }
     name="${entry%%=*}"
     dir="$(llmctx_account_expand_dir "${entry#*=}")"
-    llmctx_account_validate_name "$name" || return 1
+    llmctx_account_validate_name "$name" "$provider" || return 1
+    if llmctx_path_unexpanded_tilde "$dir"; then
+      echo "error: account '$name' directory '$dir': $(llmctx_path_tilde_reason)" >&2
+      return 1
+    fi
     [[ "$dir" == /* ]] || {
       echo "error: account '$name' directory '$dir' is not absolute" >&2
       return 1
@@ -93,13 +159,13 @@ llmctx_accounts() {
     seen_names="$seen_names$name "
     seen_dirs="$seen_dirs$dir	"
     printf '%s\t%s\n' "$name" "$dir"
-  done < <(git config --global --get-all "$LLMCTX_ACCOUNT_KEY" 2>/dev/null || true)
+  done < <(git config --global --get-all "$key" 2>/dev/null || true)
 }
 
 # The single account named, or every account when no name is given.
 llmctx_accounts_selected() {
-  local want="${1:-}" all line
-  all="$(llmctx_accounts)" || return 1
+  local want="${1:-}" provider="${2:-claude}" all line
+  all="$(llmctx_accounts "$provider")" || return 1
   [[ -n "$want" ]] || {
     printf '%s\n' "$all"
     return 0
@@ -124,4 +190,134 @@ llmctx_account_home_path() {
     "$HOME"/*) printf '$HOME/%s\n' "${dir#"$HOME"/}" ;;
     *) printf '%s\n' "$dir" ;;
   esac
+}
+
+# Direct `@import` targets in an account's CLAUDE.md that will not resolve when
+# Claude Code reads it. An unresolved target produces NO error: the session
+# simply runs without those rules, and nothing connects the loss to its cause.
+#
+# This is narrower than it looks, and the narrowness is the point. The paths
+# render_claude writes are derived from the RUNNING script's own location, so a
+# moved checkout, a pruned worktree or a hand edit all make the installed file
+# differ from a fresh render and are already caught as adapter drift. What is
+# byte-identical to a correct render and still broken is a global/ source that
+# has been deleted, made unreadable or left dangling while the checkout sits
+# where the installed file says it does — render_claude writes those paths
+# without ever reading them. The other half of the value is diagnostic: drift
+# says "missing or stale", this says which path is dead.
+#
+# One level only. A target may import further files, and walking the whole graph
+# needs cycle detection for a case this repository does not generate — every
+# global/*.md is import-free. Callers say "direct" rather than imply
+# completeness.
+#
+# Prints one line per import, "<status>\t<lineno>\t<raw-target>\t<resolved-path>",
+# status being ok, missing, unreadable or unsupported. Every import is reported
+# rather than only the broken ones, so a caller can say how many resolve without
+# parsing the file a second time. Exits 0 even with findings, because both
+# callers run under `set -euo pipefail` and read this through a command
+# substitution, where a non-zero return would abort the script: findings are
+# data, not status. Exits 2, printing nothing, when the file itself cannot be
+# read.
+llmctx_unresolved_imports() {
+  local file="$1" base line lineno=0 target resolved fenced=0 probe partial
+
+  [[ -f "$file" && -r "$file" ]] || return 2
+  base="$(dirname "$file")"
+
+  # Redirected rather than piped: a pipeline runs the loop in a subshell and
+  # loses $lineno. The `|| [[ -n "$line" ]]` keeps a final line with no
+  # trailing newline, which a hand-edited file routinely has.
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
+
+    # A fenced block is documentation. The generated adapter has none, but this
+    # also reads hand-edited files, where an example `@path` inside a fence must
+    # not read as a broken import.
+    case "$line" in '```'*) fenced=$((1 - fenced)) ;; esac
+    [[ "$fenced" -eq 0 ]] || continue
+
+    # Whole-line imports only, matching what render_claude emits. An inline
+    # mid-sentence `@` would turn every prose mention into a finding.
+    case "$line" in '@'?*) ;; *) continue ;; esac
+
+    target="${line#@}"
+    # Trailing whitespace, and the CR of a file edited on Windows, are not path.
+    target="${target%"${target##*[![:space:]$'\r']}"}"
+    [[ -n "$target" ]] || continue
+
+    # Reported, not judged. Claude Code does not expand shell variables, so such
+    # a line is probably already broken — but calling it missing would mean
+    # printing a path we invented by expanding $HOME ourselves, which is a
+    # different file from the one the resolver looks for, and the one-line
+    # remediation is wrong for a hand edit. A tab would also break this
+    # function's own output format. The generated adapter emits neither.
+    #
+    # Whitespace is deliberately NOT pre-judged here. A space is an ordinary
+    # character in an already-literal path — `[[ -f "/My Dir/x.md" ]]` resolves
+    # it with nothing invented — and treating it as unsupported made EVERY
+    # import unsupported on a checkout whose path contains a space, which
+    # reported PASS while checking nothing at all. Ambiguity is decided below,
+    # by whether the literal target resolves.
+    case "$target" in
+      '$HOME'* | '${HOME}'* | *$'\t'*)
+        printf 'unsupported\t%s\t%s\t\n' "$lineno" "$target"
+        continue
+        ;;
+    esac
+
+    # `~` IS expanded by Claude Code, and this file already owns that expansion.
+    # shellcheck disable=SC2088  # matching a LITERAL tilde is the point here
+    case "$target" in
+      '~' | '~/'*) resolved="$(llmctx_account_expand_dir "$target")" ;;
+      /*) resolved="$target" ;;
+      # A `~user` target resolved against the file's directory, which is a
+      # path nobody wrote. It is reported as unsupported, like $HOME, rather
+      # than checked somewhere it was never pointing (#92).
+      '~'*)
+        printf 'unsupported\t%s\t%s\t\n' "$lineno" "$target"
+        continue
+        ;;
+      *) resolved="$base/$target" ;;
+    esac
+
+    # -f rather than -e: a directory is not importable and a dangling symlink
+    # correctly fails. Neither needs canonicalising — the kernel resolves `..`,
+    # `.` and symlinks here, and realpath is absent on stock macOS.
+    if [[ -f "$resolved" ]]; then
+      if [[ -r "$resolved" ]]; then
+        printf 'ok\t%s\t%s\t%s\n' "$lineno" "$target" "$resolved"
+      else
+        printf 'unreadable\t%s\t%s\t%s\n' "$lineno" "$target" "$resolved"
+      fi
+    else
+      # Resolution failed. A whitespace-bearing target is ambiguous -- in
+      # `@/path/file.md and then some prose` there is no way to know where the
+      # path ends -- but ambiguous is not the same as absent. So try each
+      # whitespace boundary: if some prefix IS a file, a real import exists
+      # under one reading and only the extent is unclear, which is a skip. If
+      # no prefix resolves, nothing is there under ANY reading, and that is
+      # missing however you cut the line. The generated adapter writes the whole
+      # line as the path, so its dead targets land in `missing` where they
+      # belong rather than hiding in a skip.
+      case "$target" in
+        *[[:space:]]*)
+          probe="$target"
+          partial=""
+          while [[ "$probe" == *[[:space:]]* ]]; do
+            probe="${probe%[[:space:]]*}"
+            [[ -f "$probe" ]] || continue
+            partial="$probe"
+            break
+          done
+          if [[ -n "$partial" ]]; then
+            printf 'unsupported\t%s\t%s\t\n' "$lineno" "$target"
+          else
+            printf 'missing\t%s\t%s\t%s\n' "$lineno" "$target" "$resolved"
+          fi
+          ;;
+        *) printf 'missing\t%s\t%s\t%s\n' "$lineno" "$target" "$resolved" ;;
+      esac
+    fi
+  done <"$file"
 }

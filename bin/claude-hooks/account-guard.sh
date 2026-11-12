@@ -45,39 +45,21 @@ trap 'exit 0' ERR
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-# The tilde is held in a variable: shellcheck reads a quoted literal `~` as a
-# failed expansion (SC2088), but this is matching a tilde the user typed into
-# git config, not asking the shell for $HOME.
-tilde="~"
-expand_home() {
-  case "$1" in
-    "$tilde") printf '%s\n' "$HOME" ;;
-    "$tilde"/*) printf '%s\n' "$HOME/${1#"$tilde"/}" ;;
-    *) printf '%s\n' "$1" ;;
-  esac
-}
-strip_slashes() {
-  local p="$1"
-  while [[ "$p" == */ && "$p" != "/" ]]; do p="${p%/}"; done
-  printf '%s\n' "$p"
-}
-# Resolve symlinks and `..` through the deepest ancestor that exists, then
-# re-append the part that does not exist yet (a new file's parent may be new).
-canonical() {
-  local p="$1" rest="" dir
-  p="$(strip_slashes "$p")"
-  dir="$p"
-  while [[ ! -d "$dir" && "$dir" != "/" && -n "$dir" ]]; do
-    rest="/$(basename "$dir")$rest"
-    dir="$(dirname "$dir")"
-  done
-  if [[ -d "$dir" ]]; then
-    dir="$(cd "$dir" 2>/dev/null && pwd -P)" || dir="$p"
-    printf '%s\n' "$(strip_slashes "$dir$rest")"
-  else
-    printf '%s\n' "$p"
-  fi
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TARGET_LIB="$SCRIPT_DIR/llmctx-target.sh"
+[[ -f "$TARGET_LIB" ]] || TARGET_LIB="$SCRIPT_DIR/../lib/target.sh"
+[[ -f "$TARGET_LIB" ]] || exit 0
+# shellcheck source=../lib/target.sh
+source "$TARGET_LIB"
+
+# Tilde expansion has one implementation, in the library. It is used here for
+# route paths and config directories as well as for a command target, so it is
+# wrapped under the shorter local name rather than spelled out at each of the
+# seven call sites.
+expand_home() { llmctx_target_expand_home "$1"; }
+# Path canonicalisation has one implementation, in the library, for the same
+# reason tilde expansion does: a third consumer now needs it.
+canonical() { llmctx_target_canonical "$1"; }
 
 # No routes, no work. This is the common case on a machine without clients, and
 # it must cost nothing.
@@ -126,27 +108,11 @@ if [[ -z "$target" && "$tool" == "Bash" ]]; then
   case "$cmd" in
     *.allow-cross-account*) exit 0 ;;
   esac
-  target="$(printf '%s' "$cmd" | sed -n 's/.*git[[:space:]]\{1,\}-C[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' | head -1)"
-  if [[ -z "$target" ]]; then
-    cd_dir="$(printf '%s' "$cmd" |
-      sed -E -e 's/\$\([^()]*\)//g' -e 's/`[^`]*`//g' |
-      tr ';&|()' '\n\n\n\n\n' |
-      sed -E -n "s/^[[:space:]]*cd[[:space:]]+[\"']?([^\"']*[^\"' ])[\"']?[[:space:]]*\$/\1/p" |
-      tail -1)"
-    case "$cd_dir" in
-      '$'*)
-        var="${cd_dir#'$'}"
-        var="${var#\{}"
-        var="${var%\}}"
-        assigned="$(printf '%s' "$cmd" |
-          sed -E -e 's/\$\([^()]*\)//g' -e 's/`[^`]*`//g' |
-          tr ';&|()' '\n\n\n\n\n' |
-          sed -E -n "s/^[[:space:]]*${var}=[\"']?([^\"']*[^\"' ])[\"']?[[:space:]]*\$/\1/p" | head -1)"
-        [[ -n "$assigned" ]] && cd_dir="$assigned"
-        ;;
-    esac
-    [[ -n "$cd_dir" ]] && target="$(expand_home "$cd_dir")"
-  fi
+  # Which directory the command acts on is bin/lib/target.sh's job, shared with
+  # branch-policy.sh so the two can no longer drift. An unresolvable `$VAR`
+  # yields nothing there, so this falls back to the payload cwd rather than
+  # matching a route on the strength of a path nobody wrote.
+  target="$(llmctx_target_from_command "$cmd")"
 fi
 [[ -n "$target" ]] || target="$cwd"
 target="$(expand_home "$target")"

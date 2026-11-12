@@ -49,6 +49,8 @@ Present the proposed breakdown as a numbered list. For each slice, show:
 - **Blocked by**: which other slices (if any) must complete first
 - **User stories covered**: which user stories this addresses (if the source material has them)
 
+Before asking about granularity, state the strongest case *against* building this at all. Specific to this plan, not generic risk, and an argument the user would find uncomfortable to read. A plan that cannot survive its own case against should not be sliced into issues. If the user overrules it, that exchange belongs in the parent PRD under "The case against" — a rejected argument that is written down is worth more than one that was never made.
+
 Ask the user:
 
 - Does the granularity feel right? (too coarse / too fine)
@@ -88,7 +90,7 @@ Or "None - can start immediately" if no blockers.
 
 </issue-template>
 
-Do NOT close or modify any parent issue.
+Do NOT close or modify any parent issue, with one exception: step 1 publishes the PRD before the case against is argued, so if the user overrules that argument you may edit the parent once to fill in its "The case against" section. Nothing else about the parent changes.
 
 ## PRD template (parent issue)
 
@@ -139,6 +141,10 @@ A list of testing decisions that were made. Include:
 - A description of what makes a good test (only test external behavior, not implementation details)
 - Which modules will be tested
 - Prior art for the tests (i.e. similar types of tests in the codebase)
+
+## The case against
+
+The strongest argument for not building this, written as someone who believes it would write it. Specific to this proposal rather than generic risk. If it was raised and overruled, record who overruled it and on what grounds, so a later reader can tell the difference between an argument that was weighed and one that was never made.
 
 ## Out of Scope
 

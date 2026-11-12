@@ -8,7 +8,7 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-skills-test.XXXXXX")"
 tmp="$(cd "$tmp" && pwd)"
 fixture="$tmp/source"
 mkdir -p "$fixture/bin/lib" "$fixture/skills/owned" "$fixture/vendor/vendored"
-cp "$SRC/bin/llmctx" "$SRC/bin/install-skills.sh" "$fixture/bin/"
+cp "$SRC/bin/llmctx" "$SRC/bin/account.sh" "$SRC/bin/install-skills.sh" "$fixture/bin/"
 cp "$SRC/bin/lib/skills.sh" "$SRC/bin/lib/accounts.sh" "$fixture/bin/lib/"
 printf '%s\n' '# Owned skill' >"$fixture/skills/owned/SKILL.md"
 printf '%s\n' '# Vendored skill' >"$fixture/vendor/vendored/SKILL.md"
@@ -28,6 +28,17 @@ for target in "$copy_home/.claude/skills" "$copy_home/.codex/skills"; do
   jq -e '.schemaVersion == 1 and .managedBy == "jamesernet/llm-context" and .mode == "copy" and (.contentHash | length) == 64' \
     "$target/owned/.llmctx-managed.json" >/dev/null || fail "copy metadata is invalid"
 done
+
+# Every registered Codex home receives the same managed skill contract as the
+# default home. Credentials and unmanaged files remain outside this installer.
+codex_acme="$copy_home/.codex-acme"
+HOME="$copy_home" "$fixture/bin/llmctx" account add --provider codex acme "$codex_acme" >/dev/null
+HOME="$copy_home" "$fixture/bin/llmctx" skills install >/dev/null
+[[ -d "$codex_acme/skills/owned" ]] || fail "registered Codex home received no skills"
+printf '%s\n' 'preserve me' >"$codex_acme/local.txt"
+HOME="$copy_home" "$fixture/bin/llmctx" skills install >/dev/null
+[[ "$(cat "$codex_acme/local.txt")" == "preserve me" ]] ||
+  fail "Codex install changed an unmanaged file"
 
 printf '%s\n' '# Updated owned skill' >"$fixture/skills/owned/SKILL.md"
 HOME="$copy_home" "$fixture/bin/llmctx" skills install >/dev/null
@@ -51,6 +62,31 @@ if HOME="$copy_home" "$fixture/bin/llmctx" skills install >/dev/null 2>&1; then
   fail "unmanaged directory conflict was accepted"
 fi
 [[ "$(cat "$copy_home/.claude/skills/local/local.txt")" == "keep me" ]] || fail "unmanaged directory was changed"
+
+# An unmanaged directory whose content is exactly what would be installed is
+# adopted -- marker written, nothing else changed -- instead of being a
+# conflict. This is the Cloudflare plugin writing the same skill at the same
+# upstream commit as our pin; a byte that differs is still a conflict.
+rm -rf "$copy_home/.claude/skills/owned"
+cp -R "$fixture/skills/owned" "$copy_home/.claude/skills/owned"
+[[ ! -f "$copy_home/.claude/skills/owned/.llmctx-managed.json" ]] || fail "test setup: the copy is already marked"
+# (The `local` conflict above is left in place on purpose, so every install
+# from here on exits non-zero; the assertions read the output and the marker.)
+out="$(HOME="$copy_home" "$fixture/bin/llmctx" skills install 2>&1 || true)"
+grep -q "adopted: $copy_home/.claude/skills/owned" <<<"$out" || fail "an identical unmanaged directory was not adopted: $out"
+grep -q "conflict: .*skills/owned" <<<"$out" && fail "an identical unmanaged directory was reported as a conflict"
+jq -e '.managedBy == "jamesernet/llm-context"' "$copy_home/.claude/skills/owned/.llmctx-managed.json" >/dev/null ||
+  fail "adopted directory has no marker"
+rm -rf "$copy_home/.claude/skills/owned"
+cp -R "$fixture/skills/owned" "$copy_home/.claude/skills/owned"
+printf '%s\n' 'one byte more' >>"$copy_home/.claude/skills/owned/SKILL.md"
+out="$(HOME="$copy_home" "$fixture/bin/llmctx" skills install 2>&1 || true)"
+grep -q "conflict: $copy_home/.claude/skills/owned is not managed" <<<"$out" ||
+  fail "an unmanaged directory that DIFFERS was not reported as a conflict: $out"
+grep -q 'one byte more' "$copy_home/.claude/skills/owned/SKILL.md" || fail "a differing unmanaged directory was overwritten"
+rm -rf "$copy_home/.claude/skills/owned"
+HOME="$copy_home" "$fixture/bin/llmctx" skills install >/dev/null 2>&1 || true
+[[ -f "$copy_home/.claude/skills/owned/.llmctx-managed.json" ]] || fail "reinstall after the conflict did not restore the managed copy"
 
 dev_home="$tmp/dev-home"
 HOME="$dev_home" "$fixture/bin/llmctx" skills install --dev >/dev/null

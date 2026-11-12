@@ -8,9 +8,9 @@ source "$SCRIPT_DIR/lib/policy.sh"
 setting="${1:-}"
 repo_path="${2:-.}"
 case "$setting" in
-  profile | branchPolicy | protectedBranches) ;;
+  profile | branchPolicy | irreversiblePolicy | mergePolicy | protectedBranches) ;;
   *)
-    echo "usage: llmctx explain <profile|branchPolicy|protectedBranches> [repo]" >&2
+    echo "usage: llmctx explain <profile|branchPolicy|irreversiblePolicy|mergePolicy|protectedBranches> [repo]" >&2
     exit 2
     ;;
 esac
@@ -32,6 +32,14 @@ case "$setting" in
   branchPolicy)
     value="$LLMCTX_BRANCH_POLICY"
     source_name="$LLMCTX_BRANCH_POLICY_SOURCE"
+    ;;
+  irreversiblePolicy)
+    value="$LLMCTX_IRREVERSIBLE_POLICY"
+    source_name="$LLMCTX_IRREVERSIBLE_POLICY_SOURCE"
+    ;;
+  mergePolicy)
+    value="$LLMCTX_MERGE_POLICY"
+    source_name="$LLMCTX_MERGE_POLICY_SOURCE"
     ;;
   protectedBranches)
     value="$LLMCTX_PROTECTED_BRANCHES"

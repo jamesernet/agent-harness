@@ -51,11 +51,12 @@ covers a shorter window than the others.
 `/name` means a person types it. "auto" means the agent may load it from the
 trigger phrases in the skill's description, so how that description is worded
 does most of the work of making a skill fire. Skills marked
-`disable-model-invocation` are slash-only on purpose. For `triage`, `to-issues`
-and `grab` the reason is that they write to a tracker or start a branch, and
-that should not happen because a sentence sounded like it; `setup-skills`,
-`handoff` and `improve-codebase-architecture` are slash-only because each is a
-deliberate session-level act rather than a reaction to a phrase.
+`disable-model-invocation` are slash-only on purpose. For `triage`, `to-issues`,
+`grab`, `start-a-session` and `review-merge-queue` the reason is that they write
+to a tracker or start a branch, and that should not happen because a sentence sounded like it;
+`setup-skills`, `handoff` and `improve-codebase-architecture` are slash-only
+because each is a deliberate session-level act rather than a reaction to a
+phrase (`start-a-session` is both).
 
 Five skills pin an `effort` level. It is an override, not a floor: the skill
 runs at that level whatever the session is set to, up or down. `threat-model`,
@@ -88,7 +89,7 @@ docs-drift-audit is the odd one out, auditing the docs the others read.
 
 ### Intake pipeline
 
-Issue → triage → slices → worktree → implementation → handoff. All slash-only.
+Session start → issue → triage → slices → worktree → implementation → review → handoff. All slash-only.
 Run `/setup-skills` once per repo; the others read the `docs/agents/*.md` it
 writes, so they never hardcode where a repo keeps its tracker, labels or briefs.
 
@@ -99,6 +100,8 @@ writes, so they never hardcode where a repo keeps its tracker, labels or briefs.
 | [to-issues](to-issues/) | `/to-issues` | a plan into tracer-bullet vertical-slice issues | writes the parent PRD issue from the conversation first when none exists, without interviewing |
 | [grab](grab/) | `/grab` | issue → worktree → brief → implement → handoff in one motion | built for several sessions in parallel; verifies each acceptance criterion with evidence, not claims |
 | [handoff](handoff/) | `/handoff` | compact the session for the next agent | puts the handoff where this repo keeps them, which differs per repo; redacts; points at artifacts rather than copying them |
+| [start-a-session](start-a-session/) | `/start-a-session` | open a session: stranded work, tracker, merge queue → at most three seams → one pick → the skill that fits | the squash-merge-correct stranded-work proof via `worktree.sh status`; each seam carries its case against; a fan-out is a batch of sessions, never a batch inside one; supporting [SEAMS](start-a-session/SEAMS.md) |
+| [review-merge-queue](review-merge-queue/) | `/review-merge-queue` | the open PRs: triage, then one fresh adversarial reviewer per reviewable PR, then the verdict | triages before spending — a conflicted, held or stacked PR needs something other than a review; keyed on the head SHA so a re-run costs nothing; the brief is the PR's own claims, not its diff; `mergePolicy` decides the ending and a DO-NOT-MERGE never merges; supporting [BRIEF](review-merge-queue/BRIEF.md) |
 
 ### Website audit
 
@@ -178,19 +181,20 @@ harness installs one per Claude account and prunes the rest.
 | `webapp` | a website that holds user data | website + threat-model |
 | `platform` | a backend other things depend on | core + threat-model, data-privacy-review |
 | `fintech` | somewhere money moves (additive) | the payments and fintech family |
-| `cloudflare` | deployed there | the vendored Cloudflare set |
-| `media` | producing video or animation (additive) | the media family; no project bundle includes it, because these skills bill a third-party API and need its key |
+| `metered` | a skill that bills a third-party API per run (additive) | the motion family; `all` excludes these, so they install only when this bundle is named |
 
 Every skill in this directory must appear in at least one bundle;
 `bin/lint-skills.sh` enforces it.
 
 ## Vendored
 
-`../vendor/` holds Cloudflare's own skills, pinned to an upstream commit in
-`vendor.lock.json` and never edited here: `cloudflare`, `wrangler`,
-`workers-best-practices`, `durable-objects`, `agents-sdk`, `sandbox-sdk`,
-`cloudflare-email-service`, `cloudflare-one`, `cloudflare-one-migrations`,
-`turnstile-spin`, `web-perf`. They keep their upstream licence.
+`../vendor/` holds one of Cloudflare's own skills, `web-perf`, pinned to an
+upstream commit in `vendor.lock.json` and never edited here; it keeps its
+upstream licence. It is vendored because the `website` bundle installs it into
+Codex as well as Claude. The rest of Cloudflare's set was vendored for a
+`cloudflare` bundle that nothing activated, and the Cloudflare plugin keeps the
+full current set in `~/.claude/skills` on its own, so that bundle is gone
+(issue #36).
 
 ## Dropped
 

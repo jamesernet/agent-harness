@@ -104,12 +104,139 @@ else
     "Claude accounts: $(printf '%s\n' "$accounts" | cut -f1 | tr '\n' ' ' | sed 's/ $//')" ""
 fi
 
+codex_accounts=""
+codex_accounts_error=""
+if [[ -z "$account" ]]; then
+  if ! codex_accounts="$(llmctx_accounts codex 2>&1)"; then
+    codex_accounts_error="$codex_accounts"
+    codex_accounts=""
+  fi
+  if [[ -n "$codex_accounts_error" ]]; then
+    add_check codex-accounts FAIL "$codex_accounts_error" "llmctx account list --provider codex"
+  else
+    add_check codex-accounts PASS \
+      "Codex accounts: $(printf '%s\n' "$codex_accounts" | cut -f1 | tr '\n' ' ' | sed 's/ $//')" ""
+  fi
+fi
+
 adapter_check=("$SCRIPT_DIR/build-adapters.sh" --check)
 [[ -z "$account" ]] || adapter_check+=(--account "$account")
 if "${adapter_check[@]}" >/dev/null 2>&1; then
   add_check adapters PASS "managed adapters and settings are current" ""
 else
   add_check adapters FAIL "managed adapters or settings are missing or stale" "$SRC/install.sh"
+fi
+
+# A missing @import target produces NO error in Claude Code: the session runs
+# without those rules.
+#
+# The adapters check above is stronger than it looks, so be clear about what
+# this adds. render_claude derives these paths from the RUNNING script's own
+# location, so a moved checkout, a pruned worktree or a hand edit all make the
+# installed file differ from a fresh render and already FAIL there. And a
+# deleted global/ source is caught too, but only incidentally: render_codex cats
+# those files, so its diff fails -- which means the catch disappears under
+# `--account`, where codex rendering is skipped.
+#
+# That is the measured hole. With a global/ source deleted and `--account`
+# given, `build-adapters.sh --check` reports "all local adapters in sync" and
+# exits 0, adapters PASSes, and only this check fails. render_claude names those
+# paths without ever reading them, and preflight_sources is not on the --check
+# path at all.
+#
+# Everywhere else the value is diagnostic rather than detective: adapters says
+# "missing or stale" and points at install.sh, which never tells you which path
+# is dead.
+#
+# Expect both checks to FAIL together in most real incidents, with different
+# remedies. That is deliberate -- this one is the precise line -- so do not
+# "fix" the duplication by weakening either. Making them exclusive would need
+# --check to return distinct exit codes, i.e. a private protocol between two
+# scripts.
+check_claude_imports() {
+  local file="$1" id="$2" out="" status=0
+  out="$(llmctx_unresolved_imports "$file")" || status=$?
+
+  if [[ "$status" -eq 2 ]]; then
+    # The adapters check already FAILs for this, with the right remedy. A second
+    # failure for one cause with a different remedy only misleads -- the same
+    # reasoning as account-routes below. Reported as a line rather than omitted
+    # so the --json shape stays stable per account.
+    add_check "$id" PASS "imports not checked: CLAUDE.md is absent or unreadable (see the adapters check)" ""
+    return 0
+  fi
+
+  local kind lineno raw resolved
+  local ok=0 broken=0 skipped=0 shown=0 dead="" skipped_at=""
+  while IFS=$'\t' read -r kind lineno raw resolved; do
+    [[ -n "$kind" ]] || continue
+    case "$kind" in
+      ok) ok=$((ok + 1)) ;;
+      unsupported)
+        skipped=$((skipped + 1))
+        skipped_at="$skipped_at $lineno"
+        ;;
+      *)
+        broken=$((broken + 1))
+        # Three is enough to diagnose. The text renderer gives one line per
+        # check, and three absolute paths already wrap a terminal.
+        if [[ "$shown" -lt 3 ]]; then
+          [[ -z "$dead" ]] || dead="$dead; "
+          dead="$dead$kind at line $lineno -> ${resolved:-$raw}"
+          shown=$((shown + 1))
+        fi
+        ;;
+    esac
+  done <<<"$out"
+
+  local remedy="$SRC/bin/build-adapters.sh, run from the primary checkout"
+
+  if [[ "$broken" -gt 0 ]]; then
+    [[ "$broken" -le "$shown" ]] || dead="$dead (+$((broken - shown)) more)"
+    add_check "$id" FAIL "unresolved @import target(s): $dead" "$remedy"
+    return 0
+  fi
+
+  # Zero resolved imports is a failure however it arises. A generated CLAUDE.md
+  # always carries its three, which is what install_rendered's '^@' guard
+  # asserts on the write path; this is its read-side twin. Reporting PASS with
+  # "0 direct @imports resolve" was the bug a space-bearing checkout path hit --
+  # self-contradictory on its face, and it hid exactly the fault this check
+  # exists to find.
+  if [[ "$ok" -eq 0 ]]; then
+    if [[ "$skipped" -gt 0 ]]; then
+      add_check "$id" FAIL \
+        "no @import target could be checked ($skipped unsupported path form(s) at line${skipped_at})" \
+        "$remedy"
+      return 0
+    fi
+    # A generated CLAUDE.md always carries its imports, which is what
+    # install_rendered's '^@' guard asserts on the write path. Zero of them
+    # makes "every target resolved" technically true and practically a lie.
+    add_check "$id" FAIL "no @import lines in CLAUDE.md" "$remedy"
+    return 0
+  fi
+
+  # "direct" is the whole disclosure of the one-level limit, and it belongs on
+  # the PASS line because that is the line a reader trusts.
+  local detail="$ok direct @imports resolve"
+  [[ "$skipped" -eq 0 ]] ||
+    detail="$detail ($skipped skipped: unsupported path form at line${skipped_at})"
+  add_check "$id" PASS "$detail" ""
+}
+
+if [[ -n "$accounts" ]]; then
+  while IFS=$'\t' read -r account_name account_dir; do
+    [[ -n "$account_name" ]] || continue
+    if [[ "$account_name" == "$LLMCTX_ACCOUNT_DEFAULT_NAME" ]]; then
+      check_claude_imports "$account_dir/CLAUDE.md" claude-imports
+    else
+      check_claude_imports "$account_dir/CLAUDE.md" "claude-imports[$account_name]"
+    fi
+  done <<<"$accounts"
+else
+  # Already reported by the accounts check above; see account-routes.
+  add_check claude-imports PASS "imports not checked: account registry unreadable" ""
 fi
 
 if command -v git >/dev/null 2>&1 && git -C "$SRC" rev-parse --git-dir >/dev/null 2>&1; then
@@ -256,8 +383,17 @@ if [[ "$hash_available" -eq 1 ]] && [[ -n "$accounts" ]] && build_skill_catalog;
       check_skill_target "$account_dir/skills" "claude-skills[$account_name]" "$account_bundle"
     fi
   done <<<"$accounts"
-  [[ -n "$account" ]] ||
-    check_skill_target "$HOME/.codex/skills" codex-skills "$(doctor_bundle_for_account "")"
+  if [[ -z "$account" && -z "$codex_accounts_error" ]]; then
+    while IFS=$'\t' read -r codex_account_name codex_account_dir; do
+      [[ -n "$codex_account_name" ]] || continue
+      if [[ "$codex_account_name" == "$LLMCTX_ACCOUNT_DEFAULT_NAME" ]]; then
+        check_skill_target "$codex_account_dir/skills" codex-skills "$(doctor_bundle_for_account "")"
+      else
+        check_skill_target "$codex_account_dir/skills" "codex-skills[$codex_account_name]" \
+          "$(doctor_bundle_for_account "")"
+      fi
+    done <<<"$codex_accounts"
+  fi
 
   # Report the active bundle. `all` is the default and needs no comment; a
   # narrowed one does, because the whole point of narrowing is that some skills
@@ -350,13 +486,153 @@ check_agent_target() {
   fi
 }
 
+# An account's hooks/ directory is installed into and never pruned, on purpose:
+# a hook written by hand must survive a reinstall, and the settings merge keeps
+# a PreToolUse entry naming a script this repository does not ship. The gap was
+# that nothing ever SAID such a script was there (#52).
+#
+# Found live on this machine: two predecessors, one from July registered
+# nowhere, one from August still listed in PreToolUse and so running on every
+# Edit, Write and Bash call beside its managed successor -- which it could
+# disagree with, because it hardcoded as a literal the path the managed guard
+# reads from config. `doctor` reported healthy throughout.
+#
+# Reports, never prunes: an installer that deletes files it did not write is
+# how a tool eats its user's own work. A script kept deliberately is declared
+# with `git config --global --add llmctx.accountHook <basename>`, the same
+# idiom as llmctx.repo, so this does not become a check a mature machine must
+# learn to ignore.
+#
+# Managed is derived, not listed: a hook is managed when bin/claude-hooks has
+# that basename, and a library when it is llmctx-<name>.sh and bin/lib/<name>.sh
+# exists. A hardcoded list here would drift the first time HOOK_LIBS changed.
+check_account_hooks() { # <hooks dir> <check id> <settings file> <account name>
+  local hooks_dir="$1" id="$2" settings="$3" account="$4"
+  local f base declared referenced cmd tok path
+  local hook_tilde="~"
+  local unmanaged="" registered="" dangling=""
+
+  # Declared deliberate, globally or for this account. Additive rather than an
+  # override: a per-account list is the point (each account's hooks/ is its
+  # own, which the global key alone would couple), and a machine-wide script
+  # should not have to be repeated per account.
+  declared="$(
+    git config --global --get-all llmctx.accountHook 2>/dev/null || true
+    git config --global --get-all "llmctx.accountHook.$account" 2>/dev/null || true
+  )"
+
+  is_managed_hook() { # <basename>
+    local b="$1" l
+    [[ ! -f "$SRC/bin/claude-hooks/$b" ]] || return 0
+    case "$b" in
+      llmctx-*.sh)
+        l="${b#llmctx-}"
+        l="${l%.sh}"
+        [[ ! -f "$SRC/bin/lib/$l.sh" ]] || return 0
+        ;;
+    esac
+    grep -qxF "$b" <<<"$declared"
+  }
+
+  # Every path a settings hook command names, with the two spellings of home a
+  # rendered settings file uses expanded, one per line. A command may be a
+  # shell line rather than a bare path, so each whitespace-delimited token is
+  # considered; a command may also be an ARRAY, which the previous filter's
+  # split() errored on -- silently, so a registered hook read as unregistered.
+  settings_hook_paths() {
+    [[ -f "$settings" ]] || return 0
+    jq -r '[(.hooks // {}) | .[]? | .[]? | (.hooks // [])[]? | .command]
+      | map(if type == "array" then .[] else . end)
+      | .[] | select(type == "string")' "$settings" 2>/dev/null |
+      while IFS= read -r cmd; do
+        for tok in $cmd; do
+          tok="${tok%\"}"
+          tok="${tok#\"}"
+          tok="${tok%\'}"
+          tok="${tok#\'}"
+          tok="${tok//\$HOME/$HOME}"
+          # The tilde is held in a variable: shellcheck reads a quoted literal
+          # `~` as a failed expansion (SC2088), but this matches a tilde that
+          # was TYPED into a settings file.
+          case "$tok" in
+            "$hook_tilde"/*) tok="$HOME/${tok#"$hook_tilde"/}" ;;
+          esac
+          printf '%s\n' "$tok"
+        done
+      done
+  }
+
+  if [[ ! -d "$hooks_dir" ]]; then
+    add_check "$id" PASS "no hooks directory" ""
+    return
+  fi
+
+  # FROM THE DIRECTORY: every file, whatever it is called. This was `*.sh`, and
+  # a registered hook with no extension was therefore invisible -- a PASS on
+  # the exact state this check exists to catch, because the two predecessors
+  # that motivated it both happened to end in .sh. Directories are skipped; a
+  # symlink to a script is a hook.
+  for f in "$hooks_dir"/* "$hooks_dir"/.[!.]*; do
+    [[ -e "$f" || -L "$f" ]] || continue
+    [[ ! -d "$f" ]] || continue
+    base="$(basename "$f")"
+    is_managed_hook "$base" && continue
+    referenced=0
+    while IFS= read -r path; do
+      [[ -n "$path" ]] || continue
+      case "$path" in
+        */*) [[ "$path" != "$hooks_dir/$base" ]] || referenced=1 ;;
+        *) [[ "$path" != "$base" ]] || referenced=1 ;;
+      esac
+      [[ "$referenced" -eq 0 ]] || break
+    done < <(settings_hook_paths)
+    if [[ "$referenced" -eq 1 ]]; then
+      registered="$registered $base"
+    else
+      unmanaged="$unmanaged $base"
+    fi
+  done
+
+  # FROM THE SETTINGS: a registration pointing INTO this directory at something
+  # that is not a managed name is a second enforcer even when the file is gone
+  # -- and a registration whose file is missing is a hook that fails every call
+  # it is supposed to guard. Either way the directory walk above cannot see it.
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    [[ "$path" == "$hooks_dir/"* ]] || continue
+    base="${path#"$hooks_dir/"}"
+    [[ "$base" != */* ]] || continue
+    is_managed_hook "$base" && continue
+    if [[ -e "$path" || -L "$path" ]]; then
+      case " $registered " in *" $base "*) continue ;; esac
+      registered="$registered $base"
+    else
+      case " $dangling " in *" $base "*) continue ;; esac
+      dangling="$dangling $base"
+    fi
+  done < <(settings_hook_paths)
+
+  if [[ -n "$registered" || -n "$dangling" ]]; then
+    add_check "$id" FAIL \
+      "unmanaged hook(s) STILL REGISTERED, running beside the managed ones:$registered${dangling:+; registered but MISSING:$dangling}${unmanaged:+; present but unregistered:$unmanaged}" \
+      "remove the script and its settings entry, or keep it: git config --global --add llmctx.accountHook.$account <basename>"
+  elif [[ -n "$unmanaged" ]]; then
+    add_check "$id" FAIL "unmanaged hook(s) present, registered nowhere:$unmanaged" \
+      "rm the script, or keep it: git config --global --add llmctx.accountHook.$account <basename>"
+  else
+    add_check "$id" PASS "no unmanaged hooks" ""
+  fi
+}
+
 if [[ "$hash_available" -eq 1 ]] && [[ -n "$accounts" ]]; then
   while IFS=$'\t' read -r account_name account_dir; do
     [[ -n "$account_name" ]] || continue
     if [[ "$account_name" == "$LLMCTX_ACCOUNT_DEFAULT_NAME" ]]; then
       check_agent_target "$account_dir/agents" claude-agents
+      check_account_hooks "$account_dir/hooks" claude-hooks "$account_dir/settings.json" "$account_name"
     else
       check_agent_target "$account_dir/agents" "claude-agents[$account_name]"
+      check_account_hooks "$account_dir/hooks" "claude-hooks[$account_name]" "$account_dir/settings.json" "$account_name"
     fi
   done <<<"$accounts"
 else

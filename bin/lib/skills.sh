@@ -5,7 +5,8 @@ LLMCTX_SKILL_MARKER_NAME=".llmctx-managed.json"
 # installed skill. Changing it to jamesernet/agent-harness would make every
 # skill already installed in a consumer repo read as unmanaged, and the
 # installer would refuse to touch it. This is a protocol identifier like
-# llmctx-hook and the llmctx:begin markers, not a label — see ADR-001.
+# llmctx-hook and the llmctx:begin markers, not a label — see ADR-001,
+# https://github.com/jamesernet/agent-harness/issues/21.
 LLMCTX_SKILL_MANAGED_BY="jamesernet/llm-context"
 
 llmctx_skill_hash_file() {

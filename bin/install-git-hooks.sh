@@ -6,8 +6,22 @@ set -euo pipefail
 # This is the everywhere-backstop for the "branch before you build" rule — the
 # Claude PreToolUse hook only covers Claude; this covers Codex and humans too.
 #
-#   bin/install-git-hooks.sh                 install into the default REPOS below
+#   bin/install-git-hooks.sh                 install into the built-in repos
+#                                            plus every registered one
 #   bin/install-git-hooks.sh <repo> [repo…]  install into specific repos
+#
+# Per repository it says what it did -- `current:` (hook and policy library
+# already match this checkout), `refreshed:` (one or both had fallen behind;
+# which is named), `installed pre-commit ->` (there was none), `preserved:`
+# (a foreign hook moved aside first), or `skip:` with the reason -- and ends
+# with one summary line. A `refreshed:` line is a guard that had silently
+# stopped matching the policy it enforces, which is the state nothing reported
+# before (#85): the hook lives in .git/, which is never cloned, so staleness is
+# the default over time, and the no-argument run is the estate's refresh.
+#
+# Registering a repo (machine state, so global config, beside llmctx.skillBundle):
+#
+#   git config --global --add llmctx.repo ~/repos/github.com/<org>/<repo>
 #
 # Middle-path install (safe for client repos):
 #   - If the repo already has a pre-commit hook that isn't ours, it's preserved
@@ -24,20 +38,71 @@ set -euo pipefail
 # hooks, so installing once covers all of a repo's worktrees.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# For the tilde predicate only. The registry here is written in the same path
+# forms the account registry is, so it answers the question the same way
+# rather than inventing a second expansion that drifts (#92).
+# shellcheck source=lib/accounts.sh
+source "$SCRIPT_DIR/lib/accounts.sh"
 HOOK_SRC="$SCRIPT_DIR/git-hooks/pre-commit"
 POLICY_LIB_SRC="$SCRIPT_DIR/lib/policy.sh"
 MARKER="llmctx-hook"
+# A contract between two repositories, frozen the way the `llmctx` identifier
+# is. project-scaffold writes a placeholder at .git/hooks/pre-commit whose whole
+# body is `exec pre-commit.local`, so a repository's committed guard runs before
+# this installer has been near it; its header carries this string and says this
+# installer owns the path and will replace the file. Without recognising it the
+# shim read as foreign, the preservation branch found pre-commit.local already
+# present, and the install took the hard skip below -- so the handoff both
+# tools documented never happened and the repository got no policy resolution
+# at all (#59). Nothing is lost by replacing it: our hook chains to
+# pre-commit.local, which is the only thing the shim did.
+SHIM_MARKER="scaffold-hook-shim"
 
 REPOS=(
   "$HOME/repos/github.com/jamesernet/agent-harness"
   "$HOME/repos/github.com/emergentlabs/jamesernet.com"
   "$HOME/repos/github.com/emergentlabs/emergentlabs.xyz"
 )
+
+# Counted from here, not from the install loop below: the registry walk can
+# itself skip an entry it cannot expand, and that is a repository asking for
+# the backstop and not getting it, which belongs in the summary.
+n_current=0 n_refreshed=0 n_installed=0 n_skipped=0
+
+# The hook lives in .git/, which is never cloned, so a repo nothing names loses
+# the backstop the moment it is cloned fresh — silently, because a missing hook
+# looks exactly like a repo that was never meant to have one. The registry is
+# how a repo says it wants the backstop without this file having to know the
+# whole estate.
+#
+# Registration is additive, for the same reason the account registry is: a list
+# that could omit the three above would reintroduce the failure it exists to
+# prevent — an install that skips a repo and still reports success.
+while IFS= read -r registered; do
+  [ -n "$registered" ] || continue
+  registered="$(llmctx_account_expand_dir "$registered")"
+  if llmctx_path_unexpanded_tilde "$registered"; then
+    echo "skip: $registered ($(llmctx_path_tilde_reason))" >&2
+    n_skipped=$((n_skipped + 1))
+    continue
+  fi
+  dup=0
+  for known in "${REPOS[@]}"; do
+    if [ "$known" = "$registered" ]; then
+      dup=1
+      break
+    fi
+  done
+  if [ "$dup" -eq 0 ]; then REPOS+=("$registered"); fi
+done < <(git config --global --get-all llmctx.repo 2>/dev/null || true)
+
+# An explicit list is exactly that: neither the built-ins nor the registry.
 if [ "$#" -gt 0 ]; then REPOS=("$@"); fi
 
 for repo in "${REPOS[@]}"; do
   if ! git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
     echo "skip: $repo (not a git repo)"
+    n_skipped=$((n_skipped + 1))
     continue
   fi
 
@@ -45,6 +110,7 @@ for repo in "${REPOS[@]}"; do
   if [ -n "$hooks_path" ]; then
     echo "skip: $repo (core.hooksPath=$hooks_path — a hook framework manages hooks here;" >&2
     echo "      add the branch check via that framework's config instead)" >&2
+    n_skipped=$((n_skipped + 1))
     continue
   fi
 
@@ -53,11 +119,13 @@ for repo in "${REPOS[@]}"; do
   mkdir -p "$hooks_dir"
   existing="$hooks_dir/pre-commit"
 
-  # Ours = new marker, or the pre-marker version of this same hook (so
-  # upgrading doesn't preserve a stale copy of ourselves as pre-commit.local).
-  if [ -f "$existing" ] && ! grep -qE "$MARKER|Installed by llm-context" "$existing"; then
+  # Ours = new marker, the pre-marker version of this same hook (so upgrading
+  # doesn't preserve a stale copy of ourselves as pre-commit.local), or the
+  # scaffold's placeholder, which exists to be replaced by this.
+  if [ -f "$existing" ] && ! grep -qE "$MARKER|Installed by llm-context|$SHIM_MARKER" "$existing"; then
     if [ -e "$hooks_dir/pre-commit.local" ]; then
       echo "skip: $repo (has both a foreign pre-commit AND pre-commit.local — resolve manually)" >&2
+      n_skipped=$((n_skipped + 1))
       continue
     fi
     mv "$existing" "$hooks_dir/pre-commit.local"
@@ -65,9 +133,41 @@ for repo in "${REPOS[@]}"; do
     echo "preserved: existing pre-commit -> pre-commit.local (chained after branch check) in $repo"
   fi
 
+  # What this run changes, named before it changes it. Ours-and-identical is
+  # `current` and nothing is written; ours-and-different is `refreshed`, with
+  # the half that had fallen behind named; anything else is `installed`.
+  outcome=installed
+  if [ -f "$existing" ] && grep -q "$MARKER" "$existing"; then
+    stale=""
+    cmp -s "$HOOK_SRC" "$existing" || stale="hook"
+    if ! cmp -s "$POLICY_LIB_SRC" "$hooks_dir/llmctx-policy.sh"; then
+      stale="${stale:+$stale, }policy library"
+    fi
+    if [ -z "$stale" ]; then
+      outcome=current
+    else
+      outcome="refreshed ($stale)"
+    fi
+  fi
+  if [ "$outcome" = current ]; then
+    echo "current: $repo"
+    n_current=$((n_current + 1))
+    continue
+  fi
+
   cp "$HOOK_SRC" "$existing"
   chmod +x "$existing"
   cp "$POLICY_LIB_SRC" "$hooks_dir/llmctx-policy.sh"
   chmod 0644 "$hooks_dir/llmctx-policy.sh"
-  echo "installed pre-commit -> $repo"
+  case "$outcome" in
+    installed)
+      echo "installed pre-commit -> $repo"
+      n_installed=$((n_installed + 1))
+      ;;
+    *)
+      echo "refreshed: $repo ${outcome#refreshed }"
+      n_refreshed=$((n_refreshed + 1))
+      ;;
+  esac
 done
+echo "git hooks: $n_current current, $n_refreshed refreshed, $n_installed installed, $n_skipped skipped"
