@@ -38,6 +38,11 @@ set -euo pipefail
 # hooks, so installing once covers all of a repo's worktrees.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# For the tilde predicate only. The registry here is written in the same path
+# forms the account registry is, so it answers the question the same way
+# rather than inventing a second expansion that drifts (#92).
+# shellcheck source=lib/accounts.sh
+source "$SCRIPT_DIR/lib/accounts.sh"
 HOOK_SRC="$SCRIPT_DIR/git-hooks/pre-commit"
 POLICY_LIB_SRC="$SCRIPT_DIR/lib/policy.sh"
 MARKER="llmctx-hook"
@@ -59,6 +64,11 @@ REPOS=(
   "$HOME/repos/github.com/emergentlabs/emergentlabs.xyz"
 )
 
+# Counted from here, not from the install loop below: the registry walk can
+# itself skip an entry it cannot expand, and that is a repository asking for
+# the backstop and not getting it, which belongs in the summary.
+n_current=0 n_refreshed=0 n_installed=0 n_skipped=0
+
 # The hook lives in .git/, which is never cloned, so a repo nothing names loses
 # the backstop the moment it is cloned fresh — silently, because a missing hook
 # looks exactly like a repo that was never meant to have one. The registry is
@@ -70,12 +80,12 @@ REPOS=(
 # prevent — an install that skips a repo and still reports success.
 while IFS= read -r registered; do
   [ -n "$registered" ] || continue
-  # shellcheck disable=SC2088  # matching a LITERAL tilde is the point here
-  case "$registered" in
-    '~') registered="$HOME" ;;
-    '~/'*) registered="$HOME/${registered#'~/'}" ;;
-  esac
-  while [[ "$registered" == */ && "$registered" != / ]]; do registered="${registered%/}"; done
+  registered="$(llmctx_account_expand_dir "$registered")"
+  if llmctx_path_unexpanded_tilde "$registered"; then
+    echo "skip: $registered ($(llmctx_path_tilde_reason))" >&2
+    n_skipped=$((n_skipped + 1))
+    continue
+  fi
   dup=0
   for known in "${REPOS[@]}"; do
     if [ "$known" = "$registered" ]; then
@@ -89,7 +99,6 @@ done < <(git config --global --get-all llmctx.repo 2>/dev/null || true)
 # An explicit list is exactly that: neither the built-ins nor the registry.
 if [ "$#" -gt 0 ]; then REPOS=("$@"); fi
 
-n_current=0 n_refreshed=0 n_installed=0 n_skipped=0
 for repo in "${REPOS[@]}"; do
   if ! git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
     echo "skip: $repo (not a git repo)"

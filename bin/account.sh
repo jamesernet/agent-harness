@@ -86,6 +86,10 @@ cmd_add() {
   key="$(llmctx_account_key "$provider")"
   llmctx_account_validate_name "$name" "$provider"
   dir="$(llmctx_account_expand_dir "$dir")"
+  if llmctx_path_unexpanded_tilde "$dir"; then
+    echo "error: '$dir': $(llmctx_path_tilde_reason)" >&2
+    exit 1
+  fi
   [[ "$dir" == /* ]] || {
     echo "error: '$dir' is not an absolute directory" >&2
     exit 1

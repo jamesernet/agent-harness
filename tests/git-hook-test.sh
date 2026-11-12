@@ -84,6 +84,22 @@ out="$(HOME="$reg_home" "$SRC/bin/install-git-hooks.sh")"
 [[ -x "$reg_home/tilde-registered/.git/hooks/pre-commit" ]] ||
   fail "a ~-prefixed registration was not expanded"
 
+# A `~user` registration is a path a shell would have expanded; this tool
+# does not, and it used to say `skip: ~other/path (not a git repo)` -- which
+# may be a perfectly good repository, and names the wrong cause (#92). It is
+# refused by name, counted as skipped, and the good entries beside it still
+# install.
+# shellcheck disable=SC2088  # a literal tilde is what gets stored
+git config --global --add llmctx.repo '~someone-else/project'
+out_tilde="$(HOME="$reg_home" "$SRC/bin/install-git-hooks.sh" 2>&1)"
+printf '%s\n' "$out_tilde" | grep -q 'skip: ~someone-else/project (unexpanded tilde' ||
+  fail "a ~user registration did not name the tilde: $(printf '%s\n' "$out_tilde" | grep -i 'someone-else' || echo '(no line)')"
+printf '%s\n' "$out_tilde" | grep -q 'someone-else/project (not a git repo)' &&
+  fail "a ~user registration still blamed the repository"
+[[ -x "$reg_home/registered/.git/hooks/pre-commit" ]] ||
+  fail "a ~user registration stopped the good entries beside it installing"
+git config --global --unset llmctx.repo '~someone-else/project'
+
 installed_twice="$(printf '%s\n' "$out" | grep -c "installed pre-commit -> $reg_home/registered$" || true)"
 [[ "$installed_twice" -eq 1 ]] ||
   fail "a repo registered twice was installed $installed_twice times, expected 1"

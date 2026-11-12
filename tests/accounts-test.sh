@@ -141,5 +141,45 @@ if run "$CLI" account list --provider codex | grep -q "^acme "; then
 fi
 [[ -d "$codex_acme_dir/skills" ]] || fail "unregistering deleted the Codex home"
 
+# --- a tilde this tool does not expand is named, not misdescribed (#92) -----
+#
+# `~other/cfg` is a path a shell would have made absolute. The registry used
+# to refuse it with "is not absolute", which says nothing about the tilde, and
+# `account add` did the same.
+# shellcheck disable=SC2088  # a literal tilde is what gets stored and typed
+git config --global --add llmctx.claudeAccount 'other=~someone-else/cfg'
+set +e
+out="$(HOME="$test_home" "$CLI" account list 2>&1)"
+status=$?
+set -e
+[[ "$status" -ne 0 ]] || fail "a ~user account directory was accepted"
+grep -q 'unexpanded tilde' <<<"$out" || fail "the registry did not name the tilde: $out"
+grep -q 'is not absolute' <<<"$out" && fail "the registry still blamed absoluteness"
+git config --global --unset llmctx.claudeAccount 'other=~someone-else/cfg'
+
+set +e
+out="$(HOME="$test_home" "$CLI" account add other '~someone-else/cfg' 2>&1)"
+status=$?
+set -e
+[[ "$status" -ne 0 ]] || fail "account add accepted a ~user directory"
+grep -q 'unexpanded tilde' <<<"$out" || fail "account add did not name the tilde: $out"
+
+# ...while the two forms this tool DOES expand keep working.
+# shellcheck disable=SC2088  # a literal tilde is what a person types here
+HOME="$test_home" "$CLI" account add tildeok '~/.claude-tildeok' >/dev/null ||
+  fail "a ~/ directory was refused"
+HOME="$test_home" "$CLI" account list | grep -q "$test_home/.claude-tildeok" ||
+  fail "a ~/ directory was not expanded against HOME"
+HOME="$test_home" "$CLI" account remove tildeok >/dev/null
+
+# A `~user` @import target inside a generated CLAUDE.md is reported as
+# unsupported rather than resolved against the file's own directory, which is
+# a path nobody wrote.
+mkdir -p "$tmp/imports"
+printf '%s\n' '# Account' '' '@~someone-else/rules.md' >"$tmp/imports/CLAUDE.md"
+out="$(bash -c "source '$copy/bin/lib/accounts.sh'; llmctx_unresolved_imports '$tmp/imports/CLAUDE.md'")"
+grep -q '^unsupported' <<<"$out" ||
+  fail "a ~user @import target was not reported unsupported: $out"
+
 rm -rf "$tmp"
 echo "accounts tests: passed"
