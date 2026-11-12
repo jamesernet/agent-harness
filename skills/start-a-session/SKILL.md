@@ -117,6 +117,9 @@ fanning work into one session.
 
 - [handoff](../handoff/) is the other end of a session: compact what this one
   learned for the next. Start here, end there.
+- [review-merge-queue](../review-merge-queue/) is where the merge-queue seam
+  goes when it is the pick: it triages the queue before spending a reviewer on
+  it, and `mergePolicy` decides whether a clean verdict ends in a merge.
 - [grab](../grab/) · [triage](../triage/) · [to-issues](../to-issues/) ·
   [improve-codebase-architecture](../improve-codebase-architecture/) ·
   [docs-drift-audit](../docs-drift-audit/) · [interview-me](../interview-me/)
