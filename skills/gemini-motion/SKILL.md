@@ -53,12 +53,15 @@ recipe and limits there are what separate a usable clip from a generic one.
    people's likenesses, not minors).
 3. **Draft cheap.** Run it once without `--approve`: it prints what the render
    will bill and refuses. Show the user that line, get a real yes, then re-run
-   with the number it gave you. `--duration` pins the length so the approval is
-   for the seconds you meant rather than the 10 s worst case.
+   with the exact token it printed. The token is `<seconds>s@<resolution>`,
+   and it carries both because the per-second rate is ten times higher at 4k
+   than at 360p — an approval that named seconds alone was satisfied by a far
+   more expensive render. `--duration` pins the length so the approval is for
+   the seconds you meant rather than the 10 s worst case.
    ```bash
    python <skill>/scripts/generate_video.py --prompt-file motion/x-prompt.txt --draft --aspect 9:16 --duration 6 --out motion/x-draft.mp4
-   # -> this render bills 6s at 360p, about $0.18 / approve with: --approve 6
-   python <skill>/scripts/generate_video.py --prompt-file motion/x-prompt.txt --draft --aspect 9:16 --duration 6 --approve 6 --out motion/x-draft.mp4
+   # -> this render bills 6s at 360p, about $0.18 / approve with: --approve 6s@360p
+   python <skill>/scripts/generate_video.py --prompt-file motion/x-prompt.txt --draft --aspect 9:16 --duration 6 --approve 6s@360p --out motion/x-draft.mp4
    ```
    Watch it (Read the file or send it to the user). Judge: subject right,
    motion right, single shot if asked, audio as specified, no stray text.
@@ -110,8 +113,11 @@ are the method.
   the review. Hand-edits are for the last 10%.
 - **Don't spend on video until the user knows it's paid.** The `--approve`
   gate enforces this rather than trusting you to remember: a render refuses
-  until the seconds it will bill are confirmed back to it. Draft at 360p; the
-  first 720p render should be the one you expect to keep.
+  until the price it will bill — the seconds *and* the resolution — is
+  confirmed back to it, and changing either one after the user looked stops the
+  render rather than re-pricing it silently. Draft at 360p; the first 720p
+  render should be the one you expect to keep. The billed call also runs with
+  the SDK's retries off, so a lost response cannot be charged twice.
 - **Don't promise what Omni can't do:** >10 s in one shot, exact dialogue
   edits, voice changes, prepending/mid-clip edits, real-person likenesses,
   minors, precise frame-accurate sync. Say so early and offer the nearest thing.

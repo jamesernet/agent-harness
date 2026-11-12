@@ -125,8 +125,10 @@ def main() -> int:
     ap.add_argument("--task", choices=TASKS, help="force a mode; normally the prompt is enough")
     ap.add_argument("--uri", action="store_true", help="force URI delivery (auto for 1080p/4k)")
     ap.add_argument("--no-store", action="store_true", help="faster, but the result cannot be edited later")
-    ap.add_argument("--approve", type=int, metavar="SECONDS",
-                    help="the seconds of video you agreed to pay for; must equal what this\nrender will bill, so a plan that changed since you looked stops here")
+    ap.add_argument("--approve", metavar="<N>s@<resolution>",
+                    help="the price you agreed to pay, as the exact token this script prints\n"
+                         "(for example 6s@360p); it carries BOTH numbers, because seconds\n"
+                         "alone approved a figure that --resolution could still multiply")
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S["video"],
                     help="seconds to wait for the API before giving up "
                          f"(default {DEFAULT_TIMEOUT_S['video']}); the SDK sets none, so without this a stall hangs forever")
@@ -139,20 +141,32 @@ def main() -> int:
     if out.suffix.lower() != ".mp4":
         out = out.with_suffix(".mp4")
 
-    # The approval is the seconds the user agreed to pay for. Without --duration
-    # the model picks the length, so the only honest number to approve against is
-    # the worst case. A mismatch means something changed after they looked.
+    # What the user approves is a PRICE, so the approval has to carry every
+    # input the price is made of. It used to carry seconds only, and the rate
+    # ranges from $0.03 to $0.30 per second across the resolutions this script
+    # accepts -- so an approval of "10", shown to the user as "$0.30", was
+    # satisfied by the same 10 seconds at 4k and billed $3.00, through a flag
+    # the skill documents. The token names both, and nothing else here reads
+    # args.approve as a number.
+    #
+    # Without --duration the model picks the length, so the only honest figure
+    # to price is the worst case.
     billable = args.duration or MAX_CLIP_SECONDS
     estimate = billable * VIDEO_RATES_USD[resolution]
+    token = f"{billable}s@{resolution}"
     if args.approve is None:
         print(f"this render bills {billable}s at {resolution}, about ${estimate:.2f}")
         if not args.duration:
             print(f"  length is unset, so the model chooses it; {MAX_CLIP_SECONDS}s is the worst case.")
             print("  pass --duration 3..10 to pin it and approve a smaller number.")
-        print(f"approve with: --approve {billable}")
+        print(f"approve with: --approve {token}")
         return 2
-    if args.approve != billable:
-        die(f"this render bills {billable}s but --approve says {args.approve}s; "
+    if args.approve != token:
+        if args.approve.rstrip("s").isdigit():
+            die(f"--approve now takes the whole token, {token}, not seconds alone: "
+                "seconds without a resolution approved a price that --resolution "
+                "could still multiply")
+        die(f"this render bills {token} but --approve says {args.approve!r}; "
             "re-check the settings and confirm again")
 
     client = get_client()
@@ -183,7 +197,10 @@ def main() -> int:
 
     t0 = time.time()
     try:
-        interaction = create(client, args.timeout, **kwargs)
+        # A separate client for the one billed call, with the SDK's retries off
+        # (see get_client). `client` keeps them, for the free uploads above and
+        # the download below.
+        interaction = create(get_client(retries=False), args.timeout, **kwargs)
     except Exception as e:  # noqa: BLE001
         die(f"{type(e).__name__}: {e}")
 

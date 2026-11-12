@@ -72,8 +72,17 @@ def die(msg: str, code: int = 1) -> None:
     sys.exit(code)
 
 
-def get_client():
-    """Return a google-genai Client, with readable errors for the two common failures."""
+def get_client(retries: bool = True):
+    """Return a google-genai Client, with readable errors for the two common failures.
+
+    `retries=False` turns the SDK's own retry loop off for this client. Use it
+    for a BILLED call: the SDK retries 5XX by default, and a generation the
+    server completed but whose response was lost would be charged once per
+    attempt. Measured against google-genai 3.2.0, where
+    HttpRetryOptions.attempts documents "If 0 or 1, it means no retries".
+    Uploads and downloads keep the retries, because repeating those costs
+    nothing.
+    """
     try:
         from google import genai
     except ImportError:
@@ -87,7 +96,14 @@ def get_client():
             "GEMINI_API_KEY is not set. Create a key at https://aistudio.google.com/apikey\n"
             "  then:  export GEMINI_API_KEY=\"...\"   (see references/setup.md)"
         )
-    return genai.Client(api_key=key)
+    if retries:
+        return genai.Client(api_key=key)
+    from google.genai import types
+
+    return genai.Client(
+        api_key=key,
+        http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1)),
+    )
 
 
 RETRY_STATUSES = (429, 503)
