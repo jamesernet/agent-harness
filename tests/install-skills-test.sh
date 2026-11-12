@@ -159,6 +159,54 @@ while IFS= read -r skill; do
 done < <(find "$SRC/skills" -mindepth 2 -maxdepth 2 -name SKILL.md -print |
   sed 's#/SKILL.md$##' | awk -F/ '{print $NF}' | sort -u)
 
+# --- metered: the default must not acquire a skill that bills money -----------
+#
+# `all` is what a fresh account resolves to with no llmctx.skillBundle set, and
+# it does not read bundles.conf at all -- so "opt-in, never bundled by default"
+# was true of a bundle nobody had selected and false of the only one everybody
+# gets. Every metered member must be absent under the default and present when
+# the bundle is named.
+metered_members() {
+  grep '^metered|' "$SRC/skills/bundles.conf" | cut -d'|' -f2 | grep -v '^+' || true
+}
+
+HOME="$bhome" "$SRC/bin/install-skills.sh" >/dev/null 2>&1 || fail "default install failed"
+metered_n=0
+while IFS= read -r skill; do
+  [ -n "$skill" ] || continue
+  metered_n=$((metered_n + 1))
+  [ -d "$bhome/.claude/skills/$skill" ] &&
+    fail "the default install acquired metered skill '$skill'"
+done < <(metered_members)
+[ "$metered_n" -gt 0 ] ||
+  fail "bundles.conf lists no metered skills, so this check proves nothing"
+
+HOME="$bhome" "$SRC/bin/install-skills.sh" --bundle webapp,metered >/dev/null 2>&1 ||
+  fail "--bundle webapp,metered failed"
+while IFS= read -r skill; do
+  [ -n "$skill" ] || continue
+  [ -d "$bhome/.claude/skills/$skill" ] ||
+    fail "naming the metered bundle did not install '$skill'"
+done < <(metered_members)
+[ -d "$bhome/.claude/skills/product-ux-review" ] ||
+  fail "metered beside webapp dropped the webapp skills"
+
+# The library resolves `all` a second time for doctor (bin/lib/skills.sh), and a
+# doctor that disagrees with the installer reports a correct install as broken.
+# Asserted directly, because nothing else exercises that copy.
+lib_all="$tmp/lib-all.txt"
+(
+  # shellcheck source=../bin/lib/skills.sh
+  source "$SRC/bin/lib/skills.sh"
+  llmctx_bundle_skills "$SRC" all "$lib_all"
+) || fail "the library could not resolve the all bundle"
+grep -qx codebase-design "$lib_all" || fail "the library's all bundle lost an ordinary skill"
+while IFS= read -r skill; do
+  [ -n "$skill" ] || continue
+  grep -qx "$skill" "$lib_all" &&
+    fail "the library's all bundle still contains metered skill '$skill'"
+done < <(metered_members)
+
 # --- per-account bundles ------------------------------------------------------
 # One machine runs accounts with different needs. A single global key would let
 # a plain install re-apply one account's choice to every other account.

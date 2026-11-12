@@ -139,6 +139,15 @@ and a test checklist.
 | [money-movement-review](money-movement-review/) | `/money-movement-review` · auto | a payment flow end to end | the state machine drawn first and every failure mode walked; carries two rule sets — [MONEY](money-movement-review/MONEY.md) (minor units, currency, rounding, allocation, FX) and [LEDGER](money-movement-review/LEDGER.md) (double-entry, immutability, derived balances, reconciliation) |
 | [pci-dss-scoping](pci-dss-scoping/) | `/pci-dss-scoping` · auto | cardholder-data flow, CDE, SAQ | "the goal is never pass PCI": shrink the environment until compliance is small |
 | [kyc-aml-review](kyc-aml-review/) | `/kyc-aml-review` · auto | identity verification, screening, risk rating, monitoring, SAR workflow | traces one customer and one alert end to end; "screening at signup only" as the most common real finding |
+
+### Media
+
+Opt-in only, and the one family that spends money. Needs a Gemini API key, and
+the video path has no free tier.
+
+| skill | invoke | focus | what it adds |
+|---|---|---|---|
+| [gemini-motion](gemini-motion/) | `/gemini-motion` · auto | short rendered video, and code animations that ship inside a page | two paths behind one setup — Omni Flash renders mp4 with audio, Gemini 3.8 Flash writes self-contained HTML/CSS/SVG/Lottie; the effort goes into the brief and the review, and a render refuses until the price it will bill, seconds and resolution both, is confirmed back to it |
 | [plan-to-video](plan-to-video/) | `/plan-to-video` | Claude writes a shot plan, Veo (Gemini API) renders each shot behind a per-render price approval, ffmpeg stitches | the plan is the contract: a JSON file a human reads, edits and approves before anything is billed; supporting [plan-format](plan-to-video/references/plan-format.md) and [example-plan](plan-to-video/references/example-plan.json) |
 
 ## What depends on things outside this repository
@@ -173,7 +182,7 @@ harness installs one per Claude account and prunes the rest.
 | `webapp` | a website that holds user data | website + threat-model |
 | `platform` | a backend other things depend on | core + threat-model, data-privacy-review |
 | `fintech` | somewhere money moves (additive) | the payments and fintech family |
-| `metered` | willing to spend on a third-party API (additive) | the motion family; `all` excludes these, so they install only when this bundle is named |
+| `metered` | willing to spend on a third-party API (additive) | the motion family; `all` excludes these, so they arrive only when the bundle is named. Name it persistently — `git config --global llmctx.skillBundle webapp,metered` — because `--bundle` is one-shot and the next plain install prunes them again |
 
 Every skill in this directory must appear in at least one bundle;
 `bin/lint-skills.sh` enforces it.
