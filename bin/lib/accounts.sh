@@ -58,8 +58,37 @@ llmctx_account_default_dir() {
   esac
 }
 
+# Does this path still begin with a tilde THIS TOOL does not expand?
+#
+# A predicate rather than a failing expander: `~other/path` is a path a shell
+# would have turned into an absolute one, and every site that refuses it was
+# naming the wrong cause. The hook installer said `skip: ~other/path (not a
+# git repo)` -- which may be a perfectly good repository -- and the account
+# registry said `is not absolute`, which says nothing about the tilde (#92).
+#
+# Only `~` and `~/...` are expanded, deliberately. `~user` needs the password
+# database: `getent` is absent on macOS and `dscl` on Linux, and `eval` is not
+# a tool a path helper should reach for. So it is refused BY NAME instead,
+# which is the honest answer and is all any of these call sites needed.
+# shellcheck disable=SC2088  # matching a LITERAL tilde is the point here
+llmctx_path_unexpanded_tilde() {
+  case "$1" in
+    '~' | '~/'*) return 1 ;;
+    '~'*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# The one sentence every caller should print about such a path, so the three
+# that refuse it do not each invent their own wording.
+llmctx_path_tilde_reason() {
+  printf 'unexpanded tilde: only ~ and ~/... are expanded here; store the absolute path
+'
+}
+
 # Absolute, `~` expanded, no trailing slash. The directory need not exist yet —
-# installing is what creates it.
+# installing is what creates it. Never fails: the caller decides what an
+# unexpandable path means, with llmctx_path_unexpanded_tilde above.
 llmctx_account_expand_dir() {
   local dir="$1"
   # shellcheck disable=SC2088  # matching a LITERAL tilde is the point here
@@ -105,6 +134,10 @@ llmctx_accounts() {
     name="${entry%%=*}"
     dir="$(llmctx_account_expand_dir "${entry#*=}")"
     llmctx_account_validate_name "$name" "$provider" || return 1
+    if llmctx_path_unexpanded_tilde "$dir"; then
+      echo "error: account '$name' directory '$dir': $(llmctx_path_tilde_reason)" >&2
+      return 1
+    fi
     [[ "$dir" == /* ]] || {
       echo "error: account '$name' directory '$dir' is not absolute" >&2
       return 1
@@ -238,6 +271,13 @@ llmctx_unresolved_imports() {
     case "$target" in
       '~' | '~/'*) resolved="$(llmctx_account_expand_dir "$target")" ;;
       /*) resolved="$target" ;;
+      # A `~user` target resolved against the file's directory, which is a
+      # path nobody wrote. It is reported as unsupported, like $HOME, rather
+      # than checked somewhere it was never pointing (#92).
+      '~'*)
+        printf 'unsupported\t%s\t%s\t\n' "$lineno" "$target"
+        continue
+        ;;
       *) resolved="$base/$target" ;;
     esac
 
