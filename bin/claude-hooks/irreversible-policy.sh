@@ -175,7 +175,7 @@ has_short() { # <statement> <letter>
 # A prefix command's flag may take a separate value (`sudo -u root`), so each
 # flag may be followed by one non-flag word; the regex backtracks when that
 # word turns out to be the verb.
-prefix_re='^[[:space:]]*((sudo|doas|command|exec|nohup|nice|ionice|time)[[:space:]]+(-[^[:space:]]+[[:space:]]+([^-[:space:]][^[:space:]]*[[:space:]]+)?)*|timeout[[:space:]]+(-[^[:space:]]+[[:space:]]+)*[^-[:space:]][^[:space:]]*[[:space:]]+|env[[:space:]]+(-[^[:space:]]+[[:space:]]+|[^[:space:]]+=[^[:space:]]*[[:space:]]+)*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:]]*/)?'
+prefix_re="^[[:space:]]*${LLMCTX_CMD_PREFIX_RE}([^[:space:]]*/)?"
 # git's global options between `git` and the subcommand: the fragment the
 # branch guard uses, defined beside the target resolver so both hooks see the
 # same spelling (#79). `-C <dir>` is both scope and spelling.

@@ -14,6 +14,7 @@
 #   llmctx_target_from_command "<command text>"
 #   llmctx_target_action_statements "<command text>"   (one statement per line, nothing removed)
 #   $LLMCTX_GIT_GLOBAL_OPTS_RE   (an ERE fragment, see below)
+#   $LLMCTX_CMD_PREFIX_RE        (an ERE fragment, see below)
 #
 # Prints the directory the command names, or nothing when it cannot tell.
 # "Cannot tell" is a first-class answer and the caller must handle it.
@@ -28,6 +29,22 @@
 #     is returned as written; the caller resolves it against the payload cwd,
 #     which is the only cwd either hook may trust.
 #
+# WHICH REPOSITORY, not which directory. `--git-dir=<x>/.git` names a
+# repository, so the answer is `<x>` -- the directory CONTAINING it, because
+# `rev-parse --show-toplevel` is fatal from inside a `.git` (measured), and
+# that call is the first thing branch-policy.sh makes with this answer; the
+# git dir itself would make it exit 0, which is the bypass this closes (#103).
+# A git dir not named `.git` -- bare, or `--separate-git-dir` -- has no work
+# tree to contain it, so the git dir is returned as-is and the callers'
+# `--show-toplevel` fails as it would anyway.
+#
+# `--work-tree=<w>` on its own is NOT read, deliberately. Without `--git-dir`
+# git still discovers the repository from the cwd and only takes the files
+# from `<w>`, so the repository being acted on is unchanged -- and alongside
+# `--git-dir` the git dir has already decided. Reading it would answer a
+# question nobody asked ("where are the files") with the name of a variable
+# the branch does not live in.
+#
 # This is string work throughout. No eval, no shell parser. Where it cannot
 # tell, it says so and the caller falls back — which is the safe direction for
 # both hooks, since both fail open.
@@ -39,6 +56,22 @@ llmctx_target_tilde="~"
 
 # `cd ~/x` is written far more often than the expanded path. Expanding a
 # leading `~/` keeps this to string work rather than eval.
+# What a shell allows in FRONT of a verb, as an ERE fragment for the action
+# matchers: `sudo`/`doas`/`command`/`exec`/`nohup`/`nice`/`ionice`/`time` with
+# their own flags and a flag's separate value, `timeout` with its duration,
+# `env` with assignments, and a bare `K=V` assignment. Zero or more, each
+# ending in whitespace, so it slots between a statement start and the verb.
+#
+# One definition, three consumers. This was written three times -- in
+# branch-policy.sh's gate, in irreversible-policy.sh, and (as awk) in the
+# resolver below -- and each copy was found to miss a different spelling. The
+# review of #103 found `sudo -u root git --git-dir=…` still walking past the
+# branch guard after the resolver had learned it, which is the same bug one
+# door over for the third time. It is defined here, beside the resolver that
+# answers the other half of the question.
+# shellcheck disable=SC2034  # consumed by the hooks that source this file
+LLMCTX_CMD_PREFIX_RE='((sudo|doas|command|exec|nohup|nice|ionice|time)[[:space:]]+(-[^[:space:]]+[[:space:]]+([^-[:space:]][^[:space:]]*[[:space:]]+)?)*|timeout[[:space:]]+(-[^[:space:]]+[[:space:]]+)*[^-[:space:]][^[:space:]]*[[:space:]]+|env[[:space:]]+(-[^[:space:]]+[[:space:]]+|[^[:space:]]+=[^[:space:]]*[[:space:]]+)*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
+
 # Global options git accepts between `git` and the subcommand: `-C <dir>`,
 # `-c <k=v>`, the lone flags `-p` and `-P`, `--<long>`, `--<long>=<v>`, and a
 # long option's separate value. An ERE fragment for the ACTION matchers in
@@ -166,8 +199,149 @@ llmctx_target_assigned_value() {
     sed -E -n "s/^[[:space:]]*${var}=[\"']?([^\"']*[^\"' ])[\"']?[[:space:]]*\$/\1/p" | head -1
 }
 
+# One global option's value, in either spelling git accepts: `--opt=value`
+# or `--opt value`, anywhere among the other global options after `git`.
+# Deliberately `[^[:space:]]+`: a quoted path containing a space truncates to
+# a non-directory and every caller's own existence test then rejects it, which
+# is "cannot tell" reached by a different road. Capturing it properly needs a
+# tokenizer, and a guard that half-parses shell is wrong in both directions.
+# The value of one git GLOBAL option, in either spelling git accepts
+# (`--opt=value`, `--opt value`), from the last statement whose VERB is git.
+#
+# Two things it insists on, because without them a commit message sets the
+# scope. The git word must be the statement's verb, behind at most the
+# prefixes a shell allows -- so `echo git --git-dir=/x` is echo's business.
+# And the option must come BEFORE the subcommand, which is where git's global
+# options live -- so `git commit -m "use --git-dir=/evil/.git"` is a message.
+# Scanning stops at the first word that is not an option or an option's value;
+# that word is the subcommand.
+#
+# Deliberately whitespace-delimited: a quoted path containing a space
+# truncates to a non-directory, every caller's own existence test rejects it,
+# and that is "cannot tell" reached by a different road. Capturing it properly
+# needs a tokenizer, and a guard that half-parses shell is wrong in both
+# directions. Last statement wins, as the `cd` rule does, because that is what
+# the shell does with a sequence.
+llmctx_target_git_option() { # <command text> <long-option-name>
+  llmctx_target_statements "$1" | awk -v opt="--$2" '
+    function unquote(v) {
+      gsub(/^["'"'"']|["'"'"']$/, "", v)
+      return v
+    }
+    # Where the verb starts: past the assignments and the wrappers the shell
+    # allows in front of it, INCLUDING a wrapper flag that takes its own
+    # separate value and timeout\x27s bare duration. `sudo -u root git …` and
+    # `timeout 10 git …` stopped the scan one token early and the spelling was
+    # never seen -- a silent allow on a protected branch, and `timeout 10` is
+    # an ordinary shape in a script rather than an evasion. A value is only
+    # consumed when it is not itself the git verb, so `sudo -n git` keeps git.
+    function verb_at(      i, flag) {
+      i = 1
+      while (i <= NF) {
+        if ($i ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { i++; continue }
+        if ($i ~ /^(sudo|doas|command|exec|nohup|nice|ionice|time|timeout|env)$/) {
+          if ($i == "timeout") { i++; if (i <= NF && $i ~ /^[0-9]+(\.[0-9]+)?[smhd]?$/) i++ }
+          else i++
+          while (i <= NF && $i ~ /^-/) {
+            flag = $i; i++
+            if (flag !~ /=/ && i <= NF && $i !~ /^-/ && $i != "git" && $i !~ /\/git$/) i++
+          }
+          continue
+        }
+        if ($i ~ /^-/) { i++; continue }
+        break
+      }
+      return i
+    }
+    {
+      i = verb_at()
+      if (i > NF) next
+      if ($i != "git" && $i !~ /\/git$/) next
+      for (j = i + 1; j <= NF; j++) {
+        if (index($j, opt "=") == 1) { found = unquote(substr($j, length(opt) + 2)); break }
+        if ($j == opt && j < NF) { found = unquote($(j + 1)); break }
+        if ($j !~ /^-/) break                       # the subcommand: stop
+        if ($j ~ /^-[Cc]$/ && j < NF) { j++; continue }   # a two-word option
+        if ($j ~ /^--(git-dir|work-tree|namespace|exec-path|super-prefix)$/ && j < NF) { j++; continue }
+      }
+    }
+    END { if (found != "") print found }'
+}
+
+# The repository a git dir belongs to: the directory containing a `.git`, and
+# the git dir itself for a bare or separate one, which has no containing work
+# tree. See the header on why the containing directory and not the git dir.
+llmctx_target_repo_of_git_dir() { # <git dir>
+  local d="$1"
+  # `/r/.git/./` and `/r/.git` are the same directory, and the first used to
+  # answer `/r/.git/.` -- the git dir itself, where `--show-toplevel` is fatal,
+  # which is precisely the bypass this function exists to avoid. Trailing
+  # slashes and `/.` segments are collapsed until neither is left.
+  d="$(llmctx_target_strip_slashes "$d")"
+  while [[ "$d" == */. && "$d" != "/." ]]; do
+    d="$(llmctx_target_strip_slashes "${d%/.}")"
+  done
+  [[ "$d" != "/." ]] || d="/"
+  case "$d" in
+    */.git) printf '%s\n' "${d%/.git}" ;;
+    .git) printf '%s\n' "." ;;
+    *) printf '%s\n' "$d" ;;
+  esac
+}
+
 llmctx_target_from_command() {
   local cmd="$1" dir var assigned
+
+  # `--git-dir` names the repository outright, and outranks everything: it
+  # beats the GIT_DIR environment variable (measured: `GIT_DIR=a git
+  # --git-dir=b rev-parse` answers for b), and it beats `-C`, which only
+  # changes the directory the option is then read relative to.
+  dir="$(llmctx_target_git_option "$cmd" "git-dir")"
+  if [[ -n "$dir" ]]; then
+    llmctx_target_repo_of_git_dir "$(llmctx_target_expand_home "$dir")"
+    return 0
+  fi
+
+  # A leading `GIT_DIR=<d> git …` assignment says the same thing one step
+  # lower, since the option above wins when both are present. Only an
+  # assignment in front of a git VERB counts -- `git commit -m "GIT_DIR=x"`
+  # is a message, and `GIT_DIR=x make` is not git's business.
+  dir="$(llmctx_target_statements "$cmd" | awk '
+    # The same prefix discipline as llmctx_target_git_option: a wrapper flag
+    # may take a separate value, and timeout a bare duration, or
+    # `sudo -u root GIT_DIR=… git …` is never seen.
+    function verb_at(      i, flag) {
+      i = 1
+      while (i <= NF) {
+        if ($i ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { i++; continue }
+        if ($i ~ /^(sudo|doas|command|exec|nohup|nice|ionice|time|timeout|env)$/) {
+          if ($i == "timeout") { i++; if (i <= NF && $i ~ /^[0-9]+(\.[0-9]+)?[smhd]?$/) i++ }
+          else i++
+          while (i <= NF && $i ~ /^-/) {
+            flag = $i; i++
+            if (flag !~ /=/ && i <= NF && $i !~ /^-/ && $i != "git" && $i !~ /\/git$/) i++
+          }
+          continue
+        }
+        if ($i ~ /^-/) { i++; continue }
+        break
+      }
+      return i
+    }
+    {
+      v = verb_at(); d = ""
+      for (i = 1; i < v; i++) if (index($i, "GIT_DIR=") == 1) d = substr($i, 9)
+      i = v
+      if (i <= NF && ($i == "git" || $i ~ /\/git$/) && d != "") {
+        gsub(/^["'"'"']|["'"'"']$/, "", d)
+        found = d
+      }
+    }
+    END { if (found != "") print found }')"
+  if [[ -n "$dir" ]]; then
+    llmctx_target_repo_of_git_dir "$(llmctx_target_expand_home "$dir")"
+    return 0
+  fi
 
   # `git -C <dir> …` states its own target, and outranks any `cd`.
   dir="$(printf '%s' "$cmd" |
