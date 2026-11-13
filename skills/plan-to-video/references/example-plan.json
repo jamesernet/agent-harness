@@ -1,0 +1,25 @@
+{
+  "title": "Morning build",
+  "model": "veo-3.1-fast-generate-preview",
+  "aspect_ratio": "16:9",
+  "resolution": "720p",
+  "style": "Natural window light, muted warm palette, 35mm lens, shallow depth of field, no on-screen text.",
+  "negative_prompt": "logos, watermarks, captions, distorted hands",
+  "shots": [
+    {
+      "id": "desk",
+      "duration": 8,
+      "prompt": "Slow dolly-in on an open laptop on an oak desk at dawn; the screen shows scrolling terminal output. Soft keyboard clicks and distant birdsong."
+    },
+    {
+      "id": "coffee",
+      "duration": 4,
+      "prompt": "Close-up, static: a hand sets a ceramic mug of coffee beside the laptop, steam rising. The clink of the mug on wood."
+    },
+    {
+      "id": "window",
+      "duration": 6,
+      "prompt": "The camera tilts up from the desk to a tall window as sunlight spills across the room. A low, warm ambient hum."
+    }
+  ]
+}
