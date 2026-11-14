@@ -41,6 +41,7 @@ import tempfile
 import time
 from functools import lru_cache
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gemini_common import (  # noqa: E402
@@ -135,14 +136,16 @@ def validate(plan) -> list[str]:
             errs.append(f"{where}: duration must be a whole number of seconds from "
                         f"{MIN_CLIP_SECONDS} to {MAX_CLIP_SECONDS}, what one Omni call renders; "
                         f"got {dur!r}")
+        # An empty path is refused here: it resolves to the plan directory and
+        # would otherwise be reported as "image not found: <plan dir>".
         for key in ("first_frame", "last_frame"):
-            if key in shot and not isinstance(shot[key], str):
-                errs.append(f"{where}: {key} must be a path relative to the plan")
+            if key in shot and (not isinstance(shot[key], str) or not shot[key].strip()):
+                errs.append(f"{where}: {key} must be a path relative to the plan, and not empty")
         if shot.get("last_frame") and not shot.get("first_frame"):
             errs.append(f"{where}: last_frame needs a first_frame to interpolate from")
         images = shot.get("images", [])
-        if not isinstance(images, list) or not all(isinstance(p, str) for p in images):
-            errs.append(f"{where}: images must be a list of paths relative to the plan")
+        if not isinstance(images, list) or not all(isinstance(p, str) and p.strip() for p in images):
+            errs.append(f"{where}: images must be a list of paths relative to the plan, none empty")
     return errs
 
 
@@ -264,8 +267,19 @@ def save_manifest(base: Path, manifest: dict) -> None:
     os.replace(tmp, d / "manifest.json")
 
 
-def pending(plan: dict, base: Path, only: set[str]) -> list[tuple[int, dict, str]]:
-    """(position, shot, spec hash) for every selected shot without a current clip."""
+class Pending(NamedTuple):
+    """What a run would bill, computed once and read by every command.
+
+    The price shown and the price checked come from the same `seconds`, and
+    the manifest the shots were judged against is the one render updates.
+    """
+    shots: list[tuple[int, dict, str]]  # (position, shot, spec hash)
+    seconds: int
+    manifest: dict
+
+
+def pending(plan: dict, base: Path, only: set[str]) -> Pending:
+    """Every selected shot without a current clip, with the seconds they total."""
     manifest = load_manifest(base)
     todo = []
     for i, shot in enumerate(plan["shots"], 1):
@@ -275,15 +289,15 @@ def pending(plan: dict, base: Path, only: set[str]) -> list[tuple[int, dict, str
         recorded = manifest["shots"].get(shot["id"], {}).get("spec")
         if recorded != h or not clip_path(base, shot).is_file():
             todo.append((i, shot, h))
-    return todo
+    return Pending(todo, sum(s["duration"] for _, s, _ in todo), manifest)
 
 
 # --- commands ----------------------------------------------------------------
 
 
-def report(plan: dict, todo: list, only: set[str], plan_arg: str) -> None:
+def report(plan: dict, pend: Pending, only: set[str], plan_arg: str) -> None:
     """What check prints, and what an unapproved render prints before refusing."""
-    pending_ids = {s["id"] for _, s, _ in todo}
+    pending_ids = {s["id"] for _, s, _ in pend.shots}
     res = plan["resolution"]
     print(f"plan: {plan['title']} -- {len(plan['shots'])} shots, "
           f"{sum(s['duration'] for s in plan['shots'])}s at {res}, {plan.get('aspect_ratio', ASPECTS[0])}")
@@ -295,14 +309,17 @@ def report(plan: dict, todo: list, only: set[str], plan_arg: str) -> None:
         else:
             note = "  rendered"
         print(f"  {i:02d} {shot['id']:<20} {shot['duration']:>2}s{note}")
-    if not todo:
+    if not pend.shots:
         print("to render: nothing -- every selected shot is current")
         return
-    total = sum(s["duration"] for _, s, _ in todo)
-    print(f"to render: {len(todo)} shots, {total}s at {res}, about ${total * VIDEO_RATES_USD[res]:.2f}")
-    # Runnable as printed: the script as it was invoked, and every path and id
-    # quoted for the shell -- a plan in "Jim's build/" is the ordinary case.
-    cmd = [shlex.quote(sys.argv[0]), "render", shlex.quote(plan_arg)]
+    total = pend.seconds
+    print(f"to render: {len(pend.shots)} shots, {total}s at {res}, about ${total * VIDEO_RATES_USD[res]:.2f}")
+    # Runnable as printed from any directory: this interpreter, this script by
+    # its absolute path (a bare "storyboard.py" typed from the scripts directory
+    # is not on PATH), and every path and id quoted for the shell -- a plan in
+    # "Jim's build/" is the ordinary case.
+    cmd = [shlex.quote(sys.executable), shlex.quote(os.path.abspath(sys.argv[0])),
+           "render", shlex.quote(plan_arg)]
     if only:
         cmd += ["--only", *(shlex.quote(i) for i in sorted(only))]
     cmd += ["--approve", approval_token(total, res)]
@@ -319,25 +336,25 @@ def cmd_check(args) -> int:
 def cmd_render(args) -> int:
     plan, base = load_plan(args.plan)
     only = selected(plan, args.only)
-    todo = pending(plan, base, only)
-    if not todo:
+    pend = pending(plan, base, only)
+    if not pend.shots:
         print("nothing to render -- every selected shot is current")
         return 0
     if args.approve is None:
         # The gate as generate_video.py has it: price, print the token, refuse.
         # Nothing is written and no client is made.
-        report(plan, todo, only, args.plan)
+        report(plan, pend, only, args.plan)
         return 2
     res = plan["resolution"]
-    total = sum(s["duration"] for _, s, _ in todo)
-    # The token is recomputed from the plan on disk, so a plan edited after
-    # the price was shown no longer matches, and the run stops here.
-    require_approval(args.approve, approval_token(total, res))
+    # The token is recomputed from the plan on disk -- the same seconds report()
+    # prices -- so a plan edited after the price was shown no longer matches,
+    # and the run stops here.
+    require_approval(args.approve, approval_token(pend.seconds, res))
 
     ignored_dir(base / OUT_DIR_NAME)
-    manifest = load_manifest(base)
+    manifest = pend.manifest
     manifest["title"] = plan["title"]
-    for i, shot, h in todo:
+    for i, shot, h in pend.shots:
         clip = clip_path(base, shot)
         prompt = full_prompt(plan, shot)
         t0 = time.time()
@@ -386,13 +403,16 @@ def cmd_stitch(args) -> int:
     plan, base = load_plan(args.plan)
     if not shutil.which("ffmpeg"):
         die("ffmpeg is not installed; stitch needs it (check and render do not)")
-    stale = pending(plan, base, set())
+    stale = pending(plan, base, set()).shots
     if stale:
         die("render first; these shots have no current clip: "
             + ", ".join(s["id"] for _, s, _ in stale))
     clips = [clip_path(base, s) for s in plan["shots"]]
     out = ignored_dir(base / OUT_DIR_NAME) / f"{slug(plan['title'])}.mp4"
-    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as fh:
+    # UTF-8 by name: the demuxer reads the listing as UTF-8, and the locale's
+    # encoding may not be able to write a non-ASCII clip path at all -- a
+    # UnicodeEncodeError here would land after every clip had been paid for.
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as fh:
         fh.write(concat_listing(clips))
         listing = fh.name
     try:

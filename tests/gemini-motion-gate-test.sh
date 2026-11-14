@@ -182,16 +182,25 @@ sb() {
 refused() {
   [ "$rc" -ne 0 ] || fail "$1 printed a refusal but exited 0: $out"
 }
+# sb_rel runs the script by its bare name from its own directory, the way a
+# user who has cd'd into the skill does. The line it prints has to run from
+# anywhere else, so it cannot echo that bare name back.
+sb_rel() {
+  rc=0
+  out="$(cd "$(dirname "$SB")" && env -u GEMINI_API_KEY -u GOOGLE_API_KEY python3 storyboard.py "$@" 2>&1)" || rc=$?
+}
 # approve_line runs the command the last sb call printed after "approve with:",
-# exactly as printed and with no key, into $out and $rc. It proves the line is
-# runnable as shown (quoting included) and that its token is the one render
-# recomputes, by getting past the gate.
+# exactly as printed, with no key and from a directory that is neither the
+# plan's nor the script's, into $out and $rc. It proves the line is runnable
+# as shown (interpreter, script path and quoting included) and that its token
+# is the one render recomputes, by getting past the gate.
+mkdir -p "$tmp/elsewhere"
 approve_line() {
   local cmd
   cmd="$(sed -n 's/^approve with: //p' <<<"$out")"
   [ -n "$cmd" ] || fail "no approve-with line to run in: $out"
   rc=0
-  out="$(env -u GEMINI_API_KEY -u GOOGLE_API_KEY bash -c "$cmd" 2>&1)" || rc=$?
+  out="$(cd "$tmp/elsewhere" && env -u GEMINI_API_KEY -u GOOGLE_API_KEY bash -c "$cmd" 2>&1)" || rc=$?
 }
 
 # 11. No approval: check prices every pending shot, the total, the dollar
@@ -211,6 +220,13 @@ grep -q -- 'approve with: .*--approve 18s@720p' <<<"$out" ||
 approve_line
 grep -qE 'GEMINI_API_KEY is not set|google-genai package is not installed' <<<"$out" ||
   fail "the approve-with line was not runnable as printed: $out"
+# The same when the script was invoked by its bare name from its own directory:
+# the printed line used to echo "storyboard.py", which no other directory runs.
+sb_rel check "$plan"
+[ "$rc" -eq 0 ] || fail "check invoked by a bare script name exited $rc: $out"
+approve_line
+grep -qE 'GEMINI_API_KEY is not set|google-genai package is not installed' <<<"$out" ||
+  fail "the approve-with line from a bare-name invocation was not runnable elsewhere: $out"
 
 # 12. Seconds alone are refused by name. They used to BE the approval, and the
 #     plan's resolution could change under them.
@@ -331,6 +347,22 @@ refused "a list for a title"
 grep -q 'title must be text' <<<"$out" ||
   fail "a non-text title was not refused by name: $out"
 
+# An empty path resolved to the plan directory and was refused as "image not
+# found: <plan dir>", which names neither the shot nor the field.
+reset_plan
+set_shot 1 first_frame '""'
+sb check "$plan"
+refused "an empty first_frame"
+grep -q 'shot 1 (desk): first_frame must be a path relative to the plan, and not empty' <<<"$out" ||
+  fail "an empty first_frame was not refused by name: $out"
+
+reset_plan
+set_shot 1 images '[""]'
+sb check "$plan"
+refused "an empty images entry"
+grep -q 'shot 1 (desk): images must be a list of paths relative to the plan, none empty' <<<"$out" ||
+  fail "an empty images entry was not refused by name: $out"
+
 # 17. Reordering shots after a render re-bills nothing. Clips were addressed by
 #     plan position while the manifest keyed on id, so moving a shot made its
 #     own clip look missing and every shot whose position changed was rendered
@@ -382,32 +414,36 @@ refused "a manifest entry that is not one"
 grep -q 'manifest.json is not a storyboard manifest' <<<"$out" ||
   fail "a malformed manifest entry was an AttributeError, not a refusal: $out"
 
-# 20. A plan in a directory with an apostrophe and a space. The approve-with
-#     line printed the bare path, so it was not runnable for exactly the plans
-#     a user keeps in "Jim's build/"; it is quoted for the shell now, and
-#     running it as printed gets past the gate.
-plan="$tmp/jim's build/plan.json"
+# 20. A plan in a directory with an apostrophe, a space and a non-ASCII letter,
+#     checked by a bare-name invocation. The approve-with line printed the bare
+#     path and the bare script name, so it was not runnable for exactly the
+#     plans a user keeps in "Jim's build/"; it names the interpreter and the
+#     script's absolute path and quotes the rest now, and running it as printed
+#     from elsewhere gets past the gate.
+plan="$tmp/jim's büild/plan.json"
 mkdir -p "$(dirname "$plan")"
 reset_plan
 set_shot 1 duration 3
 set_shot 2 duration 3
 set_shot 3 duration 3
-sb check "$plan"
+sb_rel check "$plan"
 [ "$rc" -eq 0 ] || fail "check on a plan in a quoted path exited $rc: $out"
 approve_line
 grep -qE 'GEMINI_API_KEY is not set|google-genai package is not installed' <<<"$out" ||
-  fail "the approve-with line was not runnable with an apostrophe and a space in the path: $out"
+  fail "the approve-with line was not runnable with an apostrophe, a space and a non-ASCII letter in the path: $out"
 
-# 21. The concat listing survives the same apostrophe. The path was written
-#     between bare single quotes, so that directory broke stitch after every
-#     clip had been paid for. Needs ffmpeg for real clips; without it the case
-#     is reported as skipped, not passed.
+# 21. The concat listing survives the same directory name: the apostrophe
+#     (bare single quotes ended the path early) and the non-ASCII letter (the
+#     listing is written as UTF-8, which the demuxer reads, whatever the
+#     locale). Either broke stitch after every clip had been paid for. Needs
+#     ffmpeg for real clips; without it the case is reported as skipped, not
+#     passed.
 if command -v ffmpeg >/dev/null; then
   seed_rendered --real
   sb stitch "$plan"
-  [ "$rc" -eq 0 ] || fail "stitch in a directory with an apostrophe exited $rc: $out"
-  [ -s "$tmp/jim's build/out/morning-build.mp4" ] ||
-    fail "stitch in a directory with an apostrophe wrote no file: $out"
+  [ "$rc" -eq 0 ] || fail "stitch in a directory with an apostrophe and a non-ASCII letter exited $rc: $out"
+  [ -s "$tmp/jim's büild/out/morning-build.mp4" ] ||
+    fail "stitch in a directory with an apostrophe and a non-ASCII letter wrote no file: $out"
 else
   echo "gemini-motion gate tests: case 21 (stitch with an apostrophe in the path) skipped, no ffmpeg"
 fi
