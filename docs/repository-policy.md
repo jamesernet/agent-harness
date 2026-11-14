@@ -14,13 +14,16 @@
   "briefs": "tree",
   "claudeImport": true,
   "strandedExempt": ["backup/"],
-  "mergePolicy": "hold"
+  "mergePolicy": "hold",
+  "hooks": "managed"
 }
 ```
 
 All fields except `schemaVersion` are optional. Profiles are `personal` or `client`. Branch policies are `off`, `remind`, `ask`, or `deny`. `protectedBranches` must be a non-empty array of non-empty strings.
 
 `mergePolicy` resolves through the same four tiers as `branchPolicy`, and `llmctx explain mergePolicy` reports which one answered. Its value is shape-validated, unlike `briefs` and `claudeImport`, because a misspelling should be heard from `repo diff` rather than silently ignored by the skill meant to obey it.
+
+`hooks` is `managed` (default) or `repo-owned`, shape-validated the same way. Its only reader is `repo diff`, and it is described under `core.hooksPath` below.
 
 `irreversiblePolicy` takes the same four values and governs actions that cannot be undone rather than the branch they happen on: force push, hard reset, history rewrite, force branch deletion, remote branch deletion, and a recursive delete whose target resolves outside the repository. Two things differ from `branchPolicy` on purpose. Its built-in default is `ask` for **both** profiles, because "stop and confirm before destroying something" is the same answer in a personal repository and a client engagement, where branch strictness genuinely is a dial. And `remind` is treated as `ask`, because reminding once that a destructive command is destructive and then allowing every one that follows protects nothing.
 
@@ -119,3 +122,10 @@ A separate `policy-enforcement` finding now answers the question that actually m
 - `MISSING`: no branch check was found, or the directory does not exist.
 
 The middle case is the common one, and it is the reason the check exists: guarded and unconfigurable looks identical to configured until someone changes `branchPolicy` and nothing happens.
+
+A repository whose own committed hook is the guard, and deliberately stricter than llmctx policy would be, can say so: `"hooks": "repo-owned"` in `.llmctx.json` (`managed`, the default, means this release installs and refreshes the backstop). With that declared, and `core.hooksPath` naming a directory that exists:
+
+- `git-hook` is `OVERRIDE`: that directory owns the seam, llmctx branch policy is deliberately not consulted, and the hook is refreshed by the repository rather than by the release walk, so it sits outside that signal on purpose;
+- `policy-enforcement` is `OVERRIDE` **only if the evidence grep still finds a branch check there**. No branch check is still `MISSING`, and a directory that does not exist is still `MISSING`. A declaration can say who owns the hook; it can never hide that nothing enforces.
+
+What the key does not do: it does not make llmctx policy apply inside that hook framework, so `branchPolicy` in `.llmctx.json` and `git config llmctx.branchPolicy` stay inert there, and it has no effect when `core.hooksPath` is unset. Its value is shape-validated like `mergePolicy`: a misspelling is a `CONFLICT`, not a silent no-op, because the key exists to end a permanent `UNKNOWN` and a dropped typo would recreate one.

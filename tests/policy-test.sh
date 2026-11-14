@@ -111,6 +111,19 @@ fi
 [[ "$LLMCTX_POLICY_ERROR" == *"invalid mergePolicy"* ]] ||
   fail "the error did not name the key: $LLMCTX_POLICY_ERROR"
 
+# hooks: both values resolve, and a misspelling is loud at validation, because
+# its only reader turns UNKNOWN into OVERRIDE on the strength of the exact value.
+for v in managed repo-owned; do
+  printf '{"schemaVersion":1,"hooks":"%s"}\n' "$v" >"$mrepo/.llmctx.json"
+  llmctx_policy_resolve "$mrepo" || fail "resolve failed for hooks $v: $LLMCTX_POLICY_ERROR"
+done
+printf '%s\n' '{"schemaVersion":1,"hooks":"repo-ownd"}' >"$mrepo/.llmctx.json"
+if llmctx_policy_resolve "$mrepo" 2>/dev/null; then
+  fail "an invalid hooks value resolved instead of erroring"
+fi
+[[ "$LLMCTX_POLICY_ERROR" == *"invalid hooks"* ]] ||
+  fail "the error did not name the hooks key: $LLMCTX_POLICY_ERROR"
+
 # Tier order: repo-local git config outranks the committed file, which
 # outranks global config.
 printf '%s\n' '{"schemaVersion":1,"mergePolicy":"queue"}' >"$mrepo/.llmctx.json"

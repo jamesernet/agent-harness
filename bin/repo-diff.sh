@@ -42,6 +42,7 @@ add_finding() {
 }
 
 if llmctx_policy_resolve "$root"; then
+  policy_valid=1
   profile_status=OK
   branch_status=OK
   protected_status=OK
@@ -52,6 +53,7 @@ if llmctx_policy_resolve "$root"; then
   add_finding branch-policy "$branch_status" "resolved branch policy" "$LLMCTX_BRANCH_POLICY" "$LLMCTX_BRANCH_POLICY_SOURCE" ""
   add_finding protected-branches "$protected_status" "resolved protected branches" "$LLMCTX_PROTECTED_BRANCHES" "$LLMCTX_PROTECTED_BRANCHES_SOURCE" ""
 else
+  policy_valid=0
   add_finding policy CONFLICT "valid schemaVersion $LLMCTX_POLICY_SCHEMA_VERSION policy" "$LLMCTX_POLICY_ERROR" repo-policy "fix or remove $root/.llmctx.json"
 fi
 
@@ -212,7 +214,24 @@ fi
 
 hooks_path="$(git -C "$root" config --get core.hooksPath || true)"
 if [[ -n "$hooks_path" ]]; then
-  add_finding git-hook UNKNOWN "agent-harness branch backstop" "managed by core.hooksPath=$hooks_path" git-local "integrate the branch check through that hook framework"
+  hp_dir="$hooks_path"
+  case "$hp_dir" in /*) ;; *) hp_dir="$root/$hp_dir" ;; esac
+  # A repository may declare that it owns this seam: `"hooks": "repo-owned"` in
+  # .llmctx.json, on the precedent of briefs and claudeImport. It is read only
+  # when the file validated, because an invalid value was reported CONFLICT
+  # above and must not double as a declaration. Ownership is honoured only over
+  # a directory that exists, and it never changes what the evidence grep below
+  # finds: a declared hook with no branch check is still MISSING.
+  hooks_owner=""
+  if [[ "$policy_valid" -eq 1 ]]; then
+    hooks_owner="$(declared hooks)"
+  fi
+  if [[ "$hooks_owner" == "repo-owned" && -d "$hp_dir" ]]; then
+    add_finding git-hook OVERRIDE "agent-harness branch backstop" \
+      "branch check owned by core.hooksPath=$hooks_path; llmctx branch policy deliberately not consulted, and the hook is refreshed by the repository, not by this release" repo-policy ""
+  else
+    add_finding git-hook UNKNOWN "agent-harness branch backstop" "managed by core.hooksPath=$hooks_path" git-local "integrate the branch check through that hook framework"
+  fi
 
   # Do not stop here. Reporting only UNKNOWN and skipping the rest meant a
   # repository with core.hooksPath set and NO branch enforcement at all printed
@@ -221,8 +240,6 @@ if [[ -n "$hooks_path" ]]; then
   # in practice, but none resolves llmctx policy, so .llmctx.json and
   # `git config llmctx.branchPolicy` are inert there. Silence made that
   # indistinguishable from working.
-  hp_dir="$hooks_path"
-  case "$hp_dir" in /*) ;; *) hp_dir="$root/$hp_dir" ;; esac
   if ! [[ -d "$hp_dir" ]]; then
     add_finding policy-enforcement MISSING "branch policy is enforced somewhere" \
       "core.hooksPath points at $hooks_path, which does not exist" git-local \
@@ -231,9 +248,14 @@ if [[ -n "$hooks_path" ]]; then
     add_finding policy-enforcement OK "branch policy is enforced somewhere" \
       "hooks in $hooks_path resolve llmctx policy" git-local ""
   elif grep -rqlE 'symbolic-ref|abbrev-ref|refusing to commit|protected branch' "$hp_dir" 2>/dev/null; then
-    add_finding policy-enforcement UNKNOWN "branch policy is enforced somewhere" \
-      "hooks in $hooks_path check a branch, but not via llmctx policy — .llmctx.json is inert here" git-local \
-      "source bin/lib/policy.sh from that hook, or drop core.hooksPath and use pre-commit.local"
+    if [[ "$hooks_owner" == "repo-owned" ]]; then
+      add_finding policy-enforcement OVERRIDE "branch policy is enforced somewhere" \
+        "hooks in $hooks_path check a branch by the repository's own rules; .llmctx.json branch policy is inert here by declaration" repo-policy ""
+    else
+      add_finding policy-enforcement UNKNOWN "branch policy is enforced somewhere" \
+        "hooks in $hooks_path check a branch, but not via llmctx policy — .llmctx.json is inert here" git-local \
+        "source bin/lib/policy.sh from that hook, or drop core.hooksPath and use pre-commit.local"
+    fi
   else
     add_finding policy-enforcement MISSING "branch policy is enforced somewhere" \
       "no branch check found in $hooks_path" git-local \

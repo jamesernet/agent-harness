@@ -99,6 +99,54 @@ printf '%s\n' '#!/bin/sh' 'git symbolic-ref --short HEAD' >"$hp/.githooks/pre-co
 jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "UNKNOWN")' "$tmp/hp-own.json" >/dev/null ||
   fail "a foreign branch check was not distinguished from none at all"
 
+# --- a repository that owns a stricter hook can say so (#118) ----------------
+#
+# Declared as `"hooks": "repo-owned"`. git-hook becomes OVERRIDE, and
+# policy-enforcement becomes OVERRIDE only when the evidence grep still finds a
+# branch check in that directory. A declaration can never hide the absence of
+# enforcement, and a misspelt value is heard rather than silently dropped.
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN")' "$tmp/hp-own.json" >/dev/null ||
+  fail "undeclared core.hooksPath no longer reports git-hook UNKNOWN"
+
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"repo-owned"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-declared.json" ||
+  fail "a declared repo-owned hook with a branch check was not compliant: $(jq -c '[.findings[] | select(.status != "OK")]' "$tmp/hp-declared.json")"
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "OVERRIDE" and (.actual | test("\\.githooks")))' "$tmp/hp-declared.json" >/dev/null ||
+  fail "a declared repo-owned hook was not recorded as an override on git-hook: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/hp-declared.json")"
+jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "OVERRIDE")' "$tmp/hp-declared.json" >/dev/null ||
+  fail "a declared repo-owned branch check was not recorded as an override on policy-enforcement: $(jq -c '[.findings[] | select(.id == "policy-enforcement")]' "$tmp/hp-declared.json")"
+jq -e '.compliant == true' "$tmp/hp-declared.json" >/dev/null ||
+  fail "the motivating repository did not report compliant once declared"
+
+# Declared, but the hook checks no branch: ownership is honoured, the absence
+# of enforcement is still MISSING, and the run is non-compliant.
+printf '%s\n' '#!/bin/sh' 'echo docs build' >"$hp/.githooks/pre-commit"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-declared-none.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "MISSING")' "$tmp/hp-declared-none.json" >/dev/null ||
+  fail "a declaration hid the absence of a branch check"
+jq -e '.compliant == false' "$tmp/hp-declared-none.json" >/dev/null ||
+  fail "a declared hook with no branch check was reported compliant"
+
+# Declared, but the directory core.hooksPath names does not exist: MISSING as
+# before, and git-hook does not claim an override over a directory that is not there.
+rm -rf "$hp/.githooks"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-declared-missing.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "MISSING" and (.actual | test("does not exist")))' "$tmp/hp-declared-missing.json" >/dev/null ||
+  fail "a declaration hid a missing hooks directory"
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN")' "$tmp/hp-declared-missing.json" >/dev/null ||
+  fail "git-hook claimed an override over a hooks directory that does not exist"
+
+# A misspelt value is a policy CONFLICT. The key exists to turn UNKNOWN into
+# OVERRIDE, so a typo that was silently ignored would recreate the permanent
+# UNKNOWN this key removes, in a repository that believes it declared a position.
+mkdir -p "$hp/.githooks" && printf '%s\n' '#!/bin/sh' 'git symbolic-ref --short HEAD' >"$hp/.githooks/pre-commit"
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"repo-ownd"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-typo.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "policy" and .status == "CONFLICT" and (.actual | test("hooks")))' "$tmp/hp-typo.json" >/dev/null ||
+  fail "a misspelt hooks value was not reported as a policy CONFLICT: $(jq -c '[.findings[] | select(.id == "policy")]' "$tmp/hp-typo.json")"
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN")' "$tmp/hp-typo.json" >/dev/null ||
+  fail "a misspelt hooks value was treated as a declaration"
+
 # --- a scaffold shim is MISSING, a foreign hook is UNKNOWN -------------------
 #
 # Both used to report one undifferentiated UNKNOWN. The shim is asking to be

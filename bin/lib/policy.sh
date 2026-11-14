@@ -21,7 +21,7 @@ llmctx_policy_file() {
 }
 
 llmctx_policy_validate() {
-  local root="$1" file schema profile branch_policy irreversible_policy merge_policy invalid_branch invalid_environment
+  local root="$1" file schema profile branch_policy irreversible_policy merge_policy invalid_branch invalid_environment hooks_owner
   file="$(llmctx_policy_file "$root")"
   LLMCTX_POLICY_ERROR=""
   [[ -f "$file" ]] || return 0
@@ -77,6 +77,20 @@ llmctx_policy_validate() {
     "" | hold | review-and-merge | queue) ;;
     *)
       llmctx_policy_error "invalid mergePolicy in $file: $merge_policy"
+      return 1
+      ;;
+  esac
+
+  # hooks is validated here for the same reason mergePolicy is. Its only reader
+  # is `repo diff`, where `repo-owned` turns the permanent UNKNOWN of a
+  # core.hooksPath repository into a declared OVERRIDE; a misspelling that was
+  # silently dropped would leave that repository believing it had declared a
+  # position while the report stayed exactly as before.
+  hooks_owner="$(jq -r '.hooks // empty' "$file")"
+  case "$hooks_owner" in
+    "" | managed | repo-owned) ;;
+    *)
+      llmctx_policy_error "invalid hooks in $file: $hooks_owner"
       return 1
       ;;
   esac
