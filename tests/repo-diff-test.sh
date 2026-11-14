@@ -146,6 +146,19 @@ jq -e 'any(.findings[]; .id == "policy" and .status == "CONFLICT" and (.actual |
   fail "a misspelt hooks value was not reported as a policy CONFLICT: $(jq -c '[.findings[] | select(.id == "policy")]' "$tmp/hp-typo.json")"
 jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN")' "$tmp/hp-typo.json" >/dev/null ||
   fail "a misspelt hooks value was treated as a declaration"
+jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "UNKNOWN")' "$tmp/hp-typo.json" >/dev/null ||
+  fail "a misspelt hooks value flipped policy-enforcement to an override"
+
+# Declared, but core.hooksPath is unset in this clone: the declaration says the
+# repository's hooks are the guard and git is running the managed path instead.
+# Silence here would tell the repository to install the backstop it declined.
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"repo-owned"}' >"$hp/.llmctx.json"
+git -C "$hp" config --unset core.hooksPath
+"$CLI" repo diff "$hp" --json >"$tmp/hp-declared-unset.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("core.hooksPath is unset")))' "$tmp/hp-declared-unset.json" >/dev/null ||
+  fail "a repo-owned declaration with core.hooksPath unset was not reported: $(jq -c '[.findings[] | select(.id == "hooks-owner" or .id == "git-hook")]' "$tmp/hp-declared-unset.json")"
+jq -e '.compliant == false' "$tmp/hp-declared-unset.json" >/dev/null ||
+  fail "a contradicted hooks declaration was reported compliant"
 
 # --- a scaffold shim is MISSING, a foreign hook is UNKNOWN -------------------
 #

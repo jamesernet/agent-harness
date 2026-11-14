@@ -42,7 +42,6 @@ add_finding() {
 }
 
 if llmctx_policy_resolve "$root"; then
-  policy_valid=1
   profile_status=OK
   branch_status=OK
   protected_status=OK
@@ -53,7 +52,6 @@ if llmctx_policy_resolve "$root"; then
   add_finding branch-policy "$branch_status" "resolved branch policy" "$LLMCTX_BRANCH_POLICY" "$LLMCTX_BRANCH_POLICY_SOURCE" ""
   add_finding protected-branches "$protected_status" "resolved protected branches" "$LLMCTX_PROTECTED_BRANCHES" "$LLMCTX_PROTECTED_BRANCHES_SOURCE" ""
 else
-  policy_valid=0
   add_finding policy CONFLICT "valid schemaVersion $LLMCTX_POLICY_SCHEMA_VERSION policy" "$LLMCTX_POLICY_ERROR" repo-policy "fix or remove $root/.llmctx.json"
 fi
 
@@ -212,23 +210,23 @@ else
   fi
 fi
 
+# A repository may declare that it owns the hook seam: `"hooks": "repo-owned"` in
+# .llmctx.json, on the precedent of briefs and claudeImport. Only the exact value
+# counts, so a misspelling (already reported CONFLICT above) cannot double as a
+# declaration, and like its siblings the key is read whether or not the rest of
+# the file validated. Ownership is honoured only over a directory core.hooksPath
+# names and that exists, and it never changes what the evidence grep finds: a
+# declared hook with no branch check is still MISSING. The OVERRIDE below claims
+# ownership of the framework, not that a branch check exists; the
+# policy-enforcement row says that.
+hooks_owner="$(declared hooks)"
 hooks_path="$(git -C "$root" config --get core.hooksPath || true)"
 if [[ -n "$hooks_path" ]]; then
   hp_dir="$hooks_path"
   case "$hp_dir" in /*) ;; *) hp_dir="$root/$hp_dir" ;; esac
-  # A repository may declare that it owns this seam: `"hooks": "repo-owned"` in
-  # .llmctx.json, on the precedent of briefs and claudeImport. It is read only
-  # when the file validated, because an invalid value was reported CONFLICT
-  # above and must not double as a declaration. Ownership is honoured only over
-  # a directory that exists, and it never changes what the evidence grep below
-  # finds: a declared hook with no branch check is still MISSING.
-  hooks_owner=""
-  if [[ "$policy_valid" -eq 1 ]]; then
-    hooks_owner="$(declared hooks)"
-  fi
   if [[ "$hooks_owner" == "repo-owned" && -d "$hp_dir" ]]; then
     add_finding git-hook OVERRIDE "agent-harness branch backstop" \
-      "branch check owned by core.hooksPath=$hooks_path; llmctx branch policy deliberately not consulted, and the hook is refreshed by the repository, not by this release" repo-policy ""
+      "hook framework owned by core.hooksPath=$hooks_path; llmctx branch policy deliberately not consulted, and the hooks are refreshed by the repository, not by this release" repo-policy ""
   else
     add_finding git-hook UNKNOWN "agent-harness branch backstop" "managed by core.hooksPath=$hooks_path" git-local "integrate the branch check through that hook framework"
   fi
@@ -262,6 +260,16 @@ if [[ -n "$hooks_path" ]]; then
       "add a branch check to that hook framework, or unset core.hooksPath"
   fi
 else
+  # The declaration and this clone disagree: the repository says its own hooks
+  # are the guard, and git is running the managed path below instead, because
+  # core.hooksPath is local config that a fresh clone does not carry. Reporting
+  # only the managed state here would tell the repository to install the
+  # backstop it just declared it does not want.
+  if [[ "$hooks_owner" == "repo-owned" ]]; then
+    add_finding hooks-owner CONFLICT "core.hooksPath names the repository's hooks when hooks is repo-owned" \
+      "hooks=repo-owned is declared, but core.hooksPath is unset in this clone, so git runs the hooks below, not the repository's" git-local \
+      "set core.hooksPath to the repository's hooks directory, or remove \"hooks\": \"repo-owned\" from .llmctx.json"
+  fi
   hooks_dir="$(git -C "$root" rev-parse --git-path hooks)"
   case "$hooks_dir" in /*) ;; *) hooks_dir="$root/$hooks_dir" ;; esac
   installed_hook="$hooks_dir/pre-commit"

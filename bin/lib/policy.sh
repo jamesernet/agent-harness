@@ -85,8 +85,10 @@ llmctx_policy_validate() {
   # is `repo diff`, where `repo-owned` turns the permanent UNKNOWN of a
   # core.hooksPath repository into a declared OVERRIDE; a misspelling that was
   # silently dropped would leave that repository believing it had declared a
-  # position while the report stayed exactly as before.
-  hooks_owner="$(jq -r '.hooks // empty' "$file")"
+  # position while the report stayed exactly as before. `has`, not `//`: jq's
+  # `//` yields its right-hand side for false as well as null, so a boolean
+  # would read as absent, pass here, and then be ignored downstream.
+  hooks_owner="$(jq -r 'if has("hooks") then (.hooks | tostring) else empty end' "$file")"
   case "$hooks_owner" in
     "" | managed | repo-owned) ;;
     *)

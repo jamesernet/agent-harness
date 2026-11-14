@@ -103,11 +103,11 @@ Run `bin/llmctx repo diff /path/to/repo`. It checks policy resolution, canonical
 Statuses are:
 
 - `OK`: matches the resolved standard;
-- `OVERRIDE`: an intentional repository-local Git override;
+- `OVERRIDE`: an intentional repository-local Git override, or a convention the repository declared in `.llmctx.json`;
 - `MISSING`: a required convention is absent;
-- `CONFLICT`: policy is invalid, or the repository's location is unsafe for Git;
+- `CONFLICT`: policy is invalid, a declaration disagrees with the repository's state, or the repository's location is unsafe for Git;
 - `STALE`: an installed managed component differs from this release;
-- `UNKNOWN`: another hook framework or foreign component owns the seam. A `project-scaffold` placeholder hook (`scaffold-hook-shim`) is not foreign — it exists to be replaced by `bin/install-git-hooks.sh` — so it is reported `MISSING`, with that command as the remediation.
+- `UNKNOWN`: another hook framework or foreign component owns the seam and the repository has not declared it (see `core.hooksPath` below). A `project-scaffold` placeholder hook (`scaffold-hook-shim`) is not foreign — it exists to be replaced by `bin/install-git-hooks.sh` — so it is reported `MISSING`, with that command as the remediation.
 
 `MISSING`, `CONFLICT`, and `STALE` make the command non-compliant. `OVERRIDE` and `UNKNOWN` are reported without pretending the tool owns an external framework.
 
@@ -125,7 +125,7 @@ The middle case is the common one, and it is the reason the check exists: guarde
 
 A repository whose own committed hook is the guard, and deliberately stricter than llmctx policy would be, can say so: `"hooks": "repo-owned"` in `.llmctx.json` (`managed`, the default, means this release installs and refreshes the backstop). With that declared, and `core.hooksPath` naming a directory that exists:
 
-- `git-hook` is `OVERRIDE`: that directory owns the seam, llmctx branch policy is deliberately not consulted, and the hook is refreshed by the repository rather than by the release walk, so it sits outside that signal on purpose;
+- `git-hook` is `OVERRIDE`: that directory owns the hook framework, llmctx branch policy is deliberately not consulted, and the hooks are refreshed by the repository rather than by the release walk, so it sits outside that signal on purpose. The row claims ownership, not that a branch check exists; the next row says that;
 - `policy-enforcement` is `OVERRIDE` **only if the evidence grep still finds a branch check there**. No branch check is still `MISSING`, and a directory that does not exist is still `MISSING`. A declaration can say who owns the hook; it can never hide that nothing enforces.
 
-What the key does not do: it does not make llmctx policy apply inside that hook framework, so `branchPolicy` in `.llmctx.json` and `git config llmctx.branchPolicy` stay inert there, and it has no effect when `core.hooksPath` is unset. Its value is shape-validated like `mergePolicy`: a misspelling is a `CONFLICT`, not a silent no-op, because the key exists to end a permanent `UNKNOWN` and a dropped typo would recreate one.
+What the key does not do: it does not make llmctx policy apply inside that hook framework, so `branchPolicy` in `.llmctx.json` and `git config llmctx.branchPolicy` stay inert there. When `core.hooksPath` is unset in a clone that declares it, `repo diff` reports a `hooks-owner` `CONFLICT`: the declaration says the repository's hooks are the guard, and git is running the managed ones instead, which is the one state the declaration must not paper over. Its value is shape-validated like `mergePolicy`: a misspelling is a `CONFLICT`, not a silent no-op, because the key exists to end a permanent `UNKNOWN` and a dropped typo would recreate one.

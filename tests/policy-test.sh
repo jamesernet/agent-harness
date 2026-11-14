@@ -123,6 +123,13 @@ if llmctx_policy_resolve "$mrepo" 2>/dev/null; then
 fi
 [[ "$LLMCTX_POLICY_ERROR" == *"invalid hooks"* ]] ||
   fail "the error did not name the hooks key: $LLMCTX_POLICY_ERROR"
+# A boolean is not absent: jq's `//` would read `false` as unset and let it pass.
+printf '%s\n' '{"schemaVersion":1,"hooks":false}' >"$mrepo/.llmctx.json"
+if llmctx_policy_resolve "$mrepo" 2>/dev/null; then
+  fail "a boolean hooks value resolved instead of erroring"
+fi
+[[ "$LLMCTX_POLICY_ERROR" == *"invalid hooks"* ]] ||
+  fail "the error did not name the hooks key for a boolean: $LLMCTX_POLICY_ERROR"
 
 # Tier order: repo-local git config outranks the committed file, which
 # outranks global config.
