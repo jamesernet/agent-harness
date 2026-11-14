@@ -73,7 +73,10 @@ declared() { # declared <key> -> value, empty when unset or unreadable
   # the left is null OR false, so `"claudeImport": false` — the only value that
   # key is ever set to — read back as unset and the opt-out silently did
   # nothing. Distinguishing "absent" from "present and false" is the whole job.
-  jq -r --arg k "$1" 'if has($k) then (.[$k] | tostring) else empty end' "$policy_file" 2>/dev/null
+  # `|| true`: on a file that is not JSON, jq fails, and under set -e a failing
+  # command substitution aborted the whole run before a single finding printed,
+  # hiding the CONFLICT the resolver had just produced about that very file.
+  jq -r --arg k "$1" 'if has($k) then (.[$k] | tostring) else empty end' "$policy_file" 2>/dev/null || true
 }
 
 claude_import="$(declared claudeImport)"
@@ -211,22 +214,36 @@ else
 fi
 
 # A repository may declare that it owns the hook seam: `"hooks": "repo-owned"` in
-# .llmctx.json, on the precedent of briefs and claudeImport. Only the exact value
-# counts, so a misspelling (already reported CONFLICT above) cannot double as a
-# declaration, and like its siblings the key is read whether or not the rest of
-# the file validated. Ownership is honoured only over a directory core.hooksPath
-# names and that exists, and it never changes what the evidence grep finds: a
-# declared hook with no branch check is still MISSING. The OVERRIDE below claims
-# ownership of the framework, not that a branch check exists; the
-# policy-enforcement row says that.
+# .llmctx.json, on the precedent of briefs and claudeImport. The value is
+# validated HERE, not in bin/lib/policy.sh, on purpose: the managed hooks source
+# that resolver and skip their branch check when policy does not resolve, so a
+# key only this checker reads must not be able to switch the guard off with a
+# typo. A bad value is a CONFLICT of its own and then reads as undeclared.
+# Ownership is honoured only over a directory core.hooksPath names and that
+# exists, and it never changes what the evidence grep finds: a declared hook
+# with no branch check is still MISSING. The OVERRIDE below claims ownership of
+# the framework and nothing else; whether a branch check exists, and whether it
+# consults llmctx policy, is the policy-enforcement row's to say.
 hooks_owner="$(declared hooks)"
-hooks_path="$(git -C "$root" config --get core.hooksPath || true)"
+case "$hooks_owner" in
+  "" | managed | repo-owned) ;;
+  *)
+    add_finding hooks-owner CONFLICT "hooks is managed or repo-owned" \
+      "invalid hooks value in .llmctx.json: $hooks_owner" repo-policy \
+      "set \"hooks\" to \"managed\" or \"repo-owned\" in .llmctx.json, or remove it"
+    hooks_owner=""
+    ;;
+esac
+# --type=path expands a leading ~ the way git does when it runs these hooks; the
+# plain read tested ~/hk as $root/~/hk and reported an existing directory as
+# missing, the tilde class 9ef9b00 fixed elsewhere.
+hooks_path="$(git -C "$root" config --type=path --get core.hooksPath || true)"
 if [[ -n "$hooks_path" ]]; then
   hp_dir="$hooks_path"
   case "$hp_dir" in /*) ;; *) hp_dir="$root/$hp_dir" ;; esac
   if [[ "$hooks_owner" == "repo-owned" && -d "$hp_dir" ]]; then
     add_finding git-hook OVERRIDE "agent-harness branch backstop" \
-      "hook framework owned by core.hooksPath=$hooks_path; llmctx branch policy deliberately not consulted, and the hooks are refreshed by the repository, not by this release" repo-policy ""
+      "hook framework owned by core.hooksPath=$hooks_path, refreshed by the repository, not by this release" repo-policy ""
   else
     add_finding git-hook UNKNOWN "agent-harness branch backstop" "managed by core.hooksPath=$hooks_path" git-local "integrate the branch check through that hook framework"
   fi
@@ -267,7 +284,7 @@ else
   # backstop it just declared it does not want.
   if [[ "$hooks_owner" == "repo-owned" ]]; then
     add_finding hooks-owner CONFLICT "core.hooksPath names the repository's hooks when hooks is repo-owned" \
-      "hooks=repo-owned is declared, but core.hooksPath is unset in this clone, so git runs the hooks below, not the repository's" git-local \
+      "hooks=repo-owned is declared, but core.hooksPath is unset in this clone; repo-owned names a hook framework the repository commits and points core.hooksPath at, and git is running the hooks below instead" git-local \
       "set core.hooksPath to the repository's hooks directory, or remove \"hooks\": \"repo-owned\" from .llmctx.json"
   fi
   hooks_dir="$(git -C "$root" rev-parse --git-path hooks)"
