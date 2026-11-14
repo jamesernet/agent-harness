@@ -297,23 +297,31 @@ def extract_code(text: str, prefer: tuple[str, ...] = ()) -> tuple[str, str]:
     return body.strip("\n"), lang.lower()
 
 
+def ignored_dir(path: Path) -> Path:
+    """`path`, created if absent, with a .gitignore that keeps it out of git.
+
+    The protection has to arrive with the directory rather than after it, so
+    every directory this skill fills with local state -- the run log, a
+    storyboard's clips -- is created through here.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    ignore = path / ".gitignore"
+    if not ignore.exists():
+        ignore.write_text("# written by the gemini-motion skill: this is local run state\n*\n",
+                          encoding="utf-8")
+    return path
+
+
 def log_dir() -> Path:
     """./.gemini-motion/, created if absent, ignoring itself.
 
     The directory holds whole prompts and the raw model reply. Keeping it out
     of git was documented in references/setup.md and nothing enforced it, which
-    is a line in a file nobody reads at the moment it matters. The protection
-    has to arrive with the directory rather than after it, so every writer goes
-    through here -- the run log is not the only one, and the other writer ran
-    first.
+    is a line in a file nobody reads at the moment it matters. So every writer
+    goes through here -- the run log is not the only one, and the other writer
+    ran first.
     """
-    d = Path.cwd() / LOG_DIR_NAME
-    d.mkdir(exist_ok=True)
-    ignore = d / ".gitignore"
-    if not ignore.exists():
-        ignore.write_text("# written by the gemini-motion skill: this is local run state\n*\n",
-                          encoding="utf-8")
-    return d
+    return ignored_dir(Path.cwd() / LOG_DIR_NAME)
 
 
 def log_run(kind: str, **fields) -> Path:
