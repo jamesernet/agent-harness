@@ -182,6 +182,17 @@ sb() {
 refused() {
   [ "$rc" -ne 0 ] || fail "$1 printed a refusal but exited 0: $out"
 }
+# approve_line runs the command the last sb call printed after "approve with:",
+# exactly as printed and with no key, into $out and $rc. It proves the line is
+# runnable as shown (quoting included) and that its token is the one render
+# recomputes, by getting past the gate.
+approve_line() {
+  local cmd
+  cmd="$(sed -n 's/^approve with: //p' <<<"$out")"
+  [ -n "$cmd" ] || fail "no approve-with line to run in: $out"
+  rc=0
+  out="$(env -u GEMINI_API_KEY -u GOOGLE_API_KEY bash -c "$cmd" 2>&1)" || rc=$?
+}
 
 # 11. No approval: check prices every pending shot, the total, the dollar
 #     estimate and the token to approve with, renders nothing, and exits 0.
@@ -197,6 +208,9 @@ grep -q -- 'approve with: .*--approve 18s@720p' <<<"$out" ||
   fail "check did not print the approval token: $out"
 [ ! -e "$tmp/out" ] ||
   fail "check wrote an out/ directory; pricing must not leave files behind"
+approve_line
+grep -qE 'GEMINI_API_KEY is not set|google-genai package is not installed' <<<"$out" ||
+  fail "the approve-with line was not runnable as printed: $out"
 
 # 12. Seconds alone are refused by name. They used to BE the approval, and the
 #     plan's resolution could change under them.
@@ -246,6 +260,13 @@ grep -q "resolution '480p' is not one of 360p, 720p, 1080p, 4k" <<<"$out" ||
   fail "an unpriced resolution was not refused by name: $out"
 
 reset_plan
+set_plan resolution '["720p"]'
+sb check "$plan"
+refused "a resolution that is not text"
+grep -q "is not one of 360p, 720p, 1080p, 4k" <<<"$out" ||
+  fail "a list for a resolution was a TypeError, not a refusal: $out"
+
+reset_plan
 set_shot 1 id '"desk\n"'
 sb check "$plan"
 refused "an id ending in a newline"
@@ -267,6 +288,23 @@ sb check "$plan"
 refused "an SVG reference"
 grep -q 'does not accept image/svg+xml' <<<"$out" ||
   fail "an SVG reference was not refused before pricing: $out"
+
+# An image that exists but cannot be read passes the stat-only checks and was
+# an OSError traceback out of pricing. Root reads anything, so the check is
+# reported as skipped there rather than passed.
+if [ "$(id -u)" -ne 0 ]; then
+  reset_plan
+  printf 'x' >"$tmp/locked.png"
+  chmod 000 "$tmp/locked.png"
+  set_shot 1 first_frame '"locked.png"'
+  sb check "$plan"
+  chmod 644 "$tmp/locked.png"
+  refused "an unreadable image"
+  grep -q 'cannot read image' <<<"$out" ||
+    fail "an unreadable image was a traceback, not a refusal: $out"
+else
+  echo "gemini-motion gate tests: the unreadable-image check skipped (running as root)"
+fi
 
 # 16. A field of the wrong type is refused by name, not by traceback: a numeric
 #     prompt crashed in full_prompt, a null style crashed on .strip(), and a
@@ -336,25 +374,68 @@ refused "a malformed manifest"
 grep -q 'manifest.json is not a storyboard manifest' <<<"$out" ||
   fail "a malformed manifest was not refused by name: $out"
 
-# 20. The concat listing survives an apostrophe in the plan's directory. The
-#     path was written between bare single quotes, so a directory like "Jim's
-#     build" broke stitch after every clip had been paid for. Needs ffmpeg for
-#     real clips; without it the case is reported as skipped, not passed.
+reset_plan
+mkdir -p "$tmp/out"
+echo '{"shots": {"desk": "x"}}' >"$tmp/out/manifest.json"
+sb check "$plan"
+refused "a manifest entry that is not one"
+grep -q 'manifest.json is not a storyboard manifest' <<<"$out" ||
+  fail "a malformed manifest entry was an AttributeError, not a refusal: $out"
+
+# 20. A plan in a directory with an apostrophe and a space. The approve-with
+#     line printed the bare path, so it was not runnable for exactly the plans
+#     a user keeps in "Jim's build/"; it is quoted for the shell now, and
+#     running it as printed gets past the gate.
+plan="$tmp/jim's build/plan.json"
+mkdir -p "$(dirname "$plan")"
+reset_plan
+set_shot 1 duration 3
+set_shot 2 duration 3
+set_shot 3 duration 3
+sb check "$plan"
+[ "$rc" -eq 0 ] || fail "check on a plan in a quoted path exited $rc: $out"
+approve_line
+grep -qE 'GEMINI_API_KEY is not set|google-genai package is not installed' <<<"$out" ||
+  fail "the approve-with line was not runnable with an apostrophe and a space in the path: $out"
+
+# 21. The concat listing survives the same apostrophe. The path was written
+#     between bare single quotes, so that directory broke stitch after every
+#     clip had been paid for. Needs ffmpeg for real clips; without it the case
+#     is reported as skipped, not passed.
 if command -v ffmpeg >/dev/null; then
-  plan="$tmp/jim's build/plan.json"
-  mkdir -p "$(dirname "$plan")"
-  reset_plan
-  set_shot 1 duration 3
-  set_shot 2 duration 3
-  set_shot 3 duration 3
   seed_rendered --real
   sb stitch "$plan"
   [ "$rc" -eq 0 ] || fail "stitch in a directory with an apostrophe exited $rc: $out"
   [ -s "$tmp/jim's build/out/morning-build.mp4" ] ||
     fail "stitch in a directory with an apostrophe wrote no file: $out"
-  plan="$tmp/plan.json"
 else
-  echo "gemini-motion gate tests: case 20 (stitch with an apostrophe in the path) skipped, no ffmpeg"
+  echo "gemini-motion gate tests: case 21 (stitch with an apostrophe in the path) skipped, no ffmpeg"
 fi
+plan="$tmp/plan.json"
+
+# 22. render without --approve is the gate as generate_video.py has it: it
+#     prices what is pending, prints the token, refuses, and writes nothing. A
+#     user can go straight to render and still sees the price first.
+reset_plan
+sb render "$plan"
+refused "an unapproved render"
+grep -q 'to render: 3 shots, 18s at 720p, about \$1.80' <<<"$out" ||
+  fail "an unapproved render did not price the plan: $out"
+grep -q -- 'approve with: .*--approve 18s@720p' <<<"$out" ||
+  fail "an unapproved render did not print the approval token: $out"
+[ ! -e "$tmp/out" ] ||
+  fail "an unapproved render wrote out/: $out"
+
+# 23. render with nothing pending is a no-op that exits 0, token or not: it is
+#     the natural resume command after an interrupted run, and it used to fail
+#     in argparse because --approve was required.
+reset_plan
+seed_rendered
+sb render "$plan"
+[ "$rc" -eq 0 ] || fail "render with nothing pending exited $rc: $out"
+grep -q 'nothing to render -- every selected shot is current' <<<"$out" ||
+  fail "render with nothing pending did not say so: $out"
+sb render "$plan" --approve 18s@720p
+[ "$rc" -eq 0 ] || fail "render with nothing pending and a token exited $rc: $out"
 
 echo "gemini-motion gate tests: passed"

@@ -58,9 +58,11 @@ money.
 | `last_frame` | no | image the shot ends on; needs `first_frame`; Omni interpolates between the two |
 | `images` | no | reference images for a subject, product or style; refer to them in the prompt as `<IMAGE_REF_0>`, `<IMAGE_REF_1>` in list order |
 
-Images are PNG, JPEG, WebP, HEIC or HEIF. `check` opens every one the way the
-render will, so an SVG, a GIF, a missing path or an empty file (what a failed
-download leaves) is refused by name before anything is priced, not at the API.
+Images are PNG, JPEG, WebP, HEIC or HEIF. `check` applies the render's own
+rules to every one (type by extension, present, not empty) and reads each file
+once to hash it, so an SVG, a GIF, a missing path, an empty file (what a failed
+download leaves) or an unreadable one is refused by name before anything is
+priced, not at the API.
 
 ## Writing a shot prompt
 
@@ -107,6 +109,11 @@ python3 <skill>/scripts/storyboard.py render plan.json --approve 18s@720p
 Seconds alone are refused by name; a plan edited to a higher resolution after
 `check` is refused on the old token. Re-run `check` and ask again rather than
 adjusting the token yourself.
+
+Without `--approve`, `render` prints the same lines `check` prints and refuses,
+so going straight to `render` still shows the price first. With nothing pending
+it says so and exits 0, which makes it the resume command after an interrupted
+run.
 
 Rendering is resumable and incremental. `out/manifest.json` records what each
 clip was rendered from (model, resolution, aspect, full prompt, duration, image

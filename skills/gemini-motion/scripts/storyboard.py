@@ -6,7 +6,8 @@ the plan against Omni's limits, prices what is missing, renders after the exact
 approval, and records what it did.
 
   python3 storyboard.py check  plan.json                      # validate, price, print the token
-  python3 storyboard.py render plan.json --approve 18s@720p   # the token `check` printed
+  python3 storyboard.py render plan.json                      # the same lines, then refuse to render
+  python3 storyboard.py render plan.json --approve 18s@720p   # the token the line above printed
   python3 storyboard.py render plan.json --approve 8s@720p --only desk
   python3 storyboard.py stitch plan.json                      # ffmpeg concat into out/<slug>.mp4
 
@@ -32,6 +33,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -69,7 +71,7 @@ OUT_DIR_NAME = "out"
 # --- the plan ---------------------------------------------------------------
 
 
-def validate(plan, base: Path) -> list[str]:
+def validate(plan) -> list[str]:
     """Everything wrong with a plan, as messages that name the limit crossed.
 
     Fields a plan does not take are refused rather than ignored: a `model` or
@@ -94,7 +96,7 @@ def validate(plan, base: Path) -> list[str]:
     if "style" in plan and not isinstance(plan["style"], str):
         errs.append("style must be text; it is appended to every shot prompt")
     res = plan["resolution"]
-    if res not in VIDEO_RATES_USD:
+    if not isinstance(res, str) or res not in VIDEO_RATES_USD:
         errs.append(f"resolution {res!r} is not one of {', '.join(VIDEO_RATES_USD)}; "
                     "one per plan, and it sets the per-second rate")
     if plan.get("aspect_ratio", ASPECTS[0]) not in ASPECTS:
@@ -154,8 +156,9 @@ def check_images(plan: dict, base: Path) -> None:
     """Apply the render's own image rules to every image; check_image dies on the first bad one.
 
     That is where an SVG, a GIF, a missing file or an empty one is refused,
-    with the type the model accepts named, before any shot is priced. Nothing
-    is read: the checks are a stat() each.
+    with the type the model accepts named, before any shot is priced. These
+    checks are a stat() each; the contents are read once, by content_hash,
+    when the shots are priced against the manifest.
     """
     for shot in plan["shots"]:
         for p in shot_images(shot):
@@ -169,7 +172,7 @@ def load_plan(path: str) -> tuple[dict, Path]:
     except (OSError, json.JSONDecodeError) as e:
         die(f"cannot read plan {plan_path}: {e}")
     base = plan_path.parent
-    errors = validate(plan, base)
+    errors = validate(plan)
     if errors:
         for e in errors:
             print(f"plan: {e}", file=sys.stderr)
@@ -197,7 +200,11 @@ def full_prompt(plan: dict, shot: dict) -> str:
 @lru_cache(maxsize=None)
 def content_hash(path: Path) -> str:
     """sha256 of a file's bytes, read once per run however many shots name it."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as e:
+        die(f"cannot read image {path}: {e.strerror or e}")
+        return ""  # unreachable: die() exits
 
 
 def spec_hash(plan: dict, shot: dict, base: Path) -> str:
@@ -237,10 +244,12 @@ def load_manifest(base: Path) -> dict:
         manifest = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         manifest = None
-    if not isinstance(manifest, dict) or not isinstance(manifest.get("shots"), dict):
-        die(f"{p} is not a storyboard manifest (a JSON object with a 'shots' table); "
-            "repair it or move it aside before rendering -- without it every shot is "
-            "priced again")
+    shots = manifest.get("shots") if isinstance(manifest, dict) else None
+    if not isinstance(shots, dict) or not all(
+            isinstance(e, dict) and isinstance(e.get("spec"), str) for e in shots.values()):
+        die(f"{p} is not a storyboard manifest (a JSON object with a 'shots' table whose "
+            "entries carry a 'spec' hash); repair it or move it aside before rendering -- "
+            "without it every shot is priced again")
     return manifest
 
 
@@ -272,10 +281,8 @@ def pending(plan: dict, base: Path, only: set[str]) -> list[tuple[int, dict, str
 # --- commands ----------------------------------------------------------------
 
 
-def cmd_check(args) -> int:
-    plan, base = load_plan(args.plan)
-    only = selected(plan, args.only)
-    todo = pending(plan, base, only)
+def report(plan: dict, todo: list, only: set[str], plan_arg: str) -> None:
+    """What check prints, and what an unapproved render prints before refusing."""
     pending_ids = {s["id"] for _, s, _ in todo}
     res = plan["resolution"]
     print(f"plan: {plan['title']} -- {len(plan['shots'])} shots, "
@@ -290,12 +297,22 @@ def cmd_check(args) -> int:
         print(f"  {i:02d} {shot['id']:<20} {shot['duration']:>2}s{note}")
     if not todo:
         print("to render: nothing -- every selected shot is current")
-        return 0
+        return
     total = sum(s["duration"] for _, s, _ in todo)
     print(f"to render: {len(todo)} shots, {total}s at {res}, about ${total * VIDEO_RATES_USD[res]:.2f}")
-    flag = f" --only {' '.join(sorted(only))}" if only else ""
-    print(f"approve with: {Path(sys.argv[0]).name} render {args.plan}{flag} "
-          f"--approve {approval_token(total, res)}")
+    # Runnable as printed: the script as it was invoked, and every path and id
+    # quoted for the shell -- a plan in "Jim's build/" is the ordinary case.
+    cmd = [shlex.quote(sys.argv[0]), "render", shlex.quote(plan_arg)]
+    if only:
+        cmd += ["--only", *(shlex.quote(i) for i in sorted(only))]
+    cmd += ["--approve", approval_token(total, res)]
+    print("approve with: " + " ".join(cmd))
+
+
+def cmd_check(args) -> int:
+    plan, base = load_plan(args.plan)
+    only = selected(plan, args.only)
+    report(plan, pending(plan, base, only), only, args.plan)
     return 0
 
 
@@ -306,10 +323,15 @@ def cmd_render(args) -> int:
     if not todo:
         print("nothing to render -- every selected shot is current")
         return 0
+    if args.approve is None:
+        # The gate as generate_video.py has it: price, print the token, refuse.
+        # Nothing is written and no client is made.
+        report(plan, todo, only, args.plan)
+        return 2
     res = plan["resolution"]
     total = sum(s["duration"] for _, s, _ in todo)
     # The token is recomputed from the plan on disk, so a plan edited after
-    # `check` printed it no longer matches, and the run stops here.
+    # the price was shown no longer matches, and the run stops here.
     require_approval(args.approve, approval_token(total, res))
 
     ignored_dir(base / OUT_DIR_NAME)
@@ -398,9 +420,10 @@ def main() -> int:
     r = sub.add_parser("render", help="render the shots that are missing or changed")
     r.add_argument("plan")
     r.add_argument("--only", nargs="+", metavar="ID", help="render only these shots")
-    r.add_argument("--approve", required=True, metavar="<N>s@<resolution>",
-                   help="the price you agreed to pay, as the exact token `check` prints; it\n"
-                        "carries the resolution too, because that sets the per-second rate")
+    r.add_argument("--approve", metavar="<N>s@<resolution>",
+                   help="the price you agreed to pay, as the exact token this script prints; it\n"
+                        "carries the resolution too, because that sets the per-second rate.\n"
+                        "Without it, render prices what is pending and refuses")
     r.add_argument("--timeout", type=positive_timeout, default=DEFAULT_TIMEOUT_S["video"],
                    help=f"seconds to wait for each shot before giving up (default {DEFAULT_TIMEOUT_S['video']})")
     s = sub.add_parser("stitch", help="concatenate the rendered shots in plan order")
