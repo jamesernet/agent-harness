@@ -154,7 +154,8 @@ got="$(field frames create '[e["blocks"], e["text"]]')"
 
 # 6. An uploaded --video goes up on the retrying client, and the time logged
 #    for the render is the render's, not the upload's.
-STUB_UPLOAD_DELAY=2 render upload "Make it anime" --video "$tmp/in.mp4" --duration 5 --approve 5s@720p
+STUB_UPLOAD_DELAY=2 render upload "Make it anime" --video "$tmp/in.mp4" --task edit \
+  --duration 5 --approve 15s@720p
 [[ "$(field upload upload 'e["retries"]')" == default ]] ||
   fail "the free upload went out on the billed client: $(cat "$tmp/upload/calls")"
 seconds="$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).readlines()[-1])["seconds"])' \

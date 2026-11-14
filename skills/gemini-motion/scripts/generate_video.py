@@ -80,7 +80,7 @@ def main() -> int:
     ap.add_argument("--uri", action="store_true", help="force URI delivery (auto for 1080p/4k)")
     ap.add_argument("--no-store", action="store_true", help="faster, but the result cannot be edited later")
     ap.add_argument("--output-seconds", type=int, metavar="SECONDS",
-                    help="on an extend, the length of the FINISHED clip, which is\n"
+                    help="on an edit or extend, the length of the FINISHED clip, which is\n"
                          "what the rate applies to. Without it the worst case is priced")
     ap.add_argument("--approve", metavar="<N>s@<resolution>",
                     help="the price you agreed to pay, as the exact token this script prints\n"
@@ -111,20 +111,40 @@ def main() -> int:
     # billed is a length this script never sees. --duration is the increment
     # there and bounds nothing, so pricing from it, or from MAX_CLIP_SECONDS,
     # quoted up to a tenth of the real bill on a clip extended to 30s.
-    extending = bool(args.previous_id) or args.task == "extend"
-    if extending:
-        billable = args.output_seconds or MAX_EXTENDED_SECONDS
+    #
+    # A clip passed with --video is continued as surely as one named by
+    # --previous-id, and without --task the model reads the prompt to decide
+    # whether it edits or extends -- so that case is priced as the dearer one.
+    # An edit is one generation, and tops out where a single clip does.
+    continuing = bool(args.previous_id or args.video) or args.task in ("edit", "extend")
+    editing = args.task == "edit"
+    ceiling = MAX_UNPINNED_SECONDS if editing else MAX_EXTENDED_SECONDS
+    if args.output_seconds is not None:
+        if not continuing:
+            die("--output-seconds is the finished length of an edit or extend; "
+                "pin a new clip with --duration")
+        if not 3 <= args.output_seconds <= ceiling:
+            die(f"--output-seconds must be 3 to {ceiling}, the most "
+                + ("an edit" if editing else "an extended clip") + " can return")
+    if continuing:
+        billable = args.output_seconds or ceiling
     else:
         billable = args.duration or MAX_UNPINNED_SECONDS
     estimate = billable * VIDEO_RATES_USD[resolution]
     token = approval_token(billable, resolution)
     if args.approve is None:
         print(f"this render bills {billable}s at {resolution}, about ${estimate:.2f}")
-        if extending and not args.output_seconds:
-            print(f"  this continues an existing clip, and the rate applies to the WHOLE")
-            print(f"  result, not the part added; {MAX_EXTENDED_SECONDS}s is the worst case.")
+        if continuing and not args.output_seconds:
+            if editing:
+                print(f"  an edit returns one clip, so {MAX_UNPINNED_SECONDS}s is the worst case.")
+            else:
+                print("  this continues an existing clip, and the rate applies to the WHOLE")
+                print(f"  result, not the part added; {MAX_EXTENDED_SECONDS}s is the worst case.")
+                if not args.task:
+                    print("  without --task the prompt decides whether it edits or extends;")
+                    print("  pass --task edit if it is an edit, which is priced as one clip.")
             print("  pass --output-seconds N with the finished length to approve less.")
-        elif not extending and not args.duration:
+        elif not continuing and not args.duration:
             print(f"  length is unset, so the model chooses it; {MAX_UNPINNED_SECONDS}s is the worst case.")
             print("  pass --duration 3..10 to pin it and approve a smaller number.")
         print(f"approve with: --approve {token}")
@@ -154,7 +174,7 @@ def main() -> int:
         "aspect": args.aspect or "16:9",
         "duration": f"{args.duration}s" if args.duration else None,
         "billed_seconds": billable,
-        "priced_as": "whole output (extend)" if extending else "this clip",
+        "priced_as": ("one edited clip" if editing else "whole output (extend)") if continuing else "this clip",
         "estimate_usd": round(estimate, 2),
         "previous_id": args.previous_id,
         "seconds": elapsed,

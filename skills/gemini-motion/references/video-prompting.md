@@ -95,8 +95,10 @@ how you get an exact product shot or a stylised frame to start from.
 
 ## Editing (multi-turn)
 
-Pass `--previous-id <id>` and give a *short* instruction. Over-described edit
-prompts cause unintended changes. End with "Keep everything else the same."
+Pass `--previous-id <id> --task edit` and give a *short* instruction.
+Over-described edit prompts cause unintended changes. `--task edit` is what
+lets the gate price the turn as one clip; without it the prompt could make it
+an extend, so it is priced as one. End with "Keep everything else the same."
 
 Good: `Make the sky stormy. Keep everything else the same.`
 Good: `Change the sign to say "Grand Opening". Keep everything else the same.`
@@ -113,7 +115,8 @@ panning left to reveal the harbour. Music continues into the chorus.` The
 last 10 s of the clip are used as context; a few final frames get retouched
 for a seamless join. Timecodes in an extension prompt count from the start of
 the *new* part. You can extend your own uploaded clip (`--video`, ≤15 s) too,
-but not to add dialogue to someone already talking.
+but not to add dialogue to someone already talking. Either way it is priced as
+the whole finished clip, up to 30 s, unless `--output-seconds` says less.
 
 ## Limits worth knowing before promising anything
 
