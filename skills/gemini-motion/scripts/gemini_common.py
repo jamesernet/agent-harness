@@ -55,6 +55,9 @@ MIN_ATTEMPT_S = 20
 brief has not been observed finishing faster, so a shorter slice just burns
 the remaining budget and reports the same failure later."""
 
+MIN_CLIP_SECONDS = 3
+"""The shortest clip one Omni call renders."""
+
 MAX_CLIP_SECONDS = 10
 """One Omni call tops out here; longer needs --previous-id to extend."""
 
@@ -75,6 +78,9 @@ there is one copy to correct. They do move: check
 https://ai.google.dev/gemini-api/docs/pricing before quoting a figure that
 matters.
 """
+
+ASPECTS = ("16:9", "9:16")
+"""Aspect ratios Omni renders; the first is its default."""
 
 
 LOG_DIR_NAME = ".gemini-motion"
@@ -216,8 +222,12 @@ just gets inlined rather than shown to the model.
 """
 
 
-def image_block(path: str | Path) -> dict:
-    """Inline image content block (base64). Fine for images up to a few MB."""
+def check_image(path: str | Path) -> tuple[Path, str]:
+    """Refuse an image the model would reject, without reading it; return (path, mime).
+
+    Every check image_block makes before encoding lives here, so a plan can be
+    validated against the same rules at no more than a stat() per image.
+    """
     p = Path(path)
     if not p.is_file():
         die(f"image not found: {p}")
@@ -233,6 +243,12 @@ def image_block(path: str | Path) -> dict:
         # API as "Unable to process input image" with nothing pointing at the
         # cause. A failed download leaves exactly this.
         die(f"image file is empty: {p}")
+    return p, mime
+
+
+def image_block(path: str | Path) -> dict:
+    """Inline image content block (base64). Fine for images up to a few MB."""
+    p, mime = check_image(path)
     data = base64.b64encode(p.read_bytes()).decode("ascii")
     return {"type": "image", "data": data, "mime_type": mime}
 
@@ -342,6 +358,12 @@ def save_b64(data_b64: str, out: str | Path) -> Path:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_bytes(base64.b64decode(data_b64))
     return p
+
+
+def slug(text: str, n: int = 40) -> str:
+    """A filename stem from free text: lowercase, hyphens, at most n chars, never empty."""
+    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return s[:n].rstrip("-") or "video"
 
 
 def usage_summary(interaction) -> dict | None:

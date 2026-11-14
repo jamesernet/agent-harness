@@ -16,10 +16,10 @@ run. Shots are independent clips stitched afterwards; nothing here chains on an
 earlier interaction, because an extend bills the whole output every time.
 Continuity comes from `style`, reference images and first/last frames.
 
-Outputs live next to the plan: out/shots/NN-<id>.mp4, out/manifest.json and
+Outputs live next to the plan: out/shots/<id>.mp4, out/manifest.json and
 out/<slug>.mp4. out/ ignores itself. A shot is skipped when its clip exists and
 its spec hash matches the manifest, so an edited shot re-renders and an
-untouched one is never re-billed.
+untouched one is never re-billed -- whatever position it moved to.
 
 `check` and `stitch` are stdlib only. `render` needs google-genai and
 GEMINI_API_KEY in the environment. See references/storyboard-plan.md.
@@ -37,32 +37,32 @@ import subprocess
 import sys
 import tempfile
 import time
+from functools import lru_cache
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gemini_common import (  # noqa: E402
+    ASPECTS,
     DEFAULT_TIMEOUT_S,
     MAX_CLIP_SECONDS,
+    MIN_CLIP_SECONDS,
     MODELS,
     VIDEO_RATES_USD,
     approval_token,
+    check_image,
     die,
     ignored_dir,
-    image_block,
     log_run,
     positive_timeout,
     render_clip,
     require_approval,
+    slug,
     usage_summary,
 )
 
-MIN_CLIP_SECONDS = 3
-"""The shortest clip one Omni call renders; MAX_CLIP_SECONDS is the longest."""
-
-ASPECTS = ("16:9", "9:16")
 PLAN_FIELDS = ("title", "resolution", "aspect_ratio", "style", "shots")
 SHOT_FIELDS = ("id", "prompt", "duration", "first_frame", "last_frame", "images")
-ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+ID_RE = re.compile(r"[a-z0-9][a-z0-9-]*")
 OUT_DIR_NAME = "out"
 
 
@@ -74,10 +74,12 @@ def validate(plan, base: Path) -> list[str]:
 
     Fields a plan does not take are refused rather than ignored: a `model` or
     `negative_prompt` carried over from another format would otherwise be
-    silently dropped from a render that costs money.
+    silently dropped from a render that costs money. Types are checked too,
+    because a value of the wrong type that passes here surfaces as a traceback
+    later -- in stitch, after every clip has been paid for.
 
-    Images are not opened here. check_images() does that through image_block,
-    the same check the render makes, so a bad image fails the plan before
+    Images are not opened here. check_images() does that through check_image,
+    the same rules the render applies, so a bad image fails the plan before
     anything bills instead of at the far end.
     """
     if not isinstance(plan, dict):
@@ -87,11 +89,15 @@ def validate(plan, base: Path) -> list[str]:
              for k in plan if k not in PLAN_FIELDS]
     if errs:
         return errs
+    if not isinstance(plan["title"], str) or not plan["title"].strip():
+        errs.append("title must be text; it names the stitched file")
+    if "style" in plan and not isinstance(plan["style"], str):
+        errs.append("style must be text; it is appended to every shot prompt")
     res = plan["resolution"]
     if res not in VIDEO_RATES_USD:
         errs.append(f"resolution {res!r} is not one of {', '.join(VIDEO_RATES_USD)}; "
                     "one per plan, and it sets the per-second rate")
-    if plan.get("aspect_ratio", "16:9") not in ASPECTS:
+    if plan.get("aspect_ratio", ASPECTS[0]) not in ASPECTS:
         errs.append(f"aspect_ratio must be one of {', '.join(ASPECTS)}; one per plan, "
                     "mixed ratios do not stitch")
     if not isinstance(plan["shots"], list) or not plan["shots"]:
@@ -104,17 +110,20 @@ def validate(plan, base: Path) -> list[str]:
             errs.append(f"{where}: must be a JSON object")
             continue
         sid = shot.get("id")
-        if isinstance(sid, str) and ID_RE.match(sid):
+        # fullmatch, not match: `$` lets a trailing newline through, and the id
+        # becomes a filename and a line in the concat listing.
+        if isinstance(sid, str) and ID_RE.fullmatch(sid):
             where = f"shot {i} ({sid})"
             if sid in seen:
-                errs.append(f"{where}: duplicate id; the manifest keys on it")
+                errs.append(f"{where}: duplicate id; the manifest and the clip file key on it")
             seen.add(sid)
         else:
             errs.append(f"{where}: id must be lowercase letters, digits and hyphens")
         errs += [f"{where}: unknown field '{k}'; a shot takes {', '.join(SHOT_FIELDS)}"
                  for k in shot if k not in SHOT_FIELDS]
-        if not str(shot.get("prompt", "")).strip():
-            errs.append(f"{where}: prompt is required")
+        prompt = shot.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            errs.append(f"{where}: prompt must be text, and not empty")
         dur = shot.get("duration")
         if dur is None:
             errs.append(f"{where}: duration is required, {MIN_CLIP_SECONDS} to {MAX_CLIP_SECONDS} "
@@ -142,14 +151,15 @@ def shot_images(shot: dict) -> list[str]:
 
 
 def check_images(plan: dict, base: Path) -> None:
-    """Open every image the way the render will; image_block dies on the first bad one.
+    """Apply the render's own image rules to every image; check_image dies on the first bad one.
 
     That is where an SVG, a GIF, a missing file or an empty one is refused,
-    with the type the model accepts named, before any shot is priced.
+    with the type the model accepts named, before any shot is priced. Nothing
+    is read: the checks are a stat() each.
     """
     for shot in plan["shots"]:
         for p in shot_images(shot):
-            image_block(base / p)
+            check_image(base / p)
 
 
 def load_plan(path: str) -> tuple[dict, Path]:
@@ -184,40 +194,69 @@ def full_prompt(plan: dict, shot: dict) -> str:
     return f"{shot['prompt'].strip()} {plan.get('style', '').strip()}".strip()
 
 
+@lru_cache(maxsize=None)
+def content_hash(path: Path) -> str:
+    """sha256 of a file's bytes, read once per run however many shots name it."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def spec_hash(plan: dict, shot: dict, base: Path) -> str:
     """What a clip was rendered from; a change to any of it re-renders the shot.
 
-    Image CONTENTS are hashed, not names, so a replaced frame re-renders too.
+    Image CONTENTS are hashed, not names, so a replaced frame re-renders too;
+    and each image is hashed under its ROLE, because the same file as a first
+    frame and as a reference are different renders.
     """
+    def h(p: str | None) -> str | None:
+        return content_hash(base / p) if p else None
+
     spec = {
         "model": MODELS["video"],
         "resolution": plan["resolution"],
-        "aspect_ratio": plan.get("aspect_ratio", "16:9"),
+        "aspect_ratio": plan.get("aspect_ratio", ASPECTS[0]),
         "prompt": full_prompt(plan, shot),
         "duration": shot["duration"],
-        "images": [hashlib.sha256((base / p).read_bytes()).hexdigest() for p in shot_images(shot)],
+        "first_frame": h(shot.get("first_frame")),
+        "last_frame": h(shot.get("last_frame")),
+        "images": [h(p) for p in shot.get("images", [])],
     }
     return hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
 
 
-def clip_path(base: Path, index: int, shot: dict) -> Path:
-    return base / OUT_DIR_NAME / "shots" / f"{index:02d}-{shot['id']}.mp4"
+def clip_path(base: Path, shot: dict) -> Path:
+    # Keyed on the id alone, like the manifest, so a shot keeps its clip when
+    # it moves in the plan; a position in the name made every move a re-bill.
+    return base / OUT_DIR_NAME / "shots" / f"{shot['id']}.mp4"
 
 
 def load_manifest(base: Path) -> dict:
     p = base / OUT_DIR_NAME / "manifest.json"
-    return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {"shots": {}}
+    if not p.is_file():
+        return {"shots": {}}
+    try:
+        manifest = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        manifest = None
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("shots"), dict):
+        die(f"{p} is not a storyboard manifest (a JSON object with a 'shots' table); "
+            "repair it or move it aside before rendering -- without it every shot is "
+            "priced again")
+    return manifest
 
 
 def save_manifest(base: Path, manifest: dict) -> None:
     # Through ignored_dir, so out/ cannot exist without the .gitignore that
-    # keeps billed clips and whole prompts out of the repository.
-    p = ignored_dir(base / OUT_DIR_NAME) / "manifest.json"
-    p.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    # keeps billed clips and whole prompts out of the repository. Written to a
+    # sibling and renamed, so an interrupted write cannot leave a half-manifest
+    # that would price every finished clip again.
+    d = ignored_dir(base / OUT_DIR_NAME)
+    tmp = d / "manifest.json.tmp"
+    tmp.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, d / "manifest.json")
 
 
 def pending(plan: dict, base: Path, only: set[str]) -> list[tuple[int, dict, str]]:
-    """(index, shot, spec hash) for every selected shot without a current clip."""
+    """(position, shot, spec hash) for every selected shot without a current clip."""
     manifest = load_manifest(base)
     todo = []
     for i, shot in enumerate(plan["shots"], 1):
@@ -225,7 +264,7 @@ def pending(plan: dict, base: Path, only: set[str]) -> list[tuple[int, dict, str
             continue
         h = spec_hash(plan, shot, base)
         recorded = manifest["shots"].get(shot["id"], {}).get("spec")
-        if recorded != h or not clip_path(base, i, shot).is_file():
+        if recorded != h or not clip_path(base, shot).is_file():
             todo.append((i, shot, h))
     return todo
 
@@ -240,7 +279,7 @@ def cmd_check(args) -> int:
     pending_ids = {s["id"] for _, s, _ in todo}
     res = plan["resolution"]
     print(f"plan: {plan['title']} -- {len(plan['shots'])} shots, "
-          f"{sum(s['duration'] for s in plan['shots'])}s at {res}, {plan.get('aspect_ratio', '16:9')}")
+          f"{sum(s['duration'] for s in plan['shots'])}s at {res}, {plan.get('aspect_ratio', ASPECTS[0])}")
     for i, shot in enumerate(plan["shots"], 1):
         if shot["id"] in pending_ids:
             note = ""
@@ -277,7 +316,7 @@ def cmd_render(args) -> int:
     manifest = load_manifest(base)
     manifest["title"] = plan["title"]
     for i, shot, h in todo:
-        clip = clip_path(base, i, shot)
+        clip = clip_path(base, shot)
         prompt = full_prompt(plan, shot)
         t0 = time.time()
         interaction = render_clip(
@@ -310,8 +349,15 @@ def cmd_render(args) -> int:
     return 0
 
 
-def slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "video"
+def concat_listing(clips: list[Path]) -> str:
+    """The ffmpeg concat demuxer's file list: one quoted path per line.
+
+    Inside its single quotes a quote is written '\\'' (close, escaped quote,
+    reopen), the demuxer's own rule; a bare quote in a directory name such as
+    "Jim's build" ended the path early and failed the stitch after every clip
+    had been paid for.
+    """
+    return "".join("file '" + str(c).replace("'", r"'\''") + "'\n" for c in clips)
 
 
 def cmd_stitch(args) -> int:
@@ -322,11 +368,10 @@ def cmd_stitch(args) -> int:
     if stale:
         die("render first; these shots have no current clip: "
             + ", ".join(s["id"] for _, s, _ in stale))
-    clips = [clip_path(base, i, s) for i, s in enumerate(plan["shots"], 1)]
+    clips = [clip_path(base, s) for s in plan["shots"]]
     out = ignored_dir(base / OUT_DIR_NAME) / f"{slug(plan['title'])}.mp4"
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as fh:
-        for c in clips:
-            fh.write(f"file '{c}'\n")
+        fh.write(concat_listing(clips))
         listing = fh.name
     try:
         # Re-encode rather than stream-copy: clips rendered on different days

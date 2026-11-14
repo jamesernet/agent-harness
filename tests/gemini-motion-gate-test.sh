@@ -101,15 +101,24 @@ grep -q 'pass one of them' <<<"$out" ||
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-storyboard-test.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 plan="$tmp/plan.json"
-cp "$EXAMPLE" "$plan"
+
+# reset_plan starts a case from the example plan with no out/ beside it.
+reset_plan() {
+  rm -rf "$(dirname "$plan")/out"
+  cp "$EXAMPLE" "$plan"
+}
 
 # set_plan KEY VALUE edits a top-level field; set_shot N KEY VALUE edits shot N
-# (1-based). VALUE is JSON, so a string needs its own quotes.
+# (1-based). VALUE is JSON, so a string needs its own quotes; a VALUE of -
+# removes the field.
 set_plan() {
   python3 - "$plan" "$1" "$2" <<'PY'
 import json, sys
 p = json.load(open(sys.argv[1]))
-p[sys.argv[2]] = json.loads(sys.argv[3])
+if sys.argv[3] == "-":
+    p.pop(sys.argv[2], None)
+else:
+    p[sys.argv[2]] = json.loads(sys.argv[3])
 json.dump(p, open(sys.argv[1], "w"))
 PY
 }
@@ -117,20 +126,69 @@ set_shot() {
   python3 - "$plan" "$1" "$2" "$3" <<'PY'
 import json, sys
 p = json.load(open(sys.argv[1]))
-p["shots"][int(sys.argv[2]) - 1][sys.argv[3]] = json.loads(sys.argv[4])
+shot = p["shots"][int(sys.argv[2]) - 1]
+if sys.argv[4] == "-":
+    shot.pop(sys.argv[3], None)
+else:
+    shot[sys.argv[3]] = json.loads(sys.argv[4])
+json.dump(p, open(sys.argv[1], "w"))
+PY
+}
+reverse_shots() {
+  python3 - "$plan" <<'PY'
+import json, sys
+p = json.load(open(sys.argv[1]))
+p["shots"].reverse()
 json.dump(p, open(sys.argv[1], "w"))
 PY
 }
 
+# seed_rendered leaves out/ the way a finished render does, without rendering:
+# a clip file per shot and a manifest entry carrying the spec hash the script
+# itself computes. The clips are empty files unless --real is passed, which
+# synthesizes them with ffmpeg at the plan's durations for a case that stitches.
+seed_rendered() {
+  python3 - "$SB" "$plan" "${1:-}" <<'PY'
+import subprocess, sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]).parent))
+import storyboard as sb
+plan, base = sb.load_plan(sys.argv[2])
+manifest = {"title": plan["title"], "shots": {}}
+for shot in plan["shots"]:
+    clip = sb.clip_path(base, shot)
+    clip.parent.mkdir(parents=True, exist_ok=True)
+    if sys.argv[3] == "--real":
+        d = shot["duration"]
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"color=c=blue:s=160x90:d={d}",
+             "-f", "lavfi", "-i", f"sine=frequency=440:duration={d}", "-c:v", "libx264",
+             "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(clip)], check=True)
+    else:
+        clip.touch()
+    manifest["shots"][shot["id"]] = {"spec": sb.spec_hash(plan, shot, base),
+                                     "file": str(clip.relative_to(base))}
+sb.save_manifest(base, manifest)
+PY
+}
+
+# sb runs storyboard.py with no key and leaves its output in $out and its exit
+# status in $rc, so a case asserts BOTH the message and the refusal: a run that
+# prints "refused" and exits 0 would otherwise pass every case below.
 sb() {
-  env -u GEMINI_API_KEY -u GOOGLE_API_KEY python3 "$SB" "$@" 2>&1 || true
+  rc=0
+  out="$(env -u GEMINI_API_KEY -u GOOGLE_API_KEY python3 "$SB" "$@" 2>&1)" || rc=$?
+}
+refused() {
+  [ "$rc" -ne 0 ] || fail "$1 printed a refusal but exited 0: $out"
 }
 
 # 11. No approval: check prices every pending shot, the total, the dollar
 #     estimate and the token to approve with, renders nothing, and exits 0.
 #     The example plan is 8 + 4 + 6 seconds at 720p.
-out="$(env -u GEMINI_API_KEY -u GOOGLE_API_KEY python3 "$SB" check "$plan" 2>&1)" ||
-  fail "check on a valid plan did not exit 0: $out"
+reset_plan
+sb check "$plan"
+[ "$rc" -eq 0 ] || fail "check on a valid plan exited $rc: $out"
 grep -qE '01 +desk +8s' <<<"$out" ||
   fail "check did not print a per-shot line: $out"
 grep -q 'to render: 3 shots, 18s at 720p, about \$1.80' <<<"$out" ||
@@ -142,7 +200,8 @@ grep -q -- 'approve with: .*--approve 18s@720p' <<<"$out" ||
 
 # 12. Seconds alone are refused by name. They used to BE the approval, and the
 #     plan's resolution could change under them.
-out="$(sb render "$plan" --approve 18)"
+sb render "$plan" --approve 18
+refused "seconds alone"
 grep -q 'not seconds alone' <<<"$out" ||
   fail "an approval of seconds alone was not refused: $out"
 grep -q '18s@720p' <<<"$out" ||
@@ -152,48 +211,150 @@ grep -q '18s@720p' <<<"$out" ||
 #     render. Same seconds, three times the bill. The token is recomputed from
 #     the plan on disk, so the old one no longer matches.
 set_plan resolution '"4k"'
-out="$(sb render "$plan" --approve 18s@720p)"
+sb render "$plan" --approve 18s@720p
+refused "an approval for a cheaper resolution"
 grep -q 'bills 18s@4k but --approve says' <<<"$out" ||
   fail "a plan edited to a higher resolution was rendered on the old approval: $out"
 
 # 14. The matching token gets past the gate -- proven by the next failure being
 #     the missing key, which is as far as this test goes. By then out/ exists
 #     and already ignores itself: the protection arrives with the directory.
-out="$(sb render "$plan" --approve 18s@4k)"
+sb render "$plan" --approve 18s@4k
 grep -qE 'GEMINI_API_KEY is not set|google-genai package is not installed' <<<"$out" ||
   fail "the matching token did not get past the gate: $out"
-[ "$(cat "$tmp/out/.gitignore" 2>/dev/null | tail -1)" = "*" ] ||
+[ "$(tail -1 "$tmp/out/.gitignore" 2>/dev/null)" = "*" ] ||
   fail "out/ was created without a .gitignore that ignores it"
 
 # 15. Omni's limits are checked before anything is priced, each refusal naming
 #     the limit: a shot longer than one call renders, a resolution the rate
-#     table does not price, and an image the model would reject -- an empty
-#     file (what a failed download leaves) and an SVG -- through the same
-#     image_block the render uses, so the plan fails here and not at the API.
-cp "$EXAMPLE" "$plan"
+#     table does not price, an id that would not survive as a filename, and an
+#     image the model would reject -- an empty file (what a failed download
+#     leaves) and an SVG -- through the same check the render makes, so the
+#     plan fails here and not at the API.
+reset_plan
 set_shot 2 duration 12
-out="$(sb check "$plan")"
+sb check "$plan"
+refused "a 12-second shot"
 grep -q 'shot 2 (coffee): duration must be a whole number of seconds from 3 to 10' <<<"$out" ||
   fail "a 12-second shot was not refused by name: $out"
 
-cp "$EXAMPLE" "$plan"
+reset_plan
 set_plan resolution '"480p"'
-out="$(sb check "$plan")"
+sb check "$plan"
+refused "an unpriced resolution"
 grep -q "resolution '480p' is not one of 360p, 720p, 1080p, 4k" <<<"$out" ||
   fail "an unpriced resolution was not refused by name: $out"
 
-cp "$EXAMPLE" "$plan"
+reset_plan
+set_shot 1 id '"desk\n"'
+sb check "$plan"
+refused "an id ending in a newline"
+grep -q 'shot 1: id must be lowercase letters, digits and hyphens' <<<"$out" ||
+  fail "an id ending in a newline was accepted into a filename: $out"
+
+reset_plan
 : >"$tmp/empty.png"
 set_shot 1 first_frame '"empty.png"'
-out="$(sb check "$plan")"
+sb check "$plan"
+refused "an empty image"
 grep -q 'image file is empty' <<<"$out" ||
   fail "an empty image file was not refused before pricing: $out"
 
-cp "$EXAMPLE" "$plan"
+reset_plan
 echo '<svg xmlns="http://www.w3.org/2000/svg"/>' >"$tmp/logo.svg"
 set_shot 1 images '["logo.svg"]'
-out="$(sb check "$plan")"
+sb check "$plan"
+refused "an SVG reference"
 grep -q 'does not accept image/svg+xml' <<<"$out" ||
   fail "an SVG reference was not refused before pricing: $out"
+
+# 16. A field of the wrong type is refused by name, not by traceback: a numeric
+#     prompt crashed in full_prompt, a null style crashed on .strip(), and a
+#     list for a title passed check and render and then crashed stitch -- after
+#     the clips were paid for.
+reset_plan
+set_shot 1 prompt 42
+sb check "$plan"
+refused "a numeric prompt"
+grep -q 'shot 1 (desk): prompt must be text' <<<"$out" ||
+  fail "a numeric prompt was not refused by name: $out"
+
+reset_plan
+set_plan style null
+sb check "$plan"
+refused "a null style"
+grep -q 'style must be text' <<<"$out" ||
+  fail "a null style was not refused by name: $out"
+
+reset_plan
+set_plan title '["x"]'
+sb check "$plan"
+refused "a list for a title"
+grep -q 'title must be text' <<<"$out" ||
+  fail "a non-text title was not refused by name: $out"
+
+# 17. Reordering shots after a render re-bills nothing. Clips were addressed by
+#     plan position while the manifest keyed on id, so moving a shot made its
+#     own clip look missing and every shot whose position changed was rendered
+#     -- and paid for -- again.
+reset_plan
+seed_rendered
+sb check "$plan"
+[ "$rc" -eq 0 ] || fail "check on a rendered plan exited $rc: $out"
+grep -q 'to render: nothing' <<<"$out" ||
+  fail "a freshly rendered plan was priced again: $out"
+reverse_shots
+sb check "$plan"
+[ "$rc" -eq 0 ] || fail "check on a reordered plan exited $rc: $out"
+grep -q 'to render: nothing' <<<"$out" ||
+  fail "reordering the shots re-priced unchanged clips: $out"
+[ "$(grep -c 'rendered' <<<"$out")" -eq 3 ] ||
+  fail "a reordered plan did not show every shot as rendered: $out"
+
+# 18. The spec hash tells the roles apart: the same image moved from the first
+#     frame to a reference changes what the shot renders, so the old clip is
+#     stale and the shot is pending again. A flat list of image hashes called
+#     them equal and kept the wrong clip.
+reset_plan
+printf 'not really a png, but non-empty' >"$tmp/a.png"
+set_shot 1 first_frame '"a.png"'
+seed_rendered
+set_shot 1 first_frame -
+set_shot 1 images '["a.png"]'
+sb check "$plan"
+[ "$rc" -eq 0 ] || fail "check after moving an image between roles exited $rc: $out"
+grep -q 'to render: 1 shots, 8s at 720p' <<<"$out" ||
+  fail "moving an image from first_frame to images kept the stale clip: $out"
+
+# 19. A manifest that is not one -- a truncated write, or {} -- is refused
+#     naming the file, rather than a KeyError from inside pending().
+reset_plan
+mkdir -p "$tmp/out"
+echo '{}' >"$tmp/out/manifest.json"
+sb check "$plan"
+refused "a malformed manifest"
+grep -q 'manifest.json is not a storyboard manifest' <<<"$out" ||
+  fail "a malformed manifest was not refused by name: $out"
+
+# 20. The concat listing survives an apostrophe in the plan's directory. The
+#     path was written between bare single quotes, so a directory like "Jim's
+#     build" broke stitch after every clip had been paid for. Needs ffmpeg for
+#     real clips; without it the case is reported as skipped, not passed.
+if command -v ffmpeg >/dev/null; then
+  plan="$tmp/jim's build/plan.json"
+  mkdir -p "$(dirname "$plan")"
+  reset_plan
+  set_shot 1 duration 3
+  set_shot 2 duration 3
+  set_shot 3 duration 3
+  seed_rendered --real
+  sb stitch "$plan"
+  [ "$rc" -eq 0 ] || fail "stitch in a directory with an apostrophe exited $rc: $out"
+  [ -s "$tmp/jim's build/out/morning-build.mp4" ] ||
+    fail "stitch in a directory with an apostrophe wrote no file: $out"
+  plan="$tmp/plan.json"
+else
+  echo "gemini-motion gate tests: case 20 (stitch with an apostrophe in the path) skipped, no ffmpeg"
+fi
 
 echo "gemini-motion gate tests: passed"
