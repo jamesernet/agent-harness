@@ -237,38 +237,81 @@ case "$hooks_owner" in
 esac
 # --type=path expands a leading ~ the way git does when it runs these hooks; the
 # plain read tested ~/hk as $root/~/hk and reported an existing directory as
-# missing, the tilde class 9ef9b00 fixed elsewhere. The raw value is read first,
-# because --type=path FAILS on a tilde it cannot expand (~nosuchuser/hk), and
-# reading that failure as "unset" would grade .git/hooks, which git is not
-# running, and report a contradiction that is not there. The raw value falls
-# through to the directory test instead, which reports it missing, as git will.
-hooks_path_raw="$(git -C "$root" config --get core.hooksPath || true)"
-hooks_path=""
-if [[ -n "$hooks_path_raw" ]]; then
-  hooks_path="$(git -C "$root" config --type=path --get core.hooksPath 2>/dev/null || printf '%s' "$hooks_path_raw")"
-fi
+# missing, the tilde class 9ef9b00 fixed elsewhere. It FAILS on a tilde it
+# cannot expand (~nosuchuser/hk), and reading that as "unset" would grade
+# .git/hooks, which git is not running; the raw value falls through to the
+# directory test instead and is reported missing, as git itself will say.
+hooks_path="$(git -C "$root" config --type=path --get core.hooksPath 2>/dev/null)" ||
+  hooks_path="$(git -C "$root" config --get core.hooksPath 2>/dev/null || true)"
 if [[ -n "$hooks_path" ]]; then
+  # The value is read from every scope, and global or system is common, so a
+  # row that says "unset core.hooksPath" has to say where.
+  hooks_scope="$(git -C "$root" config --show-scope --get core.hooksPath 2>/dev/null | awk 'NR == 1 { print $1 }')"
+  hooks_scope="${hooks_scope:-local}"
+  hp_where="core.hooksPath=$hooks_path ($hooks_scope config)"
   hp_dir="$hooks_path"
   case "$hp_dir" in /*) ;; *) hp_dir="$root/$hp_dir" ;; esac
-  # The mirror of the repo-owned-but-unset contradiction below: an explicit
-  # `managed` says this release owns the hook, and core.hooksPath says git runs
-  # something else. Undeclared stays UNKNOWN as before; only the explicit claim
-  # is checked against the clone.
-  if [[ "$hooks_owner" == "managed" ]]; then
-    add_finding hooks-owner CONFLICT "core.hooksPath is unset when hooks is managed" \
-      "hooks=managed is declared, but core.hooksPath=$hooks_path is set, so git runs that framework and not the managed backstop" git-local \
-      "unset core.hooksPath, or declare \"hooks\": \"repo-owned\" if that framework is the repository's own"
-  fi
-  if [[ "$hooks_owner" == "repo-owned" && -d "$hp_dir" ]]; then
-    add_finding git-hook OVERRIDE "agent-harness branch backstop" \
-      "hook framework owned by core.hooksPath=$hooks_path, refreshed by the repository, not by this release" repo-policy ""
-  elif [[ "$hooks_owner" == "repo-owned" ]]; then
-    add_finding git-hook UNKNOWN "agent-harness branch backstop" \
-      "declared repo-owned, but core.hooksPath=$hooks_path does not exist" git-local \
-      "create the directory core.hooksPath names, or point it at the repository's hooks"
+  if [[ -d "$hp_dir" ]]; then
+    hp_state=is-dir
+  elif [[ -e "$hp_dir" ]]; then
+    hp_state=is-file
   else
-    add_finding git-hook UNKNOWN "agent-harness branch backstop" "managed by core.hooksPath=$hooks_path" git-local "integrate the branch check through that hook framework"
+    hp_state=absent
   fi
+
+  # What the declaration amounts to, decided once for every row below.
+  # repo-owned names a framework the repository COMMITS, so the directory has to
+  # sit inside the repository (symlinks resolved): a global core.hooksPath that
+  # happens to check a branch is not that, and a fresh clone of the repository
+  # would have no hook at all. An explicit `managed` over any core.hooksPath is
+  # the mirror contradiction. Saying nothing stays UNKNOWN, as before.
+  hp_claim=none
+  case "$hooks_owner" in
+    managed) hp_claim=managed ;;
+    repo-owned)
+      hp_claim="repo-owned-$hp_state"
+      if [[ "$hp_state" == is-dir ]]; then
+        root_real="$(cd "$root" && pwd -P)"
+        hp_real="$(cd "$hp_dir" && pwd -P)"
+        case "$hp_real/" in
+          "$root_real"/*) hp_claim=override ;;
+          *) hp_claim=repo-owned-outside ;;
+        esac
+      fi
+      ;;
+  esac
+
+  case "$hp_claim" in
+    managed)
+      add_finding hooks-owner CONFLICT "core.hooksPath is unset when hooks is managed" \
+        "hooks=managed is declared, but $hp_where is set, so git runs that framework and not the managed backstop" "git-$hooks_scope" \
+        "git config --$hooks_scope --unset core.hooksPath, or declare \"hooks\": \"repo-owned\" if that framework is the repository's own"
+      add_finding git-hook UNKNOWN "agent-harness branch backstop" "declared managed, but $hp_where runs instead" "git-$hooks_scope" ""
+      ;;
+    override)
+      add_finding git-hook OVERRIDE "agent-harness branch backstop" \
+        "hook framework owned by core.hooksPath=$hooks_path, refreshed by the repository, not by this release" repo-policy ""
+      ;;
+    repo-owned-outside)
+      add_finding hooks-owner CONFLICT "a repo-owned hook framework is inside the repository" \
+        "hooks=repo-owned is declared, but $hp_where resolves outside the repository, so it is not a framework the repository commits; a fresh clone would have no hook at all" "git-$hooks_scope" \
+        "point core.hooksPath at a directory the repository commits, or remove \"hooks\": \"repo-owned\" from .llmctx.json"
+      add_finding git-hook UNKNOWN "agent-harness branch backstop" "declared repo-owned, but $hp_where is outside the repository" "git-$hooks_scope" ""
+      ;;
+    repo-owned-is-file)
+      add_finding git-hook UNKNOWN "agent-harness branch backstop" \
+        "declared repo-owned, but $hp_where is a file, not a directory" git-local \
+        "point core.hooksPath at the repository's hooks directory"
+      ;;
+    repo-owned-absent)
+      add_finding git-hook UNKNOWN "agent-harness branch backstop" \
+        "declared repo-owned, but $hp_where does not exist" git-local \
+        "create the directory core.hooksPath names, or point it at the repository's hooks"
+      ;;
+    *)
+      add_finding git-hook UNKNOWN "agent-harness branch backstop" "managed by core.hooksPath=$hooks_path" git-local "integrate the branch check through that hook framework"
+      ;;
+  esac
 
   # Do not stop here. Reporting only UNKNOWN and skipping the rest meant a
   # repository with core.hooksPath set and NO branch enforcement at all printed
@@ -277,7 +320,11 @@ if [[ -n "$hooks_path" ]]; then
   # in practice, but none resolves llmctx policy, so .llmctx.json and
   # `git config llmctx.branchPolicy` are inert there. Silence made that
   # indistinguishable from working.
-  if ! [[ -d "$hp_dir" ]]; then
+  if [[ "$hp_state" == is-file ]]; then
+    add_finding policy-enforcement MISSING "branch policy is enforced somewhere" \
+      "core.hooksPath points at $hooks_path, which is a file, not a directory" git-local \
+      "point core.hooksPath at a hooks directory, or unset it"
+  elif [[ "$hp_state" == absent ]]; then
     add_finding policy-enforcement MISSING "branch policy is enforced somewhere" \
       "core.hooksPath points at $hooks_path, which does not exist" git-local \
       "unset core.hooksPath, or create the directory it names"
@@ -285,7 +332,7 @@ if [[ -n "$hooks_path" ]]; then
     add_finding policy-enforcement OK "branch policy is enforced somewhere" \
       "hooks in $hooks_path resolve llmctx policy" git-local ""
   elif grep -rqlE 'symbolic-ref|abbrev-ref|refusing to commit|protected branch' "$hp_dir" 2>/dev/null; then
-    if [[ "$hooks_owner" == "repo-owned" ]]; then
+    if [[ "$hp_claim" == override ]]; then
       add_finding policy-enforcement OVERRIDE "branch policy is enforced somewhere" \
         "hooks in $hooks_path check a branch by the repository's own rules; .llmctx.json branch policy is inert here by declaration" repo-policy ""
     else

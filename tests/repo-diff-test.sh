@@ -173,6 +173,10 @@ jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.act
   fail "an explicit managed declaration over core.hooksPath was not reported: $(jq -c '[.findings[] | select(.id == "hooks-owner")]' "$tmp/hp-managed-set.json")"
 jq -e '.compliant == false' "$tmp/hp-managed-set.json" >/dev/null ||
   fail "an explicit managed declaration over core.hooksPath was reported compliant"
+jq -e 'any(.findings[]; .id == "hooks-owner" and (.actual | test("\\(local config\\)")) and (.remediation | test("--local --unset")))' "$tmp/hp-managed-set.json" >/dev/null ||
+  fail "the managed contradiction did not name the scope the value came from: $(jq -c '[.findings[] | select(.id == "hooks-owner")]' "$tmp/hp-managed-set.json")"
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN" and .remediation == "")' "$tmp/hp-managed-set.json" >/dev/null ||
+  fail "git-hook offered a second, contradictory fix beside the hooks-owner row: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/hp-managed-set.json")"
 
 # Not JSON at all: the report still prints, carrying the CONFLICT the resolver
 # produced, instead of `declared` aborting the run under set -e with no output.
@@ -183,16 +187,15 @@ jq -e 'any(.findings[]; .id == "policy" and .status == "CONFLICT" and (.actual |
 
 # core.hooksPath may be written with a tilde. git expands it when it runs the
 # hooks, so the checker has to, or a directory that exists reads as missing.
-fake_home="$tmp/home"
-mkdir -p "$fake_home/hk"
-printf '%s\n' '#!/bin/sh' 'git symbolic-ref --short HEAD' >"$fake_home/hk/pre-commit"
+# HOME is the repository here, so the expanded directory is inside it and the
+# declaration is honoured; a tilde that lands outside is the global case below.
 printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"repo-owned"}' >"$hp/.llmctx.json"
 # shellcheck disable=SC2088 # the literal tilde is the case: git stores it unexpanded and expands it at run time
-git -C "$hp" config core.hooksPath '~/hk'
-HOME="$fake_home" "$CLI" repo diff "$hp" --json >"$tmp/hp-tilde.json" ||
+git -C "$hp" config core.hooksPath '~/.githooks'
+HOME="$hp" "$CLI" repo diff "$hp" --json >"$tmp/hp-tilde.json" ||
   fail "a tilde core.hooksPath was not expanded: $(jq -c '[.findings[] | select(.status != "OK")]' "$tmp/hp-tilde.json")"
-jq -e 'any(.findings[]; .id == "git-hook" and .status == "OVERRIDE")' "$tmp/hp-tilde.json" >/dev/null ||
-  fail "a declared hook under a tilde path was not recorded as an override"
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "OVERRIDE" and (.actual | test("/\\.githooks")))' "$tmp/hp-tilde.json" >/dev/null ||
+  fail "a declared hook under a tilde path was not recorded as an override with the expanded path: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/hp-tilde.json")"
 
 # Declared, but core.hooksPath is unset in this clone: the declaration says the
 # repository's hooks are the guard and git is running the managed path instead.
@@ -216,6 +219,35 @@ printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"managed"}' >"$hp
 if jq -e 'any(.findings[]; .id == "hooks-owner")' "$tmp/hp-managed-unset.json" >/dev/null; then
   fail "an explicit managed declaration produced a hooks-owner finding"
 fi
+
+# core.hooksPath naming a file is "not a directory", never "does not exist".
+git -C "$hp" config core.hooksPath .githooks/pre-commit
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"repo-owned"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-file.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "MISSING" and (.actual | test("is a file, not a directory")))' "$tmp/hp-file.json" >/dev/null ||
+  fail "a core.hooksPath that is a file was not reported as such: $(jq -c '[.findings[] | select(.id == "policy-enforcement")]' "$tmp/hp-file.json")"
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN" and (.actual | test("is a file, not a directory")))' "$tmp/hp-file.json" >/dev/null ||
+  fail "git-hook called an existing file a missing directory: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/hp-file.json")"
+git -C "$hp" config --unset core.hooksPath
+
+# A global core.hooksPath is not a framework the repository commits, however
+# good its branch check: a fresh clone would have no hook at all. repo-owned over
+# it is a CONFLICT naming the scope, and the rows stay UNKNOWN, never OVERRIDE.
+mkdir -p "$tmp/ghooks"
+printf '%s\n' '#!/bin/sh' 'git symbolic-ref --short HEAD' >"$tmp/ghooks/pre-commit"
+git config --global core.hooksPath "$tmp/ghooks"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-global.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("outside the repository")) and (.actual | test("\\(global config\\)")))' "$tmp/hp-global.json" >/dev/null ||
+  fail "repo-owned over a global core.hooksPath was honoured or misdescribed: $(jq -c '[.findings[] | select(.id == "hooks-owner" or .id == "git-hook")]' "$tmp/hp-global.json")"
+if jq -e 'any(.findings[]; .status == "OVERRIDE" and (.id == "git-hook" or .id == "policy-enforcement"))' "$tmp/hp-global.json" >/dev/null; then
+  fail "a global core.hooksPath satisfied a repo-owned declaration"
+fi
+jq -e '.compliant == false' "$tmp/hp-global.json" >/dev/null || fail "repo-owned over a global core.hooksPath was reported compliant"
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"managed"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-global-managed.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.remediation | test("--global --unset")))' "$tmp/hp-global-managed.json" >/dev/null ||
+  fail "the managed contradiction over a global core.hooksPath did not point at the global scope: $(jq -c '[.findings[] | select(.id == "hooks-owner")]' "$tmp/hp-global-managed.json")"
+git config --global --unset core.hooksPath
 
 # A tilde git cannot expand is not "unset": the directory is reported missing,
 # which is what git itself says at commit time, and git-hook names the declared
