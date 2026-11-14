@@ -36,23 +36,19 @@ from gemini_common import (  # noqa: E402
     DEFAULT_TIMEOUT_S,
     MODELS,
     VIDEO_RATES_USD,
+    approval_token,
     die,
-    create,
-    get_client,
-    image_block,
     log_run,
     read_text_arg,
-    save_b64,
-    upload_file,
+    render_clip,
+    require_approval,
     usage_summary,
-    video_block_from_upload,
     positive_timeout,
 )
 
 RESOLUTIONS = ("360p", "720p", "1080p", "4k")
 ASPECTS = ("16:9", "9:16")
 TASKS = ("text_to_video", "image_to_video", "reference_to_video", "edit", "extend", "upscale")
-BIG_RESOLUTIONS = ("1080p", "4k")  # payloads > 4 MB need URI delivery
 
 
 def slug(text: str, n: int = 40) -> str:
@@ -63,50 +59,6 @@ def slug(text: str, n: int = 40) -> str:
 def default_out(prompt: str) -> Path:
     stamp = time.strftime("%Y%m%d-%H%M%S")
     return Path("motion") / f"{slug(prompt)}-{stamp}.mp4"
-
-
-def build_input(args, client, prompt: str) -> list | str:
-    """Assemble the Interactions `input`: media blocks first, then the text."""
-    blocks: list[dict] = []
-    tags: list[str] = []
-
-    if args.first_frame:
-        blocks.append(image_block(args.first_frame))
-        if "<FIRST_FRAME>" not in prompt:
-            tags.append("<FIRST_FRAME>")
-    if args.last_frame:
-        if not args.first_frame:
-            die("--last-frame requires --first-frame")
-        blocks.append(image_block(args.last_frame))
-        if "<LAST_FRAME>" not in prompt:
-            tags.append("<LAST_FRAME>")
-    for p in args.image or []:
-        blocks.append(image_block(p))
-    if args.video:
-        uploaded = upload_file(client, args.video)
-        blocks.insert(0, video_block_from_upload(uploaded))
-
-    text = (" ".join(tags) + " " + prompt).strip() if tags else prompt
-    if not blocks:
-        return text
-    blocks.append({"type": "text", "text": text})
-    return blocks
-
-
-def wait_for_uri(client, uri: str, timeout_s: int = 900) -> None:
-    """Poll the Files API until a URI-delivered video is ACTIVE."""
-    name = "files/" + uri.split("/files/")[-1].split(":")[0].split("?")[0]
-    start = time.time()
-    while True:
-        info = client.files.get(name=name)
-        state = getattr(info.state, "name", str(info.state))
-        if state == "ACTIVE":
-            return
-        if state == "FAILED":
-            die("video generation failed while processing the file")
-        if time.time() - start > timeout_s:
-            die(f"timed out waiting for {name}")
-        time.sleep(5)
 
 
 def main() -> int:
@@ -149,13 +101,8 @@ def main() -> int:
     if out.suffix.lower() != ".mp4":
         out = out.with_suffix(".mp4")
 
-    # What the user approves is a PRICE, so the approval has to carry every
-    # input the price is made of. It used to carry seconds only, and the rate
-    # ranges from $0.03 to $0.30 per second across the resolutions this script
-    # accepts -- so an approval of "10", shown to the user as "$0.30", was
-    # satisfied by the same 10 seconds at 4k and billed $3.00, through a flag
-    # the skill documents. The token names both, and nothing else here reads
-    # args.approve as a number.
+    # The approval is a price, so it is priced here and compared by
+    # require_approval (see approval_token for why it names the resolution).
     #
     # Without --duration the model picks the length, so the only honest figure
     # to price is the worst case.
@@ -170,7 +117,7 @@ def main() -> int:
     else:
         billable = args.duration or MAX_CLIP_SECONDS
     estimate = billable * VIDEO_RATES_USD[resolution]
-    token = f"{billable}s@{resolution}"
+    token = approval_token(billable, resolution)
     if args.approve is None:
         print(f"this render bills {billable}s at {resolution}, about ${estimate:.2f}")
         if extending and not args.output_seconds:
@@ -182,66 +129,23 @@ def main() -> int:
             print("  pass --duration 3..10 to pin it and approve a smaller number.")
         print(f"approve with: --approve {token}")
         return 2
-    if args.approve != token:
-        if args.approve.rstrip("s").isdigit():
-            die(f"--approve now takes the whole token, {token}, not seconds alone: "
-                "seconds without a resolution approved a price that --resolution "
-                "could still multiply")
-        die(f"this render bills {token} but --approve says {args.approve!r}; "
-            "re-check the settings and confirm again")
+    require_approval(args.approve, token)
 
-    client = get_client()
-    inp = build_input(args, client, prompt)
-
-    response_format: dict = {"type": "video", "resolution": resolution}
-    if args.aspect:
-        response_format["aspect_ratio"] = args.aspect
-    if args.duration:
-        response_format["duration"] = f"{args.duration}s"
-    use_uri = args.uri or resolution in BIG_RESOLUTIONS
-    if use_uri:
-        response_format["delivery"] = "uri"
-
-    kwargs: dict = {"model": MODELS["video"], "input": inp, "response_format": response_format}
-    if args.previous_id:
-        kwargs["previous_interaction_id"] = args.previous_id
-    if args.task:
-        kwargs["generation_config"] = {"video_config": {"task": args.task}}
-    if args.no_store:
-        kwargs["store"] = False
-
+    announce = None
     if not args.json:
-        print(f"generating with {MODELS['video']} at {resolution}"
-              + (f", {args.aspect}" if args.aspect else "")
-              + (" (edit/extend of previous clip)" if args.previous_id else "")
-              + " ...", flush=True)
+        announce = (f"generating with {MODELS['video']} at {resolution}"
+                    + (f", {args.aspect}" if args.aspect else "")
+                    + (" (edit/extend of previous clip)" if args.previous_id else "")
+                    + " ...")
 
-    t0 = time.time()
-    try:
-        # A separate client for the one billed call, with the SDK's retries off
-        # (see get_client). `client` keeps them, for the free uploads above and
-        # the download below.
-        interaction = create(get_client(retries=False), args.timeout, **kwargs)
-    except Exception as e:  # noqa: BLE001
-        die(f"{type(e).__name__}: {e}")
+    interaction, render_seconds = render_clip(
+        prompt, out, resolution=resolution, timeout=args.timeout, aspect=args.aspect,
+        duration=args.duration, images=args.image or (), first_frame=args.first_frame,
+        last_frame=args.last_frame, video=args.video, previous_id=args.previous_id,
+        task=args.task, uri=args.uri, store=not args.no_store, announce=announce,
+    )
 
-    video = getattr(interaction, "output_video", None)
-    if video is None:
-        status = getattr(interaction, "status", "?")
-        text = (getattr(interaction, "output_text", "") or "")[:500]
-        die(f"no video in response (status={status}). Model said: {text!r}\n"
-            "Prompts that trip the safety filter return no video; rephrase and retry.")
-
-    if getattr(video, "data", None):
-        save_b64(video.data, out)
-    elif getattr(video, "uri", None):
-        wait_for_uri(client, video.uri)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        client.files.download(file=video.uri, destination=str(out))
-    else:
-        die("video block had neither inline data nor a uri")
-
-    elapsed = round(time.time() - t0, 1)
+    elapsed = round(render_seconds, 1)
     summary = {
         "out": str(out),
         "interaction_id": interaction.id,
