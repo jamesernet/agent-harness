@@ -427,7 +427,7 @@ def wait_for_uri(client, uri: str, timeout_s: int = 900) -> None:
 def render_clip(prompt: str, out: Path, *, resolution: str, timeout: float, aspect=None,
                 duration=None, images=(), first_frame=None, last_frame=None, video=None,
                 previous_id=None, task=None, uri=False, store=True, announce=None):
-    """Render one Omni clip to `out` and return the interaction. This call BILLS.
+    """Render one Omni clip to `out`; return the interaction and its seconds. This call BILLS.
 
     It checks no price: call it only after require_approval has passed, for a
     token priced from these same settings. Every billed video render goes
@@ -435,6 +435,8 @@ def render_clip(prompt: str, out: Path, *, resolution: str, timeout: float, aspe
 
     `announce` is printed after the inputs are checked and immediately before
     the billed call, so a bad input fails without claiming to be generating.
+    The seconds returned are timed from that same point: the render and its
+    collection, not the input reads or a --video upload before it.
     """
     client = get_client()
     inp = omni_input(client, prompt, images=images, first_frame=first_frame,
@@ -458,6 +460,7 @@ def render_clip(prompt: str, out: Path, *, resolution: str, timeout: float, aspe
 
     if announce:
         print(announce, flush=True)
+    t0 = time.time()
     try:
         # A separate client for the one billed call, with the SDK's retries off
         # (see get_client). `client` keeps them, for the free uploads above and
@@ -481,4 +484,4 @@ def render_clip(prompt: str, out: Path, *, resolution: str, timeout: float, aspe
         client.files.download(file=clip.uri, destination=str(out))
     else:
         die("video block had neither inline data nor a uri")
-    return interaction
+    return interaction, time.time() - t0

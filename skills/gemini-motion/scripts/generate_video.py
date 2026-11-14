@@ -138,15 +138,14 @@ def main() -> int:
                     + (" (edit/extend of previous clip)" if args.previous_id else "")
                     + " ...")
 
-    t0 = time.time()
-    interaction = render_clip(
+    interaction, render_seconds = render_clip(
         prompt, out, resolution=resolution, timeout=args.timeout, aspect=args.aspect,
         duration=args.duration, images=args.image or (), first_frame=args.first_frame,
         last_frame=args.last_frame, video=args.video, previous_id=args.previous_id,
         task=args.task, uri=args.uri, store=not args.no_store, announce=announce,
     )
 
-    elapsed = round(time.time() - t0, 1)
+    elapsed = round(render_seconds, 1)
     summary = {
         "out": str(out),
         "interaction_id": interaction.id,
