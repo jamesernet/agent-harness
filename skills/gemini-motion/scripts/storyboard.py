@@ -168,20 +168,26 @@ def check_images(plan: dict, base: Path) -> None:
             check_image(base / p)
 
 
-def load_plan(path: str) -> tuple[dict, Path]:
+def load_plan(path: str, images: bool = True) -> tuple[dict, Path]:
+    """The validated plan and its resolved path; the plan directory is that path's parent.
+
+    `images=False` skips the image checks, for a command that never sends them:
+    stitch works from the manifest and the clips, so a reference deleted after
+    a successful render must not stop it.
+    """
     plan_path = Path(path).resolve()
     try:
         plan = json.loads(plan_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         die(f"cannot read plan {plan_path}: {e}")
-    base = plan_path.parent
     errors = validate(plan)
     if errors:
         for e in errors:
             print(f"plan: {e}", file=sys.stderr)
         sys.exit(1)
-    check_images(plan, base)
-    return plan, base
+    if images:
+        check_images(plan, plan_path.parent)
+    return plan, plan_path
 
 
 def selected(plan: dict, only) -> set[str]:
@@ -207,7 +213,6 @@ def content_hash(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError as e:
         die(f"cannot read image {path}: {e.strerror or e}")
-        return ""  # unreachable: die() exits
 
 
 def spec_hash(plan: dict, shot: dict, base: Path) -> str:
@@ -295,7 +300,16 @@ def pending(plan: dict, base: Path, only: set[str]) -> Pending:
 # --- commands ----------------------------------------------------------------
 
 
-def report(plan: dict, pend: Pending, only: set[str], plan_arg: str) -> None:
+def style_changed(plan: dict, pend: Pending, only: set[str]) -> bool:
+    """Every selected shot is pending, and each was rendered under a different style."""
+    chosen = [s for s in plan["shots"] if not only or s["id"] in only]
+    if not chosen or len(pend.shots) != len(chosen):
+        return False
+    entries = [pend.manifest["shots"].get(s["id"]) for s in chosen]
+    return all(e is not None and "style" in e and e["style"] != plan.get("style", "") for e in entries)
+
+
+def report(plan: dict, pend: Pending, only: set[str], plan_path: Path) -> None:
     """What check prints, and what an unapproved render prints before refusing."""
     pending_ids = {s["id"] for _, s, _ in pend.shots}
     res = plan["resolution"]
@@ -314,12 +328,16 @@ def report(plan: dict, pend: Pending, only: set[str], plan_arg: str) -> None:
         return
     total = pend.seconds
     print(f"to render: {len(pend.shots)} shots, {total}s at {res}, about ${total * VIDEO_RATES_USD[res]:.2f}")
-    # Runnable as printed from any directory: this interpreter, this script by
-    # its absolute path (a bare "storyboard.py" typed from the scripts directory
-    # is not on PATH), and every path and id quoted for the shell -- a plan in
-    # "Jim's build/" is the ordinary case.
+    if style_changed(plan, pend, only):
+        print("  every selected shot is stale because style changed: style is part of every "
+              "prompt, so a style edit re-renders the whole plan")
+    # Runnable as printed from any directory: this interpreter, this script and
+    # the plan by absolute path (a bare "storyboard.py" typed from the scripts
+    # directory is not on PATH, and "plan.json" is in no other directory), and
+    # every path and id quoted for the shell -- a plan in "Jim's build/" is the
+    # ordinary case.
     cmd = [shlex.quote(sys.executable), shlex.quote(os.path.abspath(sys.argv[0])),
-           "render", shlex.quote(plan_arg)]
+           "render", shlex.quote(str(plan_path))]
     if only:
         cmd += ["--only", *(shlex.quote(i) for i in sorted(only))]
     cmd += ["--approve", approval_token(total, res)]
@@ -327,14 +345,15 @@ def report(plan: dict, pend: Pending, only: set[str], plan_arg: str) -> None:
 
 
 def cmd_check(args) -> int:
-    plan, base = load_plan(args.plan)
+    plan, plan_path = load_plan(args.plan)
     only = selected(plan, args.only)
-    report(plan, pending(plan, base, only), only, args.plan)
+    report(plan, pending(plan, plan_path.parent, only), only, plan_path)
     return 0
 
 
 def cmd_render(args) -> int:
-    plan, base = load_plan(args.plan)
+    plan, plan_path = load_plan(args.plan)
+    base = plan_path.parent
     only = selected(plan, args.only)
     pend = pending(plan, base, only)
     if not pend.shots:
@@ -343,7 +362,7 @@ def cmd_render(args) -> int:
     if args.approve is None:
         # The gate as generate_video.py has it: price, print the token, refuse.
         # Nothing is written and no client is made.
-        report(plan, pend, only, args.plan)
+        report(plan, pend, only, plan_path)
         return 2
     res = plan["resolution"]
     # The token is recomputed from the plan on disk -- the same seconds report()
@@ -357,8 +376,7 @@ def cmd_render(args) -> int:
     for i, shot, h in pend.shots:
         clip = clip_path(base, shot)
         prompt = full_prompt(plan, shot)
-        t0 = time.time()
-        interaction = render_clip(
+        interaction, render_seconds = render_clip(
             prompt, clip, resolution=res, timeout=args.timeout,
             aspect=plan.get("aspect_ratio"), duration=shot["duration"],
             images=[base / p for p in shot.get("images", [])],
@@ -367,7 +385,7 @@ def cmd_render(args) -> int:
             announce=f"{i:02d} {shot['id']}: generating with {MODELS['video']} at {res}, "
                      f"{shot['duration']}s ...",
         )
-        elapsed = round(time.time() - t0, 1)
+        elapsed = round(render_seconds, 1)
         entry = {
             "spec": h,
             "file": str(clip.relative_to(base)),
@@ -375,13 +393,14 @@ def cmd_render(args) -> int:
             "resolution": res,
             "duration": shot["duration"],
             "prompt": prompt,
+            "style": plan.get("style", ""),
             "interaction_id": interaction.id,
             "rendered_at": int(time.time()),
         }
         manifest["shots"][shot["id"]] = entry
         # Saved after every shot, so an interrupted run resumes instead of re-paying.
         save_manifest(base, manifest)
-        log_run("storyboard", plan=str(Path(args.plan).resolve()), shot=shot["id"], **entry,
+        log_run("storyboard", plan=str(plan_path), shot=shot["id"], **entry,
                 estimate_usd=round(shot["duration"] * VIDEO_RATES_USD[res], 2),
                 seconds=elapsed, usage=usage_summary(interaction))
         print(f"{i:02d} {shot['id']}: saved {entry['file']}  ({elapsed}s)")
@@ -399,14 +418,37 @@ def concat_listing(clips: list[Path]) -> str:
     return "".join("file '" + str(c).replace("'", r"'\''") + "'\n" for c in clips)
 
 
+def not_stitchable(plan: dict, base: Path, manifest: dict) -> list[str]:
+    """Shots stitch cannot use, each with its reason, judged from the manifest and the clips alone.
+
+    Images are not consulted: a reference deleted after a successful render
+    must not make the stitch impossible. An edit the manifest can see -- the
+    prompt (style included), duration, resolution or model -- still refuses,
+    so a stale clip is not stitched silently; an image edit is check's and
+    render's job.
+    """
+    reasons = []
+    for shot in plan["shots"]:
+        entry = manifest["shots"].get(shot["id"])
+        if entry is None or not clip_path(base, shot).is_file():
+            reasons.append(f"{shot['id']} (not rendered)")
+            continue
+        current = {"prompt": full_prompt(plan, shot), "duration": shot["duration"],
+                   "resolution": plan["resolution"], "model": MODELS["video"]}
+        changed = [k for k, v in current.items() if k in entry and entry[k] != v]
+        if changed:
+            reasons.append(f"{shot['id']} ({', '.join(changed)} changed since it was rendered)")
+    return reasons
+
+
 def cmd_stitch(args) -> int:
-    plan, base = load_plan(args.plan)
+    plan, plan_path = load_plan(args.plan, images=False)
+    base = plan_path.parent
     if not shutil.which("ffmpeg"):
         die("ffmpeg is not installed; stitch needs it (check and render do not)")
-    stale = pending(plan, base, set()).shots
-    if stale:
-        die("render first; these shots have no current clip: "
-            + ", ".join(s["id"] for _, s, _ in stale))
+    reasons = not_stitchable(plan, base, load_manifest(base))
+    if reasons:
+        die("render first; these shots have no current clip: " + ", ".join(reasons))
     clips = [clip_path(base, s) for s in plan["shots"]]
     out = ignored_dir(base / OUT_DIR_NAME) / f"{slug(plan['title'])}.mp4"
     # UTF-8 by name: the demuxer reads the listing as UTF-8, and the locale's

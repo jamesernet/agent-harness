@@ -144,8 +144,9 @@ PY
 }
 
 # seed_rendered leaves out/ the way a finished render does, without rendering:
-# a clip file per shot and a manifest entry carrying the spec hash the script
-# itself computes. The clips are empty files unless --real is passed, which
+# a clip file per shot and a manifest entry carrying what a render records --
+# the spec hash the script itself computes, and the fields check and stitch
+# read back. The clips are empty files unless --real is passed, which
 # synthesizes them with ffmpeg at the plan's durations for a case that stitches.
 seed_rendered() {
   python3 - "$SB" "$plan" "${1:-}" <<'PY'
@@ -153,7 +154,8 @@ import subprocess, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(sys.argv[1]).parent))
 import storyboard as sb
-plan, base = sb.load_plan(sys.argv[2])
+plan, plan_path = sb.load_plan(sys.argv[2])
+base = plan_path.parent
 manifest = {"title": plan["title"], "shots": {}}
 for shot in plan["shots"]:
     clip = sb.clip_path(base, shot)
@@ -166,8 +168,10 @@ for shot in plan["shots"]:
              "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(clip)], check=True)
     else:
         clip.touch()
-    manifest["shots"][shot["id"]] = {"spec": sb.spec_hash(plan, shot, base),
-                                     "file": str(clip.relative_to(base))}
+    manifest["shots"][shot["id"]] = {
+        "spec": sb.spec_hash(plan, shot, base), "file": str(clip.relative_to(base)),
+        "model": sb.MODELS["video"], "resolution": plan["resolution"], "duration": shot["duration"],
+        "prompt": sb.full_prompt(plan, shot), "style": plan.get("style", "")}
 sb.save_manifest(base, manifest)
 PY
 }
@@ -188,6 +192,13 @@ refused() {
 sb_rel() {
   rc=0
   out="$(cd "$(dirname "$SB")" && env -u GEMINI_API_KEY -u GOOGLE_API_KEY python3 storyboard.py "$@" 2>&1)" || rc=$?
+}
+# sb_here names the plan relative to its own directory, the way a user who has
+# cd'd to the plan does. The printed line has to run from anywhere else, so it
+# cannot echo that relative name back either.
+sb_here() {
+  rc=0
+  out="$(cd "$(dirname "$plan")" && env -u GEMINI_API_KEY -u GOOGLE_API_KEY python3 "$SB" "$@" 2>&1)" || rc=$?
 }
 # approve_line runs the command the last sb call printed after "approve with:",
 # exactly as printed, with no key and from a directory that is neither the
@@ -227,6 +238,13 @@ sb_rel check "$plan"
 approve_line
 grep -qE 'GEMINI_API_KEY is not set|google-genai package is not installed' <<<"$out" ||
   fail "the approve-with line from a bare-name invocation was not runnable elsewhere: $out"
+# And when the plan was named relative to its own directory: the printed line
+# used to echo "plan.json", which fails anywhere else with "cannot read plan".
+sb_here check plan.json
+[ "$rc" -eq 0 ] || fail "check with a relative plan path exited $rc: $out"
+approve_line
+grep -qE 'GEMINI_API_KEY is not set|google-genai package is not installed' <<<"$out" ||
+  fail "the approve-with line from a relative plan path was not runnable elsewhere: $out"
 
 # 12. Seconds alone are refused by name. They used to BE the approval, and the
 #     plan's resolution could change under them.
@@ -473,5 +491,48 @@ grep -q 'nothing to render -- every selected shot is current' <<<"$out" ||
   fail "render with nothing pending did not say so: $out"
 sb render "$plan" --approve 18s@720p
 [ "$rc" -eq 0 ] || fail "render with nothing pending and a token exited $rc: $out"
+
+# 24. stitch works from the manifest and the clips, not the images: a reference
+#     deleted after a successful render used to make stitching impossible
+#     without re-rendering. check still refuses the same plan, because check
+#     and render do send the image. What the manifest records is still held
+#     against the plan, so an edited prompt refuses rather than stitching a
+#     stale clip. Needs ffmpeg; reported as skipped without it.
+if command -v ffmpeg >/dev/null; then
+  reset_plan
+  printf 'not really a png, but non-empty' >"$tmp/frame.png"
+  set_shot 1 first_frame '"frame.png"'
+  set_shot 1 duration 3
+  set_shot 2 duration 3
+  set_shot 3 duration 3
+  seed_rendered --real
+  rm "$tmp/frame.png"
+  sb stitch "$plan"
+  [ "$rc" -eq 0 ] || fail "stitch after deleting a reference image exited $rc: $out"
+  [ -s "$tmp/out/morning-build.mp4" ] || fail "stitch after deleting a reference image wrote no file"
+  sb check "$plan"
+  refused "check with a deleted reference image"
+  grep -q 'image not found' <<<"$out" || fail "check did not refuse the deleted image by name: $out"
+  set_shot 2 prompt '"Something else entirely."'
+  sb stitch "$plan"
+  refused "stitch with an edited prompt"
+  grep -q 'coffee (prompt changed since it was rendered)' <<<"$out" ||
+    fail "stitch did not refuse a shot whose prompt changed: $out"
+else
+  echo "gemini-motion gate tests: case 24 (stitch without the images) skipped, no ffmpeg"
+fi
+
+# 25. style is part of every prompt, so a style edit makes every shot stale and
+#     re-bills the whole plan. check says that is why, rather than leaving the
+#     user to work out what changed.
+reset_plan
+seed_rendered
+set_plan style '"Grainy 16mm, desaturated."'
+sb check "$plan"
+[ "$rc" -eq 0 ] || fail "check after a style edit exited $rc: $out"
+grep -q 'to render: 3 shots, 18s at 720p' <<<"$out" ||
+  fail "a style edit did not re-price every shot: $out"
+grep -q 'stale because style changed' <<<"$out" ||
+  fail "check did not name style as the reason every shot is stale: $out"
 
 echo "gemini-motion gate tests: passed"

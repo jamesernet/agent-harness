@@ -23,6 +23,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NoReturn
 
 MODELS = {
     "video": "gemini-omni-1.1-flash",
@@ -87,7 +88,7 @@ LOG_DIR_NAME = ".gemini-motion"
 LOG_FILE_NAME = "runs.jsonl"
 
 
-def die(msg: str, code: int = 1) -> None:
+def die(msg: str, code: int = 1) -> NoReturn:
     print(f"error: {msg}", file=sys.stderr)
     sys.exit(code)
 
@@ -290,7 +291,6 @@ def read_text_arg(value: str | None, file_arg: str | None, what: str) -> str:
     if value:
         return value.strip()
     die(f"provide the {what} as an argument or with --{what}-file")
-    return ""  # unreachable
 
 
 _FENCE_RE = re.compile(r"```([a-zA-Z0-9_+-]*)[ \t]*\n(.*?)```", re.DOTALL)

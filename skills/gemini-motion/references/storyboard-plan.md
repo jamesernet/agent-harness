@@ -37,7 +37,7 @@ this file explains the choices. Start from `storyboard-example.json`.
 | `title` | yes | text | names the stitched file (`out/<slug>.mp4`) |
 | `resolution` | yes | `360p`, `720p`, `1080p`, `4k` | one per plan; it sets the per-second rate, so it is part of the approval token |
 | `aspect_ratio` | no | `16:9` (default), `9:16` | one per plan; mixed ratios do not stitch |
-| `style` | no | text | appended to every shot prompt; the main lever for consistency |
+| `style` | no | text | appended to every shot prompt; the main lever for consistency. It is part of every shot's spec, so editing it re-renders, and re-bills, the whole plan |
 | `shots` | yes | list | rendered and stitched in this order |
 
 There is no `model` field: the skill pins its video model in

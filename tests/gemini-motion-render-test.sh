@@ -11,6 +11,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
 GEN="$SRC/skills/gemini-motion/scripts/generate_video.py"
+SB="$SRC/skills/gemini-motion/scripts/storyboard.py"
+EXAMPLE="$SRC/skills/gemini-motion/references/storyboard-example.json"
 
 fail() {
   echo "gemini-motion render test failed: $*" >&2
@@ -142,5 +144,42 @@ seconds="$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).readl
   "$tmp/upload/.gemini-motion/runs.jsonl")"
 python3 -c "import sys; sys.exit(0 if $seconds < 1.5 else 1)" ||
   fail "the logged render time ($seconds s) includes the 2 s upload"
+
+# 6. storyboard.py renders a plan through the same billed call: one create per
+#    pending shot, each with its own duration at the plan's resolution and with
+#    retries off; the interaction id lands in the manifest and the run log; and
+#    a second render bills nothing. This is the case that sees render_clip's
+#    return shape -- the gate test stops before any client exists.
+sbdir="$tmp/storyboard"
+mkdir -p "$sbdir"
+cp "$EXAMPLE" "$sbdir/plan.json"
+storyboard() {
+  (cd "$sbdir" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$sbdir/calls" \
+    PYTHONPATH="$stub" python3 "$SB" "$@" >"$sbdir/log" 2>&1) ||
+    fail "storyboard $* exited non-zero: $(cat "$sbdir/log")"
+}
+storyboard render plan.json --approve 18s@720p
+got="$(
+  python3 - "$sbdir/calls" <<'PY'
+import json, sys
+print([(e["response_format"]["duration"], e["response_format"]["resolution"], e["retries"])
+       for e in map(json.loads, open(sys.argv[1])) if e["call"] == "create"])
+PY
+)"
+[[ "$got" == "[('8s', '720p', 1), ('4s', '720p', 1), ('6s', '720p', 1)]" ]] ||
+  fail "the storyboard's billed calls did not carry each shot's duration at the plan's resolution with retries off: $got"
+for id in desk coffee window; do
+  grep -q 'inline-clip' "$sbdir/out/shots/$id.mp4" || fail "clip $id was not saved"
+done
+ids="$(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print(sorted({e["interaction_id"] for e in m["shots"].values()}), len(m["shots"]))' \
+  "$sbdir/out/manifest.json")"
+[[ "$ids" == "['v1_stub'] 3" ]] ||
+  fail "the manifest did not record the interaction id of every shot: $(cat "$sbdir/out/manifest.json")"
+[[ "$(grep -c '"kind": "storyboard"' "$sbdir/.gemini-motion/runs.jsonl")" == 3 ]] ||
+  fail "the run log did not get one storyboard line per shot: $(cat "$sbdir/.gemini-motion/runs.jsonl")"
+storyboard render plan.json
+grep -q 'nothing to render' "$sbdir/log" || fail "a second render was not a no-op: $(cat "$sbdir/log")"
+[[ "$(grep -c '"call": "create"' "$sbdir/calls")" == 3 ]] ||
+  fail "a second render billed again: $(cat "$sbdir/calls")"
 
 echo "gemini-motion render tests: passed"
