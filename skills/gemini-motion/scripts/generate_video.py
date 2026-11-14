@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate, edit or extend a short video with Gemini Omni Flash (gemini-omni-1.1-flash).
+"""Generate, edit or extend a short video with Gemini Omni Flash (gemini-omni-1.2-flash).
 
 One script covers every Omni mode; which one runs depends on what you pass:
 
@@ -9,7 +9,7 @@ One script covers every Omni mode; which one runs depends on what you pass:
   subject references   generate_video.py "prompt" --image cat.png --image yarn.png
   edit previous clip   generate_video.py "Make it night. Keep everything else the same." --previous-id v1_abc
   extend previous clip generate_video.py "Extend this video: the camera pans left." --previous-id v1_abc
-  edit/extend a file   generate_video.py "Make it anime" --video my_clip.mp4   (<=10s uploads)
+  edit/extend a file   generate_video.py "Make it anime" --video my_clip.mp4   (<=15s uploads)
 
 Draft cheaply, then finalize:
   generate_video.py "..." --draft               # 360p, ~1/3 the cost of 720p
@@ -31,8 +31,8 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gemini_common import (  # noqa: E402
-    MAX_CLIP_SECONDS,
     MAX_EXTENDED_SECONDS,
+    MAX_UNPINNED_SECONDS,
     DEFAULT_TIMEOUT_S,
     MODELS,
     VIDEO_RATES_USD,
@@ -48,7 +48,7 @@ from gemini_common import (  # noqa: E402
 
 RESOLUTIONS = ("360p", "720p", "1080p", "4k")
 ASPECTS = ("16:9", "9:16")
-TASKS = ("text_to_video", "image_to_video", "reference_to_video", "edit", "extend", "upscale")
+TASKS = ("text_to_video", "image_to_video", "reference_to_video", "edit", "extend")
 
 
 def slug(text: str, n: int = 40) -> str:
@@ -70,17 +70,17 @@ def main() -> int:
     ap.add_argument("--resolution", choices=RESOLUTIONS, default=None, help="default 720p")
     ap.add_argument("--draft", action="store_true", help="shorthand for --resolution 360p")
     ap.add_argument("--duration", type=int, choices=range(3, 11), metavar="SECONDS",
-                    help="clip length, 3-10 (default: model decides from the prompt). Billed per second.")
+                    help="clip length, 3-10 (default: 10, or a length the prompt names, up to 15). Billed per second.")
     ap.add_argument("--image", action="append", help="reference image (repeatable, up to a handful)")
     ap.add_argument("--first-frame", help="image to start the video on")
     ap.add_argument("--last-frame", help="image to end the video on (needs --first-frame)")
-    ap.add_argument("--video", help="your own .mp4 (<=10s) to edit or extend; uploaded via Files API")
+    ap.add_argument("--video", help="your own .mp4 (<=15s) to edit or extend; uploaded via Files API")
     ap.add_argument("--previous-id", help="interaction id of a previous clip to edit or extend")
     ap.add_argument("--task", choices=TASKS, help="force a mode; normally the prompt is enough")
     ap.add_argument("--uri", action="store_true", help="force URI delivery (auto for 1080p/4k)")
     ap.add_argument("--no-store", action="store_true", help="faster, but the result cannot be edited later")
     ap.add_argument("--output-seconds", type=int, metavar="SECONDS",
-                    help="on an extend or upscale, the length of the FINISHED clip, which is\n"
+                    help="on an extend, the length of the FINISHED clip, which is\n"
                          "what the rate applies to. Without it the worst case is priced")
     ap.add_argument("--approve", metavar="<N>s@<resolution>",
                     help="the price you agreed to pay, as the exact token this script prints\n"
@@ -106,16 +106,16 @@ def main() -> int:
     #
     # Without --duration the model picks the length, so the only honest figure
     # to price is the worst case.
-    # An extend or an upscale returns the WHOLE clip, not the increment, and
+    # An extend returns the WHOLE clip, not the increment, and
     # the rate is per second of output -- so on that path the thing being
     # billed is a length this script never sees. --duration is the increment
     # there and bounds nothing, so pricing from it, or from MAX_CLIP_SECONDS,
-    # quoted up to a tenth of the real bill on a clip extended to 40s.
-    extending = bool(args.previous_id) or args.task in ("extend", "upscale")
+    # quoted up to a tenth of the real bill on a clip extended to 30s.
+    extending = bool(args.previous_id) or args.task == "extend"
     if extending:
         billable = args.output_seconds or MAX_EXTENDED_SECONDS
     else:
-        billable = args.duration or MAX_CLIP_SECONDS
+        billable = args.duration or MAX_UNPINNED_SECONDS
     estimate = billable * VIDEO_RATES_USD[resolution]
     token = approval_token(billable, resolution)
     if args.approve is None:
@@ -125,7 +125,7 @@ def main() -> int:
             print(f"  result, not the part added; {MAX_EXTENDED_SECONDS}s is the worst case.")
             print("  pass --output-seconds N with the finished length to approve less.")
         elif not extending and not args.duration:
-            print(f"  length is unset, so the model chooses it; {MAX_CLIP_SECONDS}s is the worst case.")
+            print(f"  length is unset, so the model chooses it; {MAX_UNPINNED_SECONDS}s is the worst case.")
             print("  pass --duration 3..10 to pin it and approve a smaller number.")
         print(f"approve with: --approve {token}")
         return 2
@@ -154,7 +154,7 @@ def main() -> int:
         "aspect": args.aspect or "16:9",
         "duration": f"{args.duration}s" if args.duration else None,
         "billed_seconds": billable,
-        "priced_as": "whole output (extend/upscale)" if extending else "this clip",
+        "priced_as": "whole output (extend)" if extending else "this clip",
         "estimate_usd": round(estimate, 2),
         "previous_id": args.previous_id,
         "seconds": elapsed,

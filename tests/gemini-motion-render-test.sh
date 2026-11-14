@@ -64,7 +64,11 @@ class Client:
         open(destination, "wb").write(b"uri-clip")
 
     def _create(self, timeout, **kw):
-        kw.pop("input")
+        inp = kw.pop("input")
+        if isinstance(inp, str):
+            inp = [{"type": "text", "text": inp}]
+        kw["blocks"] = [b["type"] for b in inp]
+        kw["text"] = inp[-1]["text"]
         _log(call="create", retries=self.retries, timeout=timeout, **kw)
         if kw["response_format"].get("delivery") == "uri":
             clip = SimpleNamespace(data=None, uri="https://stub/files/clip:download")
@@ -105,6 +109,10 @@ PY
 render small "a cat" --duration 6 --draft --approve 6s@360p
 [[ "$(field small create 'e["retries"]')" == 1 ]] ||
   fail "the billed create did not go out with retries off: $(cat "$tmp/small/calls")"
+# VIDEO_RATES_USD and the clip limits are one model's, so a change of model
+# fails here until they are re-read against it.
+[[ "$(field small create 'e["model"]')" == gemini-omni-1.2-flash ]] ||
+  fail "the billed create went to a model the rate table was not read for: $(cat "$tmp/small/calls")"
 
 # 2. Below 1080p the clip comes back inline, unless --uri asks otherwise. The
 #    store setting is left to the API unless --no-store turns it off.
@@ -133,7 +141,18 @@ got="$(field flags create '[e["previous_interaction_id"], e["response_format"], 
 want="['v1_abc', {'aspect_ratio': '9:16', 'duration': '5s', 'resolution': '720p', 'type': 'video'}, {'video_config': {'task': 'extend'}}, False, 77.0]"
 [[ "$got" == "$want" ]] || fail "the billed call did not carry the flags: $got"
 
-# 5. An uploaded --video goes up on the retrying client, and the time logged
+# 5. First and last frames go in as images ahead of the text, and the text is
+#    the prompt as written: Omni 1.2 deprecates the <FIRST_FRAME>-style control
+#    tags the script used to prepend, and says to describe the roles in prose.
+printf 'not really a png' >"$tmp/a.png"
+printf 'not really a png' >"$tmp/b.png"
+render frames "Dawn turns to night" --first-frame "$tmp/a.png" --last-frame "$tmp/b.png" \
+  --duration 5 --approve 5s@720p
+got="$(field frames create '[e["blocks"], e["text"]]')"
+[[ "$got" == "[['image', 'image', 'text'], 'Dawn turns to night']" ]] ||
+  fail "the frames did not go in as images ahead of the prompt as written: $got"
+
+# 6. An uploaded --video goes up on the retrying client, and the time logged
 #    for the render is the render's, not the upload's.
 STUB_UPLOAD_DELAY=2 render upload "Make it anime" --video "$tmp/in.mp4" --duration 5 --approve 5s@720p
 [[ "$(field upload upload 'e["retries"]')" == default ]] ||

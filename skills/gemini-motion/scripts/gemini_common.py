@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 MODELS = {
-    "video": "gemini-omni-1.1-flash",
+    "video": "gemini-omni-1.2-flash",
     "image": "gemini-nano-banana-2.1",
     "code": "gemini-3.8-flash",
     "code_cheap": "gemini-3.5-flash-lite",
@@ -56,24 +56,36 @@ brief has not been observed finishing faster, so a shorter slice just burns
 the remaining budget and reports the same failure later."""
 
 MAX_CLIP_SECONDS = 10
-"""One Omni call tops out here; longer needs --previous-id to extend."""
+"""The longest clip every Omni mode accepts, and so the cap on a pinned length.
 
-MAX_EXTENDED_SECONDS = 40
+Omni 1.2 renders text and reference clips up to 15 s, but first/last-frame
+clips and each extend turn stop at 10. Longer needs --previous-id to extend.
+"""
+
+MAX_UNPINNED_SECONDS = 15
+"""What one call can bill when no duration is pinned.
+
+Omni 1.2 defaults to 10 s, but without a pinned duration it follows a length
+the prompt names, up to 15. Pricing an unpinned render at MAX_CLIP_SECONDS
+would quote two thirds of a bill the prompt alone can raise.
+"""
+
+MAX_EXTENDED_SECONDS = 30
 """What an extended clip tops out at, and therefore what an extend can bill.
 
 A rate quoted per second of OUTPUT means an extend is priced by the length of
-the video that comes back, not by the increment added. The skill documents
-extension to 40 s, so pricing an extend at MAX_CLIP_SECONDS quoted a tenth of
-the clip on the one mode whose output this script cannot measure in advance.
+the video that comes back, not by the increment added. Omni 1.2 extends to
+30 s in total, so pricing an extend at MAX_CLIP_SECONDS quoted a third of the
+clip on the one mode whose output this script cannot measure in advance.
 """
 
-VIDEO_RATES_USD = {"360p": 0.03, "720p": 0.10, "1080p": 0.15, "4k": 0.30}
-"""USD per second of OUTPUT video, by resolution.
+VIDEO_RATES_USD = {"360p": 0.023, "720p": 0.07, "1080p": 0.104, "4k": 0.209}
+"""USD per second of OUTPUT video, by resolution, for gemini-omni-1.2-flash.
 
-Published list prices as of late 2026, kept here rather than in each script so
-there is one copy to correct. They do move: check
-https://ai.google.dev/gemini-api/docs/pricing before quoting a figure that
-matters.
+Read 2026-11-14 from the pricing page's footnote: $12.00 per 1M output video
+tokens, at 1,931 / 5,792 / 8,688 / 17,376 tokens per second. Kept here rather
+than in each script so there is one copy to correct. They do move: check
+https://aistudio.google.com/docs/pricing before quoting a figure that matters.
 """
 
 
@@ -381,30 +393,30 @@ BIG_RESOLUTIONS = ("1080p", "4k")  # payloads > 4 MB need URI delivery
 
 def omni_input(client, prompt: str, *, images=(), first_frame=None, last_frame=None,
                video=None) -> list | str:
-    """Assemble the Interactions `input`: media blocks first, then the text."""
+    """Assemble the Interactions `input`: media blocks first, then the text.
+
+    The text goes in as written. Omni 1.2 deprecates the <FIRST_FRAME> and
+    <LAST_FRAME> control tags this used to prepend; the prompt says in prose
+    what each image is for, and the frames lead so their order says which is
+    first.
+    """
     blocks: list[dict] = []
-    tags: list[str] = []
 
     if first_frame:
         blocks.append(image_block(first_frame))
-        if "<FIRST_FRAME>" not in prompt:
-            tags.append("<FIRST_FRAME>")
     if last_frame:
         if not first_frame:
             die("--last-frame requires --first-frame")
         blocks.append(image_block(last_frame))
-        if "<LAST_FRAME>" not in prompt:
-            tags.append("<LAST_FRAME>")
     for p in images:
         blocks.append(image_block(p))
     if video:
         uploaded = upload_file(client, video)
         blocks.insert(0, video_block_from_upload(uploaded))
 
-    text = (" ".join(tags) + " " + prompt).strip() if tags else prompt
     if not blocks:
-        return text
-    blocks.append({"type": "text", "text": text})
+        return prompt
+    blocks.append({"type": "text", "text": prompt})
     return blocks
 
 

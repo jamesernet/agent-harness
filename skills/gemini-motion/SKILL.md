@@ -10,7 +10,7 @@ and reviewer; Gemini does the rendering or writes the keyframes.
 
 | Path | Produces | Model | Cost | Reach for it when |
 |---|---|---|---|---|
-| **A. Rendered video** | .mp4, 3–10 s (extend to 40 s), native audio | `gemini-omni-1.1-flash` | **paid only**, ~$0.03/s draft, ~$0.10/s at 720p | photoreal or cinematic, live-action feel, sound, "a video of …", social clips, something a browser can't draw |
+| **A. Rendered video** | .mp4, 3–10 s (extend to 30 s), native audio | `gemini-omni-1.2-flash` | **paid only**, ~$0.023/s draft, ~$0.07/s at 720p | photoreal or cinematic, live-action feel, sound, "a video of …", social clips, something a browser can't draw |
 | **B. Code animation** | one self-contained .html / .svg / Lottie .json | `gemini-3.8-flash` | free tier | UI motion, logos, loaders, hero backgrounds, diagrams that animate, anything that ships inside a web page or app |
 | (both) **Assets / keyframes** | .png | `gemini-nano-banana-2.1` | cents | a first/last frame for a video, a sprite or illustration for an animation |
 
@@ -54,13 +54,14 @@ recipe and limits there are what separate a usable clip from a generic one.
 3. **Draft cheap.** Run it once without `--approve`: it prints what the render
    will bill and refuses. Show the user that line, get a real yes, then re-run
    with the exact token it printed. The token is `<seconds>s@<resolution>`,
-   and it carries both because the per-second rate is ten times higher at 4k
+   and it carries both because the per-second rate is nine times higher at 4k
    than at 360p — an approval that named seconds alone was satisfied by a far
    more expensive render. `--duration` pins the length so the approval is for
-   the seconds you meant rather than the 10 s worst case.
+   the seconds you meant rather than the 15 s worst case (unpinned, the model
+   follows a length the prompt names, up to 15 s).
    ```bash
    python <skill>/scripts/generate_video.py --prompt-file motion/x-prompt.txt --draft --aspect 9:16 --duration 6 --out motion/x-draft.mp4
-   # -> this render bills 6s at 360p, about $0.18 / approve with: --approve 6s@360p
+   # -> this render bills 6s at 360p, about $0.14 / approve with: --approve 6s@360p
    python <skill>/scripts/generate_video.py --prompt-file motion/x-prompt.txt --draft --aspect 9:16 --duration 6 --approve 6s@360p --out motion/x-draft.mp4
    ```
    Watch it (Read the file or send it to the user). Judge: subject right,
@@ -71,12 +72,12 @@ recipe and limits there are what separate a usable clip from a generic one.
    three drafts is normal; tell the user the running spend.
 5. **Final.** Same prompt at `--resolution 720p` (or 1080p/4k if they need
    it; both are upscales). Extend with `--previous-id` + "Extend this video:
-   …" when they need more than 10 s, up to 40 s.
+   …" when they need more than 10 s, up to 30 s.
 
    **An extend is priced by the whole clip, not the part added.** The rate is
-   per second of output and an extend returns the finished video, so a fourth
-   extend of a 30-second clip is a 40-second bill. The gate prices that path at
-   the 40 s ceiling unless you pass `--output-seconds` with the finished
+   per second of output and an extend returns the finished video, so a second
+   extend of a 20-second clip is a 30-second bill. The gate prices that path at
+   the 30 s ceiling unless you pass `--output-seconds` with the finished
    length. That ceiling is the conservative reading rather than a measured
    invoice: if Omni turns out to bill only the increment, the gate overstates,
    which is the direction to be wrong in. Tell the user which number they are
