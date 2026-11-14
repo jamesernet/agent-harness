@@ -156,6 +156,24 @@ for bad in '"repo-ownd"' 'false'; do
   jq -e '.compliant == false' "$tmp/hp-bad.json" >/dev/null || fail "hooks=$bad was reported compliant"
 done
 
+# null reads as unset, as it does for briefs and claudeImport.
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":null}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-null.json" 2>/dev/null || true
+if jq -e 'any(.findings[]; .id == "hooks-owner")' "$tmp/hp-null.json" >/dev/null; then
+  fail "hooks=null was not read as unset: $(jq -c '[.findings[] | select(.id == "hooks-owner")]' "$tmp/hp-null.json")"
+fi
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN")' "$tmp/hp-null.json" >/dev/null ||
+  fail "hooks=null changed the undeclared report"
+
+# An explicit managed in a clone whose core.hooksPath is set is the mirror
+# contradiction: git runs that framework, not the managed backstop.
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"managed"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-managed-set.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("hooks=managed")))' "$tmp/hp-managed-set.json" >/dev/null ||
+  fail "an explicit managed declaration over core.hooksPath was not reported: $(jq -c '[.findings[] | select(.id == "hooks-owner")]' "$tmp/hp-managed-set.json")"
+jq -e '.compliant == false' "$tmp/hp-managed-set.json" >/dev/null ||
+  fail "an explicit managed declaration over core.hooksPath was reported compliant"
+
 # Not JSON at all: the report still prints, carrying the CONFLICT the resolver
 # produced, instead of `declared` aborting the run under set -e with no output.
 printf '%s\n' '{bad' >"$hp/.llmctx.json"
@@ -189,6 +207,32 @@ jq -e '[.findings[] | select(.status != "OK" and .status != "OVERRIDE") | .id] =
   fail "the contradicted declaration was not the only failure: $(jq -c '[.findings[] | select(.status != "OK")]' "$tmp/hp-declared-unset.json")"
 jq -e '.compliant == false' "$tmp/hp-declared-unset.json" >/dev/null ||
   fail "a contradicted hooks declaration was reported compliant"
+
+# An explicit managed with core.hooksPath unset is the ordinary managed state,
+# and the documented default: compliant, with no hooks-owner row at all.
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"managed"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-managed-unset.json" ||
+  fail "an explicit managed declaration was not compliant: $(jq -c '[.findings[] | select(.status != "OK")]' "$tmp/hp-managed-unset.json")"
+if jq -e 'any(.findings[]; .id == "hooks-owner")' "$tmp/hp-managed-unset.json" >/dev/null; then
+  fail "an explicit managed declaration produced a hooks-owner finding"
+fi
+
+# A tilde git cannot expand is not "unset": the directory is reported missing,
+# which is what git itself says at commit time, and git-hook names the declared
+# directory that is not there instead of a framework to integrate with. This
+# case runs last: once the value is set, git refuses every later command in
+# this repository, the --unset that would clear it included.
+# shellcheck disable=SC2088 # the literal tilde is the case: git stores it and fails to expand it later
+git -C "$hp" config core.hooksPath '~nosuchuser-llmctx/hk'
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"repo-owned"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-badtilde.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "MISSING" and (.actual | test("does not exist")))' "$tmp/hp-badtilde.json" >/dev/null ||
+  fail "an unexpandable core.hooksPath was not reported as a missing directory: $(jq -c '[.findings[] | select(.status != "OK")]' "$tmp/hp-badtilde.json")"
+if jq -e 'any(.findings[]; .id == "hooks-owner" and (.actual | test("unset")))' "$tmp/hp-badtilde.json" >/dev/null; then
+  fail "an unexpandable core.hooksPath was read as unset"
+fi
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN" and (.actual | test("does not exist")))' "$tmp/hp-badtilde.json" >/dev/null ||
+  fail "git-hook did not name the declared directory that is missing: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/hp-badtilde.json")"
 
 # --- a scaffold shim is MISSING, a foreign hook is UNKNOWN -------------------
 #
