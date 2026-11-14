@@ -166,7 +166,7 @@ are the method.
 - `scripts/generate_animation.py` — brief → .html / .svg / Lottie .json; iterate via `--previous-id`
 - `scripts/generate_image.py` — Nano Banana stills for keyframes and sprites
 - `scripts/snapshot_animation.py` — frames/mp4/gif from an HTML or SVG animation (Playwright, ffmpeg)
-- `scripts/gemini_common.py` — shared client, content blocks, logging
+- `scripts/gemini_common.py` — shared client, content blocks, logging, and the one billed video call (approval token, `render_clip`)
 - `references/setup.md` — key, SDK, billing, troubleshooting
 - `references/video-prompting.md` — Omni prompt recipe, flags, editing/extending, limits, cost
 - `references/animation-brief.md` — brief template, format choice, QA checklist, assets

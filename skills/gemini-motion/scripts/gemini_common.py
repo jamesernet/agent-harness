@@ -4,6 +4,10 @@ Everything here is deliberately small: build a client from GEMINI_API_KEY,
 turn local files into Interactions API content blocks, extract a code block
 from a model reply, and append a line to a JSONL run log so later turns can
 chain on `previous_interaction_id`.
+
+The one exception is the billed video call, which lives here whole -- its
+approval token, the check against it, and render_clip -- so that every script
+that renders a clip spends money through the same code.
 """
 
 from __future__ import annotations
@@ -343,3 +347,138 @@ def usage_summary(interaction) -> dict | None:
         if val is not None:
             out[name] = val
     return out or None
+
+
+def approval_token(seconds: int, resolution: str) -> str:
+    """What a billed render prints, and then demands back, as one string.
+
+    What the user approves is a PRICE, so the approval has to carry every input
+    the price is made of: seconds TIMES a per-second rate that the resolution
+    sets. It used to carry seconds only, and an approval of "10", shown to the
+    user as $0.30, was satisfied by the same 10 seconds at 4k and billed $3.00.
+    """
+    return f"{seconds}s@{resolution}"
+
+
+def require_approval(given: str, token: str) -> None:
+    """Stop unless `given` is exactly the token this render was priced at.
+
+    Nothing else reads an approval as a number, so there is one comparison to
+    get right, and a mismatch means the settings moved after the user looked.
+    """
+    if given == token:
+        return
+    if given.rstrip("s").isdigit():
+        die(f"--approve now takes the whole token, {token}, not seconds alone: "
+            "seconds without a resolution approved a price that a change of "
+            "resolution could still multiply")
+    die(f"this render bills {token} but --approve says {given!r}; "
+        "re-check the settings and confirm again")
+
+
+BIG_RESOLUTIONS = ("1080p", "4k")  # payloads > 4 MB need URI delivery
+
+
+def omni_input(client, prompt: str, *, images=(), first_frame=None, last_frame=None,
+               video=None) -> list | str:
+    """Assemble the Interactions `input`: media blocks first, then the text."""
+    blocks: list[dict] = []
+    tags: list[str] = []
+
+    if first_frame:
+        blocks.append(image_block(first_frame))
+        if "<FIRST_FRAME>" not in prompt:
+            tags.append("<FIRST_FRAME>")
+    if last_frame:
+        if not first_frame:
+            die("--last-frame requires --first-frame")
+        blocks.append(image_block(last_frame))
+        if "<LAST_FRAME>" not in prompt:
+            tags.append("<LAST_FRAME>")
+    for p in images:
+        blocks.append(image_block(p))
+    if video:
+        uploaded = upload_file(client, video)
+        blocks.insert(0, video_block_from_upload(uploaded))
+
+    text = (" ".join(tags) + " " + prompt).strip() if tags else prompt
+    if not blocks:
+        return text
+    blocks.append({"type": "text", "text": text})
+    return blocks
+
+
+def wait_for_uri(client, uri: str, timeout_s: int = 900) -> None:
+    """Poll the Files API until a URI-delivered video is ACTIVE."""
+    name = "files/" + uri.split("/files/")[-1].split(":")[0].split("?")[0]
+    start = time.time()
+    while True:
+        info = client.files.get(name=name)
+        state = getattr(info.state, "name", str(info.state))
+        if state == "ACTIVE":
+            return
+        if state == "FAILED":
+            die("video generation failed while processing the file")
+        if time.time() - start > timeout_s:
+            die(f"timed out waiting for {name}")
+        time.sleep(5)
+
+
+def render_clip(prompt: str, out: Path, *, resolution: str, timeout: float, aspect=None,
+                duration=None, images=(), first_frame=None, last_frame=None, video=None,
+                previous_id=None, task=None, uri=False, store=True, announce=None):
+    """Render one Omni clip to `out` and return the interaction. This call BILLS.
+
+    It checks no price: call it only after require_approval has passed, for a
+    token priced from these same settings. Every billed video render goes
+    through here, so a fix to how one is made lands once.
+
+    `announce` is printed after the inputs are checked and immediately before
+    the billed call, so a bad input fails without claiming to be generating.
+    """
+    client = get_client()
+    inp = omni_input(client, prompt, images=images, first_frame=first_frame,
+                     last_frame=last_frame, video=video)
+
+    response_format: dict = {"type": "video", "resolution": resolution}
+    if aspect:
+        response_format["aspect_ratio"] = aspect
+    if duration:
+        response_format["duration"] = f"{duration}s"
+    if uri or resolution in BIG_RESOLUTIONS:
+        response_format["delivery"] = "uri"
+
+    kwargs: dict = {"model": MODELS["video"], "input": inp, "response_format": response_format}
+    if previous_id:
+        kwargs["previous_interaction_id"] = previous_id
+    if task:
+        kwargs["generation_config"] = {"video_config": {"task": task}}
+    if not store:
+        kwargs["store"] = False
+
+    if announce:
+        print(announce, flush=True)
+    try:
+        # A separate client for the one billed call, with the SDK's retries off
+        # (see get_client). `client` keeps them, for the free uploads above and
+        # the download below.
+        interaction = create(get_client(retries=False), timeout, **kwargs)
+    except Exception as e:  # noqa: BLE001
+        die(f"{type(e).__name__}: {e}")
+
+    clip = getattr(interaction, "output_video", None)
+    if clip is None:
+        status = getattr(interaction, "status", "?")
+        text = (getattr(interaction, "output_text", "") or "")[:500]
+        die(f"no video in response (status={status}). Model said: {text!r}\n"
+            "Prompts that trip the safety filter return no video; rephrase and retry.")
+
+    if getattr(clip, "data", None):
+        save_b64(clip.data, out)
+    elif getattr(clip, "uri", None):
+        wait_for_uri(client, clip.uri)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        client.files.download(file=clip.uri, destination=str(out))
+    else:
+        die("video block had neither inline data nor a uri")
+    return interaction
