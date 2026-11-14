@@ -240,8 +240,15 @@ git -C "$hp" config --unset core.hooksPath
 mkdir -p "$tmp/ghooks"
 printf '%s\n' '#!/bin/sh' 'git symbolic-ref --short HEAD' >"$tmp/ghooks/pre-commit"
 git config --global core.hooksPath "$tmp/ghooks"
+# Undeclared first: the pre-existing rows name the scope too, and their fix
+# unsets the value where it is, not locally where it is not.
+printf '%s\n' '{"schemaVersion":1,"profile":"personal"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-global-undeclared.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN" and .source == "git-global") and any(.findings[]; .id == "policy-enforcement" and (.remediation | test("--global --unset")))' "$tmp/hp-global-undeclared.json" >/dev/null ||
+  fail "an undeclared global core.hooksPath was attributed to local config: $(jq -c '[.findings[] | select(.id == "git-hook" or .id == "policy-enforcement")]' "$tmp/hp-global-undeclared.json")"
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"repo-owned"}' >"$hp/.llmctx.json"
 "$CLI" repo diff "$hp" --json >"$tmp/hp-global.json" 2>/dev/null || true
-jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("not a directory this repository tracks")) and (.actual | test("\\(global config\\)")))' "$tmp/hp-global.json" >/dev/null ||
+jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("no tracked hook")) and (.actual | test("\\(global config\\)")))' "$tmp/hp-global.json" >/dev/null ||
   fail "repo-owned over a global core.hooksPath was honoured or misdescribed: $(jq -c '[.findings[] | select(.id == "hooks-owner" or .id == "git-hook")]' "$tmp/hp-global.json")"
 if jq -e 'any(.findings[]; .status == "OVERRIDE" and (.id == "git-hook" or .id == "policy-enforcement"))' "$tmp/hp-global.json" >/dev/null; then
   fail "a global core.hooksPath satisfied a repo-owned declaration"
@@ -262,7 +269,7 @@ printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"repo-owned"}' >"
 for hp_case in .githooks-untracked .git/hooks; do
   git -C "$hp" config core.hooksPath "$hp_case"
   "$CLI" repo diff "$hp" --json >"$tmp/hp-untracked.json" 2>/dev/null || true
-  jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("not a directory this repository tracks")))' "$tmp/hp-untracked.json" >/dev/null ||
+  jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("no tracked hook")))' "$tmp/hp-untracked.json" >/dev/null ||
     fail "repo-owned over $hp_case was honoured: $(jq -c '[.findings[] | select(.id == "hooks-owner" or .id == "git-hook")]' "$tmp/hp-untracked.json")"
   if jq -e 'any(.findings[]; .status == "OVERRIDE")' "$tmp/hp-untracked.json" >/dev/null; then
     fail "repo-owned over $hp_case produced an override"
@@ -275,8 +282,24 @@ if [[ "$(id -u)" -ne 0 ]]; then
   chmod 755 "$hp/.githooks-untracked"
   jq -e '.findings | length > 3' "$tmp/hp-unreadable.json" >/dev/null ||
     fail "an unreadable hooks directory aborted the run: $(head -c 200 "$tmp/hp-unreadable.json")"
-  jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT")' "$tmp/hp-unreadable.json" >/dev/null ||
-    fail "an unreadable hooks directory was not reported: $(jq -c '[.findings[] | select(.id == "hooks-owner" or .id == "git-hook")]' "$tmp/hp-unreadable.json")"
+  jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN" and (.actual | test("cannot be read")))' "$tmp/hp-unreadable.json" >/dev/null ||
+    fail "an unreadable hooks directory was not named as such: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/hp-unreadable.json")"
+  jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "MISSING" and (.actual | test("cannot be read")))' "$tmp/hp-unreadable.json" >/dev/null ||
+    fail "an unreadable hooks directory was graded as if it had been read: $(jq -c '[.findings[] | select(.id == "policy-enforcement")]' "$tmp/hp-unreadable.json")"
+fi
+
+# The index is applied to the hook files, not to any file: a tracked README
+# beside an untracked hook is no guard in a clone.
+mkdir -p "$hp/.githooks-readme"
+printf '%s\n' '# hooks' >"$hp/.githooks-readme/README.md"
+printf '%s\n' '#!/bin/sh' 'git symbolic-ref --short HEAD' >"$hp/.githooks-readme/pre-commit"
+git -C "$hp" add .githooks-readme/README.md
+git -C "$hp" config core.hooksPath .githooks-readme
+"$CLI" repo diff "$hp" --json >"$tmp/hp-readme.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("no tracked hook")))' "$tmp/hp-readme.json" >/dev/null ||
+  fail "a tracked README qualified an untracked hook: $(jq -c '[.findings[] | select(.id == "hooks-owner" or .id == "git-hook")]' "$tmp/hp-readme.json")"
+if jq -e 'any(.findings[]; .status == "OVERRIDE")' "$tmp/hp-readme.json" >/dev/null; then
+  fail "a tracked README beside an untracked hook produced an override"
 fi
 git -C "$hp" config --unset core.hooksPath
 
