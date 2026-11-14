@@ -36,10 +36,9 @@ from gemini_common import (  # noqa: E402
     MIN_CLIP_SECONDS,
     DEFAULT_TIMEOUT_S,
     MODELS,
-    VIDEO_RATES_USD,
-    approval_token,
     die,
     log_run,
+    price,
     read_text_arg,
     render_clip,
     require_approval,
@@ -113,10 +112,9 @@ def main() -> int:
         billable = args.output_seconds or MAX_EXTENDED_SECONDS
     else:
         billable = args.duration or MAX_CLIP_SECONDS
-    estimate = billable * VIDEO_RATES_USD[resolution]
-    token = approval_token(billable, resolution)
+    priced = price(billable, resolution)
     if args.approve is None:
-        print(f"this render bills {billable}s at {resolution}, about ${estimate:.2f}")
+        print(f"this render bills {priced.text}")
         if extending and not args.output_seconds:
             print(f"  this continues an existing clip, and the rate applies to the WHOLE")
             print(f"  result, not the part added; {MAX_EXTENDED_SECONDS}s is the worst case.")
@@ -124,9 +122,9 @@ def main() -> int:
         elif not extending and not args.duration:
             print(f"  length is unset, so the model chooses it; {MAX_CLIP_SECONDS}s is the worst case.")
             print("  pass --duration 3..10 to pin it and approve a smaller number.")
-        print(f"approve with: --approve {token}")
+        print(f"approve with: --approve {priced.token}")
         return 2
-    require_approval(args.approve, token)
+    require_approval(args.approve, priced.token)
 
     announce = None
     if not args.json:
@@ -152,7 +150,7 @@ def main() -> int:
         "duration": f"{args.duration}s" if args.duration else None,
         "billed_seconds": billable,
         "priced_as": "whole output (extend/upscale)" if extending else "this clip",
-        "estimate_usd": round(estimate, 2),
+        "estimate_usd": round(priced.usd, 2),
         "previous_id": args.previous_id,
         "seconds": elapsed,
         "usage": usage_summary(interaction),

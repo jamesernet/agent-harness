@@ -51,12 +51,12 @@ from gemini_common import (  # noqa: E402
     MIN_CLIP_SECONDS,
     MODELS,
     VIDEO_RATES_USD,
-    approval_token,
     check_image,
     die,
     ignored_dir,
     log_run,
     positive_timeout,
+    price,
     render_clip,
     require_approval,
     slug,
@@ -81,9 +81,10 @@ def validate(plan) -> list[str]:
     because a value of the wrong type that passes here surfaces as a traceback
     later -- in stitch, after every clip has been paid for.
 
-    Images are not opened here. check_images() does that through check_image,
-    the same rules the render applies, so a bad image fails the plan before
-    anything bills instead of at the far end.
+    Images are not opened here. pending() checks each selected shot's images
+    through check_image, the same rules the render applies, before it reads
+    them, so a bad image fails the plan before anything bills instead of at
+    the far end.
     """
     if not isinstance(plan, dict):
         return ["the plan must be a JSON object"]
@@ -155,25 +156,11 @@ def shot_images(shot: dict) -> list[str]:
     return paths + list(shot.get("images", []))
 
 
-def check_images(plan: dict, base: Path) -> None:
-    """Apply the render's own image rules to every image; check_image dies on the first bad one.
+def load_plan(path: str) -> tuple[dict, Path]:
+    """The plan, validated in shape, and its resolved path; the plan directory is that path's parent.
 
-    That is where an SVG, a GIF, a missing file or an empty one is refused,
-    with the type the model accepts named, before any shot is priced. These
-    checks are a stat() each; the contents are read once, by content_hash,
-    when the shots are priced against the manifest.
-    """
-    for shot in plan["shots"]:
-        for p in shot_images(shot):
-            check_image(base / p)
-
-
-def load_plan(path: str, images: bool = True) -> tuple[dict, Path]:
-    """The validated plan and its resolved path; the plan directory is that path's parent.
-
-    `images=False` skips the image checks, for a command that never sends them:
-    stitch works from the manifest and the clips, so a reference deleted after
-    a successful render must not stop it.
+    Images are not touched here: pending() checks and reads those of the shots
+    it prices, and stitch never needs them.
     """
     plan_path = Path(path).resolve()
     try:
@@ -185,8 +172,6 @@ def load_plan(path: str, images: bool = True) -> tuple[dict, Path]:
         for e in errors:
             print(f"plan: {e}", file=sys.stderr)
         sys.exit(1)
-    if images:
-        check_images(plan, plan_path.parent)
     return plan, plan_path
 
 
@@ -204,6 +189,31 @@ def selected(plan: dict, only) -> set[str]:
 
 def full_prompt(plan: dict, shot: dict) -> str:
     return f"{shot['prompt'].strip()} {plan.get('style', '').strip()}".strip()
+
+
+def recorded(plan: dict, shot: dict) -> dict:
+    """What a manifest entry records about its clip, besides the spec hash and the images.
+
+    stitch judges a clip by these alone, since it never reads images; so an
+    entry that lacks any of them, or differs in any, is stale for every
+    command -- check and render re-render it, stitch refuses it -- and the
+    three cannot disagree about the same clip.
+    """
+    return {
+        "prompt": full_prompt(plan, shot),
+        "duration": shot["duration"],
+        "resolution": plan["resolution"],
+        "aspect_ratio": plan.get("aspect_ratio", ASPECTS[0]),
+        "model": MODELS["video"],
+    }
+
+
+def stale_fields(entry: dict, plan: dict, shot: dict) -> tuple[list[str], list[str]]:
+    """(changed, missing): recorded fields the entry differs in from the plan now, and ones it lacks."""
+    now = recorded(plan, shot)
+    changed = [k for k, v in now.items() if k in entry and entry[k] != v]
+    missing = [k for k in now if k not in entry]
+    return changed, missing
 
 
 @lru_cache(maxsize=None)
@@ -290,9 +300,15 @@ def pending(plan: dict, base: Path, only: set[str]) -> Pending:
     for i, shot in enumerate(plan["shots"], 1):
         if only and shot["id"] not in only:
             continue
+        # Images are checked by name before they are read, and only for the
+        # shots selected here: a reference deleted after an unrelated shot's
+        # render must not block --only work on another shot.
+        for p in shot_images(shot):
+            check_image(base / p)
         h = spec_hash(plan, shot, base)
-        recorded = manifest["shots"].get(shot["id"], {}).get("spec")
-        if recorded != h or not clip_path(base, shot).is_file():
+        entry = manifest["shots"].get(shot["id"], {})
+        changed, missing = stale_fields(entry, plan, shot)
+        if entry.get("spec") != h or changed or missing or not clip_path(base, shot).is_file():
             todo.append((i, shot, h))
     return Pending(todo, sum(s["duration"] for _, s, _ in todo), manifest)
 
@@ -326,8 +342,8 @@ def report(plan: dict, pend: Pending, only: set[str], plan_path: Path) -> None:
     if not pend.shots:
         print("to render: nothing -- every selected shot is current")
         return
-    total = pend.seconds
-    print(f"to render: {len(pend.shots)} shots, {total}s at {res}, about ${total * VIDEO_RATES_USD[res]:.2f}")
+    priced = price(pend.seconds, res)
+    print(f"to render: {len(pend.shots)} shots, {priced.text}")
     if style_changed(plan, pend, only):
         print("  every selected shot is stale because style changed: style is part of every "
               "prompt, so a style edit re-renders the whole plan")
@@ -340,7 +356,7 @@ def report(plan: dict, pend: Pending, only: set[str], plan_path: Path) -> None:
            "render", shlex.quote(str(plan_path))]
     if only:
         cmd += ["--only", *(shlex.quote(i) for i in sorted(only))]
-    cmd += ["--approve", approval_token(total, res)]
+    cmd += ["--approve", priced.token]
     print("approve with: " + " ".join(cmd))
 
 
@@ -368,7 +384,7 @@ def cmd_render(args) -> int:
     # The token is recomputed from the plan on disk -- the same seconds report()
     # prices -- so a plan edited after the price was shown no longer matches,
     # and the run stops here.
-    require_approval(args.approve, approval_token(pend.seconds, res))
+    require_approval(args.approve, price(pend.seconds, res).token)
 
     ignored_dir(base / OUT_DIR_NAME)
     manifest = pend.manifest
@@ -389,10 +405,7 @@ def cmd_render(args) -> int:
         entry = {
             "spec": h,
             "file": str(clip.relative_to(base)),
-            "model": MODELS["video"],
-            "resolution": res,
-            "duration": shot["duration"],
-            "prompt": prompt,
+            **recorded(plan, shot),
             "style": plan.get("style", ""),
             "interaction_id": interaction.id,
             "rendered_at": int(time.time()),
@@ -401,7 +414,7 @@ def cmd_render(args) -> int:
         # Saved after every shot, so an interrupted run resumes instead of re-paying.
         save_manifest(base, manifest)
         log_run("storyboard", plan=str(plan_path), shot=shot["id"], **entry,
-                estimate_usd=round(shot["duration"] * VIDEO_RATES_USD[res], 2),
+                estimate_usd=round(price(shot["duration"], res).usd, 2),
                 seconds=elapsed, usage=usage_summary(interaction))
         print(f"{i:02d} {shot['id']}: saved {entry['file']}  ({elapsed}s)")
     return 0
@@ -422,10 +435,11 @@ def not_stitchable(plan: dict, base: Path, manifest: dict) -> list[str]:
     """Shots stitch cannot use, each with its reason, judged from the manifest and the clips alone.
 
     Images are not consulted: a reference deleted after a successful render
-    must not make the stitch impossible. An edit the manifest can see -- the
-    prompt (style included), duration, resolution or model -- still refuses,
-    so a stale clip is not stitched silently; an image edit is check's and
-    render's job.
+    must not make the stitch impossible. Everything else the entry records
+    (see recorded) is held against the plan, and an entry that lacks any of
+    it is refused too, so a stale clip is never stitched silently and check,
+    render and stitch agree about the same clip; an image edit alone is
+    check's and render's job.
     """
     reasons = []
     for shot in plan["shots"]:
@@ -433,22 +447,27 @@ def not_stitchable(plan: dict, base: Path, manifest: dict) -> list[str]:
         if entry is None or not clip_path(base, shot).is_file():
             reasons.append(f"{shot['id']} (not rendered)")
             continue
-        current = {"prompt": full_prompt(plan, shot), "duration": shot["duration"],
-                   "resolution": plan["resolution"], "model": MODELS["video"]}
-        changed = [k for k, v in current.items() if k in entry and entry[k] != v]
+        changed, missing = stale_fields(entry, plan, shot)
+        why = []
         if changed:
-            reasons.append(f"{shot['id']} ({', '.join(changed)} changed since it was rendered)")
+            why.append(f"{', '.join(changed)} changed since it was rendered")
+        if missing:
+            why.append(f"{', '.join(missing)} not recorded")
+        if why:
+            reasons.append(f"{shot['id']} ({'; '.join(why)})")
     return reasons
 
 
 def cmd_stitch(args) -> int:
-    plan, plan_path = load_plan(args.plan, images=False)
+    plan, plan_path = load_plan(args.plan)
     base = plan_path.parent
-    if not shutil.which("ffmpeg"):
-        die("ffmpeg is not installed; stitch needs it (check and render do not)")
+    # Staleness first, then the tool: "render first" is the useful answer when
+    # the clips are stale, whether or not ffmpeg is installed.
     reasons = not_stitchable(plan, base, load_manifest(base))
     if reasons:
         die("render first; these shots have no current clip: " + ", ".join(reasons))
+    if not shutil.which("ffmpeg"):
+        die("ffmpeg is not installed; stitch needs it (check and render do not)")
     clips = [clip_path(base, s) for s in plan["shots"]]
     out = ignored_dir(base / OUT_DIR_NAME) / f"{slug(plan['title'])}.mp4"
     # UTF-8 by name: the demuxer reads the listing as UTF-8, and the locale's

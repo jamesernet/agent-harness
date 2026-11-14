@@ -23,7 +23,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import NoReturn
+from typing import NamedTuple, NoReturn
 
 MODELS = {
     "video": "gemini-omni-1.1-flash",
@@ -404,6 +404,24 @@ def require_approval(given: str, token: str) -> None:
             "resolution could still multiply")
     die(f"this render bills {token} but --approve says {given!r}; "
         "re-check the settings and confirm again")
+
+
+class Price(NamedTuple):
+    """One render's price in the three forms every gate uses.
+
+    `text` is what the user reads ("6s at 360p, about $0.18"), `token` is what
+    they confirm back (see approval_token), `usd` is what the log keeps. Both
+    scripts print from here, so the figure shown, the token demanded and the
+    estimate logged cannot drift apart.
+    """
+    text: str
+    token: str
+    usd: float
+
+
+def price(seconds: int, resolution: str) -> Price:
+    usd = seconds * VIDEO_RATES_USD[resolution]
+    return Price(f"{seconds}s at {resolution}, about ${usd:.2f}", approval_token(seconds, resolution), usd)
 
 
 BIG_RESOLUTIONS = ("1080p", "4k")  # payloads > 4 MB need URI delivery

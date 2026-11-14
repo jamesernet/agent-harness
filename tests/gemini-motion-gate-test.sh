@@ -170,8 +170,7 @@ for shot in plan["shots"]:
         clip.touch()
     manifest["shots"][shot["id"]] = {
         "spec": sb.spec_hash(plan, shot, base), "file": str(clip.relative_to(base)),
-        "model": sb.MODELS["video"], "resolution": plan["resolution"], "duration": shot["duration"],
-        "prompt": sb.full_prompt(plan, shot), "style": plan.get("style", "")}
+        **sb.recorded(plan, shot), "style": plan.get("style", "")}
 sb.save_manifest(base, manifest)
 PY
 }
@@ -534,5 +533,59 @@ grep -q 'to render: 3 shots, 18s at 720p' <<<"$out" ||
   fail "a style edit did not re-price every shot: $out"
 grep -q 'stale because style changed' <<<"$out" ||
   fail "check did not name style as the reason every shot is stale: $out"
+
+# 26. The aspect ratio is recorded and held against the plan: rendered at 16:9
+#     and edited to 9:16, stitch refuses naming every shot, where it used to
+#     concatenate the 16:9 clips while check said every shot was pending.
+reset_plan
+seed_rendered
+set_plan aspect_ratio '"9:16"'
+sb stitch "$plan"
+refused "stitch after an aspect_ratio edit"
+for id in desk coffee window; do
+  grep -q "$id (aspect_ratio changed since it was rendered)" <<<"$out" ||
+    fail "stitch did not name $id as stale after the aspect_ratio edit: $out"
+done
+
+# 27. A manifest entry carrying only the spec -- the shape load_manifest
+#     accepts, and what a hand repair produces -- records nothing stitch can
+#     judge by, so stitch refuses it and check re-prices it: the two commands
+#     agree, where stitch used to pass a clip check called stale.
+reset_plan
+seed_rendered
+python3 - "$tmp/out/manifest.json" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1]))
+m["shots"] = {k: {"spec": v["spec"]} for k, v in m["shots"].items()}
+json.dump(m, open(sys.argv[1], "w"))
+PY
+sb stitch "$plan"
+refused "stitch on spec-only manifest entries"
+grep -q 'desk (prompt, duration, resolution, aspect_ratio, model not recorded)' <<<"$out" ||
+  fail "stitch did not refuse a spec-only entry by name: $out"
+sb check "$plan"
+[ "$rc" -eq 0 ] || fail "check on spec-only manifest entries exited $rc: $out"
+grep -q 'to render: 3 shots, 18s at 720p' <<<"$out" ||
+  fail "check did not re-price the spec-only entries that stitch refuses: $out"
+
+# 28. Images are checked only for the shots a command would read. A reference
+#     deleted after an unrelated shot's render used to block --only work on the
+#     other shot with "image not found"; the shot that lost its reference is
+#     still refused by name whenever it is selected.
+reset_plan
+printf 'not really a png, but non-empty' >"$tmp/ref.png"
+set_shot 2 images '["ref.png"]'
+seed_rendered
+rm "$tmp/ref.png"
+sb check "$plan" --only desk
+[ "$rc" -eq 0 ] || fail "check --only desk was blocked by another shot's missing reference: $out"
+grep -q 'to render: nothing' <<<"$out" ||
+  fail "check --only desk did not find desk current: $out"
+sb render "$plan" --only desk
+[ "$rc" -eq 0 ] || fail "render --only desk was blocked by another shot's missing reference: $out"
+sb check "$plan"
+refused "check with a deleted reference on a selected shot"
+grep -q 'image not found' <<<"$out" ||
+  fail "check did not refuse the deleted reference by name: $out"
 
 echo "gemini-motion gate tests: passed"
