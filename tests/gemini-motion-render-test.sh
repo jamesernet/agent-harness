@@ -4,8 +4,9 @@ set -euo pipefail
 # The billed call behind the gemini-motion spend gate. The gate test stops
 # every case before a client exists, so it cannot see how the call that bills
 # is made. This one runs the real scripts against a stub google.genai that
-# records each call and never opens a socket: the stub package shadows any
-# installed SDK on PYTHONPATH, and the key it is handed is not a key.
+# records each call and never opens a socket. The stub shadows an installed
+# SDK through PYTHONPATH, which a .pth file that imports `google` first can
+# defeat -- so the test checks which package it got before any case runs.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -73,6 +74,10 @@ class Client:
 PY
 printf 'not really an mp4' >"$tmp/in.mp4"
 
+got="$(PYTHONPATH="$stub" python3 -c 'import os, google.genai; print(os.path.realpath(google.genai.__file__))')"
+[[ "$got" == "$(cd "$stub" && pwd -P)/google/genai/__init__.py" ]] ||
+  fail "google.genai resolves to $got, not the stub; these renders would reach the real SDK"
+
 # render <case> <args...>: run one approved render in its own directory.
 render() {
   local dir="$tmp/$1"
@@ -88,7 +93,10 @@ field() {
   python3 - "$tmp/$1/calls" "$2" "$3" <<'PY'
 import json, sys
 entries = [json.loads(l) for l in open(sys.argv[1]) if json.loads(l)["call"] == sys.argv[2]]
-print(eval(sys.argv[3], {}, {"e": entries[0]}) if entries else "<no such call>")
+try:
+    print(eval(sys.argv[3], {}, {"e": entries[0]}) if entries else "<no such call>")
+except KeyError as err:
+    print(f"<no {err} in the {sys.argv[2]} call>")
 PY
 }
 
@@ -98,10 +106,16 @@ render small "a cat" --duration 6 --draft --approve 6s@360p
 [[ "$(field small create 'e["retries"]')" == 1 ]] ||
   fail "the billed create did not go out with retries off: $(cat "$tmp/small/calls")"
 
-# 2. Below 1080p the clip comes back inline.
+# 2. Below 1080p the clip comes back inline, unless --uri asks otherwise. The
+#    store setting is left to the API unless --no-store turns it off.
 [[ "$(field small create '"delivery" in e["response_format"]')" == False ]] ||
   fail "a 360p clip asked for URI delivery: $(cat "$tmp/small/calls")"
 grep -q 'inline-clip' "$tmp/small/clip.mp4" || fail "the inline clip was not saved"
+[[ "$(field small create '"store" in e')" == False ]] ||
+  fail "a render without --no-store set store: $(cat "$tmp/small/calls")"
+render forced "a cat" --duration 3 --draft --uri --approve 3s@360p
+[[ "$(field forced create 'e["response_format"].get("delivery")')" == uri ]] ||
+  fail "--uri at 360p did not ask for URI delivery: $(cat "$tmp/forced/calls")"
 
 # 3. At 1080p and 4k the payload outgrows inline delivery, so it must be a URI,
 #    collected on the client that keeps its retries -- a download costs nothing.
