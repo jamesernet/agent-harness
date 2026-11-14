@@ -1,0 +1,23 @@
+{
+  "title": "Morning build",
+  "resolution": "720p",
+  "aspect_ratio": "16:9",
+  "style": "Natural window light, muted warm palette, 35mm lens, shallow depth of field, photoreal. A single continuous shot, no scene cuts. No on-screen text, no logos, no captions.",
+  "shots": [
+    {
+      "id": "desk",
+      "duration": 8,
+      "prompt": "Slow dolly-in on an open laptop on an oak desk at dawn; the screen shows scrolling terminal output. Sound design: soft keyboard clicks and distant birdsong, no music, no dialogue."
+    },
+    {
+      "id": "coffee",
+      "duration": 4,
+      "prompt": "Static close-up: a hand sets a ceramic mug of coffee beside the laptop, steam rising. Sound design: the clink of the mug on wood over quiet room tone, no music."
+    },
+    {
+      "id": "window",
+      "duration": 6,
+      "prompt": "The camera tilts up from the desk to a tall window as sunlight spills across the room. Sound design: a low, warm ambient hum, no dialogue."
+    }
+  ]
+}
