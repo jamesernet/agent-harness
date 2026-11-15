@@ -76,7 +76,7 @@ def main() -> int:
     ap.add_argument("--last-frame", help="image to end the video on (needs --first-frame)")
     ap.add_argument("--video", help="your own .mp4 (<=15s) to edit or extend; uploaded via Files API")
     ap.add_argument("--previous-id", help="interaction id of a previous clip to edit or extend")
-    ap.add_argument("--task", choices=TASKS, help="force a mode; normally the prompt is enough")
+    ap.add_argument("--task", choices=TASKS, help="force a mode; normally the prompt is enough (edit also prices an edit as one clip)")
     ap.add_argument("--uri", action="store_true", help="force URI delivery (auto for 1080p/4k)")
     ap.add_argument("--no-store", action="store_true", help="faster, but the result cannot be edited later")
     ap.add_argument("--output-seconds", type=int, metavar="SECONDS",
@@ -115,8 +115,10 @@ def main() -> int:
     # A clip passed with --video is continued as surely as one named by
     # --previous-id, and without --task the model reads the prompt to decide
     # whether it edits or extends -- so that case is priced as the dearer one.
+    # A task that makes a new clip makes the video a reference instead.
     # An edit is one generation, and tops out where a single clip does.
-    continuing = bool(args.previous_id or args.video) or args.task in ("edit", "extend")
+    continuing = (bool(args.previous_id) or args.task in ("edit", "extend")
+                  or bool(args.video) and not args.task)
     editing = args.task == "edit"
     ceiling = MAX_UNPINNED_SECONDS if editing else MAX_EXTENDED_SECONDS
     if args.output_seconds is not None:

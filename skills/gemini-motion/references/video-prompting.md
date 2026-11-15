@@ -69,7 +69,7 @@ No scene cuts. No on-screen text. 8 seconds, vertical.
 | `--first-frame` / `--last-frame` | path | keyframe interpolation; the frames go in first, in that order |
 | `--video` | path to .mp4 ≤15 s | uploads via Files API for editing/extending your own clip |
 | `--previous-id` | interaction id | edit or extend the previous *generated* clip |
-| `--task` | `text_to_video` `image_to_video` `reference_to_video` `edit` `extend` | only when prompting alone picks the wrong mode; it adds constraints |
+| `--task` | `text_to_video` `image_to_video` `reference_to_video` `edit` `extend` | only when prompting alone picks the wrong mode, since it adds constraints; `edit` also prices an edit as one clip |
 | `--no-store` | | faster; but the result can't be chained later |
 
 ## Image inputs: three different jobs
@@ -95,10 +95,13 @@ how you get an exact product shot or a stylised frame to start from.
 
 ## Editing (multi-turn)
 
-Pass `--previous-id <id> --task edit` and give a *short* instruction.
-Over-described edit prompts cause unintended changes. `--task edit` is what
-lets the gate price the turn as one clip; without it the prompt could make it
-an extend, so it is priced as one. End with "Keep everything else the same."
+Pass `--previous-id <id>` and give a *short* instruction. Over-described
+edit prompts cause unintended changes. End with "Keep everything else the
+same."
+
+Without `--task` the prompt could make the turn an extend, so the gate quotes
+it as one (up to 30 s). For a plain edit with no `--image`, `--task edit`
+prices it as one clip (up to 15 s); the gate takes that flag at its word.
 
 Good: `Make the sky stormy. Keep everything else the same.`
 Good: `Change the sign to say "Grand Opening". Keep everything else the same.`

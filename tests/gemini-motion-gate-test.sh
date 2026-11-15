@@ -117,6 +117,8 @@ grep -q 'bills 15s at 720p' <<<"$out" ||
 #     it is refused rather than priced.
 for bad in "--previous-id v1_abc --output-seconds -5" \
   "--previous-id v1_abc --output-seconds 0" \
+  "--previous-id v1_abc --output-seconds 1" \
+  "--previous-id v1_abc --output-seconds 2" \
   "--previous-id v1_abc --output-seconds 31" \
   "--previous-id v1_abc --task edit --output-seconds 16" \
   "--duration 5 --output-seconds 5"; do
@@ -140,5 +142,11 @@ grep -q 'bills 10s at 4k, about \$2.09' <<<"$out" ||
 out="$(gate "a cat" --duration 11)"
 grep -qE "invalid choice: '?11" <<<"$out" ||
   fail "--duration 11 was accepted: $out"
+
+# 17. A task that makes a new clip makes --video a reference, not a clip to
+#     continue, so it is priced from --duration like any new clip.
+out="$(gate "a cat in this style" --video clip.mp4 --task reference_to_video --duration 6 --draft)"
+grep -q 'bills 6s at 360p, about \$0.14' <<<"$out" && ! grep -q 'continues' <<<"$out" ||
+  fail "--video as a reference was priced as a continuation: $out"
 
 echo "gemini-motion gate tests: passed"

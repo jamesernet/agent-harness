@@ -67,11 +67,14 @@ recipe and limits there are what separate a usable clip from a generic one.
    Watch it (Read the file or send it to the user). Judge: subject right,
    motion right, single shot if asked, audio as specified, no stray text.
 4. **Fix with an edit turn or a new draft.** Small change on an otherwise good
-   clip → `--previous-id <id> --task edit` with a short instruction ending
-   "Keep everything else the same." Without `--task edit` the prompt decides
-   whether the turn edits or extends, so the gate prices it as an extend; with
-   it, an edit is priced as one clip. Wrong concept → fix the prompt file and draft again. Two or
-   three drafts is normal; tell the user the running spend.
+   clip → `--previous-id <id>` with a short instruction ending "Keep
+   everything else the same." Leave `--task` unset, as Google advises, since
+   it adds constraints. Unset, the prompt decides whether the turn edits or
+   extends, so the gate quotes it as an extend (30 s). For a plain edit with
+   no `--image`, `--task edit` brings the quote down to one clip (15 s); the
+   gate takes that flag at its word, as it does `--output-seconds`. Wrong
+   concept → fix the prompt file and draft again. Two or three drafts is
+   normal; tell the user the running spend.
 5. **Final.** Same prompt at `--resolution 720p` (or 1080p/4k if they need
    it; both are upscales). Extend with `--previous-id` + "Extend this video:
    …" when they need more than 10 s, up to 30 s.
@@ -80,7 +83,8 @@ recipe and limits there are what separate a usable clip from a generic one.
    per second of output and an extend returns the finished video, so a second
    extend of a 20-second clip is a 30-second bill. The gate prices that path at
    the 30 s ceiling unless you pass `--output-seconds` with the finished
-   length. A clip passed with `--video` is priced the same way. That ceiling is the conservative reading rather than a measured
+   length. A clip passed with `--video` is priced the same way. That ceiling
+   is the conservative reading rather than a measured
    invoice: if Omni turns out to bill only the increment, the gate overstates,
    which is the direction to be wrong in. Tell the user which number they are
    approving and why it looks large.
