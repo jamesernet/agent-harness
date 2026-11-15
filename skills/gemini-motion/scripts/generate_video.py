@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate, edit or extend a short video with Gemini Omni Flash (gemini-omni-1.1-flash).
+"""Generate, edit or extend a short video with Gemini Omni Flash (gemini-omni-1.2-flash).
 
 One script covers every Omni mode; which one runs depends on what you pass:
 
@@ -9,7 +9,7 @@ One script covers every Omni mode; which one runs depends on what you pass:
   subject references   generate_video.py "prompt" --image cat.png --image yarn.png
   edit previous clip   generate_video.py "Make it night. Keep everything else the same." --previous-id v1_abc
   extend previous clip generate_video.py "Extend this video: the camera pans left." --previous-id v1_abc
-  edit/extend a file   generate_video.py "Make it anime" --video my_clip.mp4   (<=10s uploads)
+  edit/extend a file   generate_video.py "Make it anime" --video my_clip.mp4   (<=15s uploads)
 
 Draft cheaply, then finalize:
   generate_video.py "..." --draft               # 360p, ~1/3 the cost of 720p
@@ -31,28 +31,24 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gemini_common import (  # noqa: E402
-    MAX_CLIP_SECONDS,
     MAX_EXTENDED_SECONDS,
+    MAX_UNPINNED_SECONDS,
     DEFAULT_TIMEOUT_S,
     MODELS,
     VIDEO_RATES_USD,
+    approval_token,
     die,
-    create,
-    get_client,
-    image_block,
     log_run,
     read_text_arg,
-    save_b64,
-    upload_file,
+    render_clip,
+    require_approval,
     usage_summary,
-    video_block_from_upload,
     positive_timeout,
 )
 
 RESOLUTIONS = ("360p", "720p", "1080p", "4k")
 ASPECTS = ("16:9", "9:16")
-TASKS = ("text_to_video", "image_to_video", "reference_to_video", "edit", "extend", "upscale")
-BIG_RESOLUTIONS = ("1080p", "4k")  # payloads > 4 MB need URI delivery
+TASKS = ("text_to_video", "image_to_video", "reference_to_video", "edit", "extend")
 
 
 def slug(text: str, n: int = 40) -> str:
@@ -65,50 +61,6 @@ def default_out(prompt: str) -> Path:
     return Path("motion") / f"{slug(prompt)}-{stamp}.mp4"
 
 
-def build_input(args, client, prompt: str) -> list | str:
-    """Assemble the Interactions `input`: media blocks first, then the text."""
-    blocks: list[dict] = []
-    tags: list[str] = []
-
-    if args.first_frame:
-        blocks.append(image_block(args.first_frame))
-        if "<FIRST_FRAME>" not in prompt:
-            tags.append("<FIRST_FRAME>")
-    if args.last_frame:
-        if not args.first_frame:
-            die("--last-frame requires --first-frame")
-        blocks.append(image_block(args.last_frame))
-        if "<LAST_FRAME>" not in prompt:
-            tags.append("<LAST_FRAME>")
-    for p in args.image or []:
-        blocks.append(image_block(p))
-    if args.video:
-        uploaded = upload_file(client, args.video)
-        blocks.insert(0, video_block_from_upload(uploaded))
-
-    text = (" ".join(tags) + " " + prompt).strip() if tags else prompt
-    if not blocks:
-        return text
-    blocks.append({"type": "text", "text": text})
-    return blocks
-
-
-def wait_for_uri(client, uri: str, timeout_s: int = 900) -> None:
-    """Poll the Files API until a URI-delivered video is ACTIVE."""
-    name = "files/" + uri.split("/files/")[-1].split(":")[0].split("?")[0]
-    start = time.time()
-    while True:
-        info = client.files.get(name=name)
-        state = getattr(info.state, "name", str(info.state))
-        if state == "ACTIVE":
-            return
-        if state == "FAILED":
-            die("video generation failed while processing the file")
-        if time.time() - start > timeout_s:
-            die(f"timed out waiting for {name}")
-        time.sleep(5)
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("prompt", nargs="?", help="what to generate / change (or use --prompt-file)")
@@ -118,17 +70,17 @@ def main() -> int:
     ap.add_argument("--resolution", choices=RESOLUTIONS, default=None, help="default 720p")
     ap.add_argument("--draft", action="store_true", help="shorthand for --resolution 360p")
     ap.add_argument("--duration", type=int, choices=range(3, 11), metavar="SECONDS",
-                    help="clip length, 3-10 (default: model decides from the prompt). Billed per second.")
+                    help="clip length, 3-10 (default: 10, or a length the prompt names, up to 15). Billed per second.")
     ap.add_argument("--image", action="append", help="reference image (repeatable, up to a handful)")
     ap.add_argument("--first-frame", help="image to start the video on")
     ap.add_argument("--last-frame", help="image to end the video on (needs --first-frame)")
-    ap.add_argument("--video", help="your own .mp4 (<=10s) to edit or extend; uploaded via Files API")
+    ap.add_argument("--video", help="your own .mp4 (<=15s) to edit or extend; uploaded via Files API")
     ap.add_argument("--previous-id", help="interaction id of a previous clip to edit or extend")
-    ap.add_argument("--task", choices=TASKS, help="force a mode; normally the prompt is enough")
+    ap.add_argument("--task", choices=TASKS, help="force a mode; normally the prompt is enough (edit also prices an edit as one clip)")
     ap.add_argument("--uri", action="store_true", help="force URI delivery (auto for 1080p/4k)")
     ap.add_argument("--no-store", action="store_true", help="faster, but the result cannot be edited later")
     ap.add_argument("--output-seconds", type=int, metavar="SECONDS",
-                    help="on an extend or upscale, the length of the FINISHED clip, which is\n"
+                    help="on an edit or extend, the length of the FINISHED clip, which is\n"
                          "what the rate applies to. Without it the worst case is priced")
     ap.add_argument("--approve", metavar="<N>s@<resolution>",
                     help="the price you agreed to pay, as the exact token this script prints\n"
@@ -149,99 +101,73 @@ def main() -> int:
     if out.suffix.lower() != ".mp4":
         out = out.with_suffix(".mp4")
 
-    # What the user approves is a PRICE, so the approval has to carry every
-    # input the price is made of. It used to carry seconds only, and the rate
-    # ranges from $0.03 to $0.30 per second across the resolutions this script
-    # accepts -- so an approval of "10", shown to the user as "$0.30", was
-    # satisfied by the same 10 seconds at 4k and billed $3.00, through a flag
-    # the skill documents. The token names both, and nothing else here reads
-    # args.approve as a number.
+    # The approval is a price, so it is priced here and compared by
+    # require_approval (see approval_token for why it names the resolution).
     #
     # Without --duration the model picks the length, so the only honest figure
     # to price is the worst case.
-    # An extend or an upscale returns the WHOLE clip, not the increment, and
+    # An extend returns the WHOLE clip, not the increment, and
     # the rate is per second of output -- so on that path the thing being
     # billed is a length this script never sees. --duration is the increment
     # there and bounds nothing, so pricing from it, or from MAX_CLIP_SECONDS,
-    # quoted up to a tenth of the real bill on a clip extended to 40s.
-    extending = bool(args.previous_id) or args.task in ("extend", "upscale")
-    if extending:
-        billable = args.output_seconds or MAX_EXTENDED_SECONDS
+    # quoted up to a tenth of the real bill on a clip extended to 30s.
+    #
+    # A clip passed with --video is continued as surely as one named by
+    # --previous-id, and without --task the model reads the prompt to decide
+    # whether it edits or extends -- so that case is priced as the dearer one.
+    # A task that makes a new clip makes the video a reference instead.
+    # An edit is one generation, and tops out where a single clip does.
+    continuing = (bool(args.previous_id) or args.task in ("edit", "extend")
+                  or bool(args.video) and not args.task)
+    editing = args.task == "edit"
+    ceiling = MAX_UNPINNED_SECONDS if editing else MAX_EXTENDED_SECONDS
+    if args.output_seconds is not None:
+        if not continuing:
+            die("--output-seconds is the finished length of an edit or extend; "
+                "pin a new clip with --duration")
+        if not 3 <= args.output_seconds <= ceiling:
+            die(f"--output-seconds must be 3 to {ceiling}, the most "
+                + ("an edit" if editing else "an extended clip") + " can return")
+    if continuing:
+        billable = args.output_seconds or ceiling
     else:
-        billable = args.duration or MAX_CLIP_SECONDS
+        billable = args.duration or MAX_UNPINNED_SECONDS
     estimate = billable * VIDEO_RATES_USD[resolution]
-    token = f"{billable}s@{resolution}"
+    token = approval_token(billable, resolution)
     if args.approve is None:
         print(f"this render bills {billable}s at {resolution}, about ${estimate:.2f}")
-        if extending and not args.output_seconds:
-            print(f"  this continues an existing clip, and the rate applies to the WHOLE")
-            print(f"  result, not the part added; {MAX_EXTENDED_SECONDS}s is the worst case.")
+        if continuing and not args.output_seconds:
+            if editing:
+                print(f"  an edit returns one clip, so {MAX_UNPINNED_SECONDS}s is the worst case.")
+            else:
+                print("  this continues an existing clip, and the rate applies to the WHOLE")
+                print(f"  result, not the part added; {MAX_EXTENDED_SECONDS}s is the worst case.")
+                if not args.task:
+                    print("  without --task the prompt decides whether it edits or extends;")
+                    print("  pass --task edit if it is an edit, which is priced as one clip.")
             print("  pass --output-seconds N with the finished length to approve less.")
-        elif not extending and not args.duration:
-            print(f"  length is unset, so the model chooses it; {MAX_CLIP_SECONDS}s is the worst case.")
+        elif not continuing and not args.duration:
+            print(f"  length is unset, so the model chooses it; {MAX_UNPINNED_SECONDS}s is the worst case.")
             print("  pass --duration 3..10 to pin it and approve a smaller number.")
         print(f"approve with: --approve {token}")
         return 2
-    if args.approve != token:
-        if args.approve.rstrip("s").isdigit():
-            die(f"--approve now takes the whole token, {token}, not seconds alone: "
-                "seconds without a resolution approved a price that --resolution "
-                "could still multiply")
-        die(f"this render bills {token} but --approve says {args.approve!r}; "
-            "re-check the settings and confirm again")
+    require_approval(args.approve, token)
 
-    client = get_client()
-    inp = build_input(args, client, prompt)
-
-    response_format: dict = {"type": "video", "resolution": resolution}
-    if args.aspect:
-        response_format["aspect_ratio"] = args.aspect
-    if args.duration:
-        response_format["duration"] = f"{args.duration}s"
-    use_uri = args.uri or resolution in BIG_RESOLUTIONS
-    if use_uri:
-        response_format["delivery"] = "uri"
-
-    kwargs: dict = {"model": MODELS["video"], "input": inp, "response_format": response_format}
-    if args.previous_id:
-        kwargs["previous_interaction_id"] = args.previous_id
-    if args.task:
-        kwargs["generation_config"] = {"video_config": {"task": args.task}}
-    if args.no_store:
-        kwargs["store"] = False
-
+    announce = None
     if not args.json:
-        print(f"generating with {MODELS['video']} at {resolution}"
-              + (f", {args.aspect}" if args.aspect else "")
-              + (" (edit/extend of previous clip)" if args.previous_id else "")
-              + " ...", flush=True)
+        announce = (f"generating with {MODELS['video']} at {resolution}"
+                    + (f", {args.aspect}" if args.aspect else "")
+                    + (" (edit/extend of previous clip)" if args.previous_id else "")
+                    + " ...")
 
-    t0 = time.time()
-    try:
-        # A separate client for the one billed call, with the SDK's retries off
-        # (see get_client). `client` keeps them, for the free uploads above and
-        # the download below.
-        interaction = create(get_client(retries=False), args.timeout, **kwargs)
-    except Exception as e:  # noqa: BLE001
-        die(f"{type(e).__name__}: {e}")
+    interaction, render_seconds = render_clip(
+        prompt, out, resolution=resolution, timeout=args.timeout, aspect=args.aspect,
+        duration=args.duration, images=args.image or (), first_frame=args.first_frame,
+        last_frame=args.last_frame, video=args.video, previous_id=args.previous_id,
+        task=args.task, uri=args.uri, store=not args.no_store, announce=announce,
+    )
 
-    video = getattr(interaction, "output_video", None)
-    if video is None:
-        status = getattr(interaction, "status", "?")
-        text = (getattr(interaction, "output_text", "") or "")[:500]
-        die(f"no video in response (status={status}). Model said: {text!r}\n"
-            "Prompts that trip the safety filter return no video; rephrase and retry.")
-
-    if getattr(video, "data", None):
-        save_b64(video.data, out)
-    elif getattr(video, "uri", None):
-        wait_for_uri(client, video.uri)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        client.files.download(file=video.uri, destination=str(out))
-    else:
-        die("video block had neither inline data nor a uri")
-
-    elapsed = round(time.time() - t0, 1)
+    elapsed = round(render_seconds, 1)
     summary = {
         "out": str(out),
         "interaction_id": interaction.id,
@@ -250,7 +176,7 @@ def main() -> int:
         "aspect": args.aspect or "16:9",
         "duration": f"{args.duration}s" if args.duration else None,
         "billed_seconds": billable,
-        "priced_as": "whole output (extend/upscale)" if extending else "this clip",
+        "priced_as": ("one edited clip" if editing else "whole output (extend)") if continuing else "this clip",
         "estimate_usd": round(estimate, 2),
         "previous_id": args.previous_id,
         "seconds": elapsed,

@@ -1,9 +1,10 @@
 # Prompting Gemini Omni Flash for short videos
 
-Model: `gemini-omni-1.1-flash`. One call returns a 3–10 second .mp4 with
-native audio (24 fps). Extension adds up to 10 s per turn, 40 s total.
+Model: `gemini-omni-1.2-flash`. One call returns a 3–10 second .mp4 with
+native audio (24 fps). Extension adds up to 10 s per turn, 30 s total.
 Length is a parameter: `--duration 3..10` sets `response_format.duration`
-("3s".."10s"). Prefer it over asking in prose — you are billed per second of
+("3s".."10s"). Unpinned, the model defaults to 10 s but follows a length the
+prompt names, up to 15 s. Prefer the flag over asking in prose — you are billed per second of
 output, and the flag is honoured where a sentence may not be. Still use
 timecodes in the prompt for structure *within* the clip.
 
@@ -65,10 +66,10 @@ No scene cuts. No on-screen text. 8 seconds, vertical.
 | `--resolution` | `360p`, `720p` (default), `1080p`, `4k` | 1080p/4k are upscaled; cost scales with it |
 | `--draft` | | = `--resolution 360p`; use for every iteration until the prompt is right |
 | `--image` | path, repeatable | reference images: subjects, products, style |
-| `--first-frame` / `--last-frame` | path | keyframe interpolation; the script inserts `<FIRST_FRAME>`/`<LAST_FRAME>` tags |
-| `--video` | path to .mp4 ≤10 s | uploads via Files API for editing/extending your own clip |
+| `--first-frame` / `--last-frame` | path | keyframe interpolation; the frames go in first, in that order |
+| `--video` | path to .mp4 ≤15 s | uploads via Files API for editing/extending your own clip |
 | `--previous-id` | interaction id | edit or extend the previous *generated* clip |
-| `--task` | `text_to_video` `image_to_video` `reference_to_video` `edit` `extend` | only when prompting alone picks the wrong mode; it adds constraints |
+| `--task` | `text_to_video` `image_to_video` `reference_to_video` `edit` `extend` | only when prompting alone picks the wrong mode, since it adds constraints; `edit` also prices an edit as one clip |
 | `--no-store` | | faster; but the result can't be chained later |
 
 ## Image inputs: three different jobs
@@ -82,20 +83,25 @@ Order of blocks is images first, text last; the script does this for you.
 - **Start/end here** (interpolation): `--first-frame a.png --last-frame
   b.png`, prompt describes the transition. Same image for both = a loop.
 - **Keep this subject consistent** (reference): `--image` for each subject,
-  prompt refers to them with `<IMAGE_REF_0>`, `<IMAGE_REF_1>` in input order
-  (references start at 0). Example: `the woman <IMAGE_REF_0> holds the mug
-  <IMAGE_REF_1> and smiles`.
+  prompt names each one by what it shows. Example: `the woman from the first
+  image holds the mug from the second and smiles`. Up to 6 reference images.
 
-For mixed roles in one call, declare them at the top of the prompt:
-`[# Sources <FIRST_FRAME>@Image1] [# References <IMAGE_REF_0>@Image2]`.
+For mixed roles in one call, say in prose what each image is for: "start on
+the first image; the woman in the third image walks in". Omni 1.2 deprecates
+the `<FIRST_FRAME>` / `<IMAGE_REF_0>` control tags, so don't write them.
 
 Keyframes can be made with `generate_image.py` first (Nano Banana), which is
 how you get an exact product shot or a stylised frame to start from.
 
 ## Editing (multi-turn)
 
-Pass `--previous-id <id>` and give a *short* instruction. Over-described edit
-prompts cause unintended changes. End with "Keep everything else the same."
+Pass `--previous-id <id>` and give a *short* instruction. Over-described
+edit prompts cause unintended changes. End with "Keep everything else the
+same."
+
+Without `--task` the prompt could make the turn an extend, so the gate quotes
+it as one (up to 30 s). For a plain edit with no `--image`, `--task edit`
+prices it as one clip (up to 15 s); the gate takes that flag at its word.
 
 Good: `Make the sky stormy. Keep everything else the same.`
 Good: `Change the sign to say "Grand Opening". Keep everything else the same.`
@@ -111,12 +117,13 @@ pass `--no-store` on clips you may want to edit).
 panning left to reveal the harbour. Music continues into the chorus.` The
 last 10 s of the clip are used as context; a few final frames get retouched
 for a seamless join. Timecodes in an extension prompt count from the start of
-the *new* part. You can extend your own uploaded clip (`--video`, ≤10 s) too,
-but not to add dialogue to someone already talking.
+the *new* part. You can extend your own uploaded clip (`--video`, ≤15 s) too,
+but not to add dialogue to someone already talking. Either way it is priced as
+the whole finished clip, up to 30 s, unless `--output-seconds` says less.
 
 ## Limits worth knowing before promising anything
 
-- 3–10 s per generation; up to 40 s via extensions.
+- 3–10 s per generation here (15 s unpinned); up to 30 s via extensions.
 - No system instructions, temperature, top_p, stop sequences or negative
   prompt parameters on this model.
 - No voice editing; no audio reference uploads; audio in a reference video is
@@ -132,10 +139,10 @@ but not to add dialogue to someone already talking.
 
 ## Cost discipline (it's paid-only)
 
-~$0.03/s at 360p, ~$0.10/s at 720p, ~$0.15/s at 1080p, ~$0.30/s at 4K.
+~$0.023/s at 360p, ~$0.07/s at 720p, ~$0.104/s at 1080p, ~$0.209/s at 4K.
 Workflow that keeps this sane:
 
-1. Iterate the prompt at `--draft` (360p). Three drafts of 8 s ≈ $0.72.
+1. Iterate the prompt at `--draft` (360p). Three drafts of 8 s ≈ $0.55.
 2. Only when the draft is right, re-run the *same prompt* at the final
    resolution — or edit the draft via `--previous-id` (edits are new
    generations and cost the same as a fresh clip at that resolution).

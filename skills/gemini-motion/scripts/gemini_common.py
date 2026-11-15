@@ -4,6 +4,10 @@ Everything here is deliberately small: build a client from GEMINI_API_KEY,
 turn local files into Interactions API content blocks, extract a code block
 from a model reply, and append a line to a JSONL run log so later turns can
 chain on `previous_interaction_id`.
+
+The one exception is the billed video call, which lives here whole -- its
+approval token, the check against it, and render_clip -- so that every script
+that renders a clip spends money through the same code.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 MODELS = {
-    "video": "gemini-omni-1.1-flash",
+    "video": "gemini-omni-1.2-flash",
     "image": "gemini-nano-banana-2.1",
     "code": "gemini-3.8-flash",
     "code_cheap": "gemini-3.5-flash-lite",
@@ -52,24 +56,36 @@ brief has not been observed finishing faster, so a shorter slice just burns
 the remaining budget and reports the same failure later."""
 
 MAX_CLIP_SECONDS = 10
-"""One Omni call tops out here; longer needs --previous-id to extend."""
+"""The longest clip every Omni mode accepts, and so the cap on a pinned length.
 
-MAX_EXTENDED_SECONDS = 40
+Omni 1.2 renders text and reference clips up to 15 s, but first/last-frame
+clips and each extend turn stop at 10. Longer needs --previous-id to extend.
+"""
+
+MAX_UNPINNED_SECONDS = 15
+"""What one call can bill when no duration is pinned.
+
+Omni 1.2 defaults to 10 s, but without a pinned duration it follows a length
+the prompt names, up to 15. Pricing an unpinned render at MAX_CLIP_SECONDS
+would quote two thirds of a bill the prompt alone can raise.
+"""
+
+MAX_EXTENDED_SECONDS = 30
 """What an extended clip tops out at, and therefore what an extend can bill.
 
 A rate quoted per second of OUTPUT means an extend is priced by the length of
-the video that comes back, not by the increment added. The skill documents
-extension to 40 s, so pricing an extend at MAX_CLIP_SECONDS quoted a tenth of
-the clip on the one mode whose output this script cannot measure in advance.
+the video that comes back, not by the increment added. Omni 1.2 extends to
+30 s in total, so pricing an extend at MAX_CLIP_SECONDS quoted a third of the
+clip on the one mode whose output this script cannot measure in advance.
 """
 
-VIDEO_RATES_USD = {"360p": 0.03, "720p": 0.10, "1080p": 0.15, "4k": 0.30}
-"""USD per second of OUTPUT video, by resolution.
+VIDEO_RATES_USD = {"360p": 0.023, "720p": 0.07, "1080p": 0.104, "4k": 0.209}
+"""USD per second of OUTPUT video, by resolution, for gemini-omni-1.2-flash.
 
-Published list prices as of late 2026, kept here rather than in each script so
-there is one copy to correct. They do move: check
-https://ai.google.dev/gemini-api/docs/pricing before quoting a figure that
-matters.
+Read 2026-11-14 from the pricing page's footnote: $12.00 per 1M output video
+tokens, at 1,931 / 5,792 / 8,688 / 17,376 tokens per second. Kept here rather
+than in each script so there is one copy to correct. They do move: check
+https://aistudio.google.com/docs/pricing before quoting a figure that matters.
 """
 
 
@@ -343,3 +359,141 @@ def usage_summary(interaction) -> dict | None:
         if val is not None:
             out[name] = val
     return out or None
+
+
+def approval_token(seconds: int, resolution: str) -> str:
+    """What a billed render prints, and then demands back, as one string.
+
+    What the user approves is a PRICE, so the approval has to carry every input
+    the price is made of: seconds TIMES a per-second rate that the resolution
+    sets. It used to carry seconds only, and an approval of "10", shown to the
+    user as $0.30, was satisfied by the same 10 seconds at 4k and billed $3.00.
+    """
+    return f"{seconds}s@{resolution}"
+
+
+def require_approval(given: str, token: str) -> None:
+    """Stop unless `given` is exactly the token this render was priced at.
+
+    Nothing else reads an approval as a number, so there is one comparison to
+    get right, and a mismatch means the settings moved after the user looked.
+    """
+    if given == token:
+        return
+    if given.rstrip("s").isdigit():
+        die(f"--approve now takes the whole token, {token}, not seconds alone: "
+            "seconds without a resolution approved a price that a change of "
+            "resolution could still multiply")
+    die(f"this render bills {token} but --approve says {given!r}; "
+        "re-check the settings and confirm again")
+
+
+BIG_RESOLUTIONS = ("1080p", "4k")  # payloads > 4 MB need URI delivery
+
+
+def omni_input(client, prompt: str, *, images=(), first_frame=None, last_frame=None,
+               video=None) -> list | str:
+    """Assemble the Interactions `input`: media blocks first, then the text.
+
+    The text goes in as written. Omni 1.2 deprecates the <FIRST_FRAME> and
+    <LAST_FRAME> control tags this used to prepend; the prompt says in prose
+    what each image is for, and the frames lead so their order says which is
+    first.
+    """
+    blocks: list[dict] = []
+
+    if first_frame:
+        blocks.append(image_block(first_frame))
+    if last_frame:
+        if not first_frame:
+            die("--last-frame requires --first-frame")
+        blocks.append(image_block(last_frame))
+    for p in images:
+        blocks.append(image_block(p))
+    if video:
+        uploaded = upload_file(client, video)
+        blocks.insert(0, video_block_from_upload(uploaded))
+
+    if not blocks:
+        return prompt
+    blocks.append({"type": "text", "text": prompt})
+    return blocks
+
+
+def wait_for_uri(client, uri: str, timeout_s: int = 900) -> None:
+    """Poll the Files API until a URI-delivered video is ACTIVE."""
+    name = "files/" + uri.split("/files/")[-1].split(":")[0].split("?")[0]
+    start = time.time()
+    while True:
+        info = client.files.get(name=name)
+        state = getattr(info.state, "name", str(info.state))
+        if state == "ACTIVE":
+            return
+        if state == "FAILED":
+            die("video generation failed while processing the file")
+        if time.time() - start > timeout_s:
+            die(f"timed out waiting for {name}")
+        time.sleep(5)
+
+
+def render_clip(prompt: str, out: Path, *, resolution: str, timeout: float, aspect=None,
+                duration=None, images=(), first_frame=None, last_frame=None, video=None,
+                previous_id=None, task=None, uri=False, store=True, announce=None):
+    """Render one Omni clip to `out`; return the interaction and its seconds. This call BILLS.
+
+    It checks no price: call it only after require_approval has passed, for a
+    token priced from these same settings. Every billed video render goes
+    through here, so a fix to how one is made lands once.
+
+    `announce` is printed after the inputs are checked and immediately before
+    the billed call, so a bad input fails without claiming to be generating.
+    The seconds returned are timed from that same point: the render and its
+    collection, not the input reads or a --video upload before it.
+    """
+    client = get_client()
+    inp = omni_input(client, prompt, images=images, first_frame=first_frame,
+                     last_frame=last_frame, video=video)
+
+    response_format: dict = {"type": "video", "resolution": resolution}
+    if aspect:
+        response_format["aspect_ratio"] = aspect
+    if duration:
+        response_format["duration"] = f"{duration}s"
+    if uri or resolution in BIG_RESOLUTIONS:
+        response_format["delivery"] = "uri"
+
+    kwargs: dict = {"model": MODELS["video"], "input": inp, "response_format": response_format}
+    if previous_id:
+        kwargs["previous_interaction_id"] = previous_id
+    if task:
+        kwargs["generation_config"] = {"video_config": {"task": task}}
+    if not store:
+        kwargs["store"] = False
+
+    if announce:
+        print(announce, flush=True)
+    t0 = time.time()
+    try:
+        # A separate client for the one billed call, with the SDK's retries off
+        # (see get_client). `client` keeps them, for the free uploads above and
+        # the download below.
+        interaction = create(get_client(retries=False), timeout, **kwargs)
+    except Exception as e:  # noqa: BLE001
+        die(f"{type(e).__name__}: {e}")
+
+    clip = getattr(interaction, "output_video", None)
+    if clip is None:
+        status = getattr(interaction, "status", "?")
+        text = (getattr(interaction, "output_text", "") or "")[:500]
+        die(f"no video in response (status={status}). Model said: {text!r}\n"
+            "Prompts that trip the safety filter return no video; rephrase and retry.")
+
+    if getattr(clip, "data", None):
+        save_b64(clip.data, out)
+    elif getattr(clip, "uri", None):
+        wait_for_uri(client, clip.uri)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        client.files.download(file=clip.uri, destination=str(out))
+    else:
+        die("video block had neither inline data nor a uri")
+    return interaction, time.time() - t0

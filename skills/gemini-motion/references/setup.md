@@ -58,7 +58,7 @@ and proves the key works. `--video` prints the billing note below.
 |---|---|---|---|
 | Animation code | `gemini-3.8-flash` | Yes (rate-limited) | fractions of a cent per brief |
 | Image assets / keyframes | `gemini-nano-banana-2.1` | Limited | cents per image |
-| **Video** | `gemini-omni-1.1-flash` | **No** | **~$0.03/s at 360p, ~$0.10/s at 720p, ~$0.15/s at 1080p, ~$0.30/s at 4K** |
+| **Video** | `gemini-omni-1.2-flash` | **No** | **~$0.023/s at 360p, ~$0.07/s at 720p, ~$0.104/s at 1080p, ~$0.209/s at 4K** |
 
 Video generation requires billing enabled on the AI Studio project that owns
 the key (AI Studio → project → billing). Until then video calls fail with a
