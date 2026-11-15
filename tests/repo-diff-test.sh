@@ -99,6 +99,234 @@ printf '%s\n' '#!/bin/sh' 'git symbolic-ref --short HEAD' >"$hp/.githooks/pre-co
 jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "UNKNOWN")' "$tmp/hp-own.json" >/dev/null ||
   fail "a foreign branch check was not distinguished from none at all"
 
+# --- a repository that owns a stricter hook can say so (#118) ----------------
+#
+# Declared as `"hooks": "repo-owned"`. git-hook becomes OVERRIDE, and
+# policy-enforcement becomes OVERRIDE only when the evidence grep still finds a
+# branch check in that directory. A declaration can never hide the absence of
+# enforcement, and a misspelt value is heard rather than silently dropped.
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN")' "$tmp/hp-own.json" >/dev/null ||
+  fail "undeclared core.hooksPath no longer reports git-hook UNKNOWN"
+
+git -C "$hp" add .githooks/pre-commit # repo-owned means committed: the index is the test
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"repo-owned"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-declared.json" ||
+  fail "a declared repo-owned hook with a branch check was not compliant: $(jq -c '[.findings[] | select(.status != "OK")]' "$tmp/hp-declared.json")"
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "OVERRIDE" and (.actual | test("\\.githooks")))' "$tmp/hp-declared.json" >/dev/null ||
+  fail "a declared repo-owned hook was not recorded as an override on git-hook: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/hp-declared.json")"
+jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "OVERRIDE")' "$tmp/hp-declared.json" >/dev/null ||
+  fail "a declared repo-owned branch check was not recorded as an override on policy-enforcement: $(jq -c '[.findings[] | select(.id == "policy-enforcement")]' "$tmp/hp-declared.json")"
+jq -e '.compliant == true' "$tmp/hp-declared.json" >/dev/null ||
+  fail "the motivating repository did not report compliant once declared"
+
+# Declared, but the hook checks no branch: ownership is honoured, the absence
+# of enforcement is still MISSING, and the run is non-compliant.
+printf '%s\n' '#!/bin/sh' 'echo docs build' >"$hp/.githooks/pre-commit"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-declared-none.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "MISSING")' "$tmp/hp-declared-none.json" >/dev/null ||
+  fail "a declaration hid the absence of a branch check"
+jq -e '.compliant == false' "$tmp/hp-declared-none.json" >/dev/null ||
+  fail "a declared hook with no branch check was reported compliant"
+
+# Declared, but the directory core.hooksPath names does not exist: MISSING as
+# before, and git-hook does not claim an override over a directory that is not there.
+rm -rf "$hp/.githooks"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-declared-missing.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "MISSING" and (.actual | test("does not exist")))' "$tmp/hp-declared-missing.json" >/dev/null ||
+  fail "a declaration hid a missing hooks directory"
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN")' "$tmp/hp-declared-missing.json" >/dev/null ||
+  fail "git-hook claimed an override over a hooks directory that does not exist"
+
+# A misspelt or non-string value is a hooks-owner CONFLICT from repo diff
+# itself, never a failed policy resolve: the managed hooks skip their branch
+# check when policy does not resolve, so a key only this checker reads must not
+# be able to switch the guard off. Both rows stay UNKNOWN, as if undeclared.
+mkdir -p "$hp/.githooks" && printf '%s\n' '#!/bin/sh' 'git symbolic-ref --short HEAD' >"$hp/.githooks/pre-commit"
+for bad in '"repo-ownd"' 'false'; do
+  printf '{"schemaVersion":1,"profile":"personal","hooks":%s}\n' "$bad" >"$hp/.llmctx.json"
+  "$CLI" repo diff "$hp" --json >"$tmp/hp-bad.json" 2>/dev/null || true
+  jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("invalid hooks")))' "$tmp/hp-bad.json" >/dev/null ||
+    fail "hooks=$bad was not reported as a hooks-owner CONFLICT: $(jq -c '[.findings[] | select(.id == "hooks-owner" or .id == "policy")]' "$tmp/hp-bad.json")"
+  if jq -e 'any(.findings[]; .id == "policy")' "$tmp/hp-bad.json" >/dev/null; then
+    fail "hooks=$bad failed the policy resolve, which would switch the managed hooks off"
+  fi
+  jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN")' "$tmp/hp-bad.json" >/dev/null ||
+    fail "hooks=$bad was treated as a declaration"
+  jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "UNKNOWN")' "$tmp/hp-bad.json" >/dev/null ||
+    fail "hooks=$bad flipped policy-enforcement to an override"
+  jq -e '.compliant == false' "$tmp/hp-bad.json" >/dev/null || fail "hooks=$bad was reported compliant"
+done
+
+# null reads as unset, as it does for briefs and claudeImport.
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":null}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-null.json" 2>/dev/null || true
+if jq -e 'any(.findings[]; .id == "hooks-owner")' "$tmp/hp-null.json" >/dev/null; then
+  fail "hooks=null was not read as unset: $(jq -c '[.findings[] | select(.id == "hooks-owner")]' "$tmp/hp-null.json")"
+fi
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN")' "$tmp/hp-null.json" >/dev/null ||
+  fail "hooks=null changed the undeclared report"
+
+# An explicit managed in a clone whose core.hooksPath is set is the mirror
+# contradiction: git runs that framework, not the managed backstop.
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"managed"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-managed-set.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("hooks=managed")))' "$tmp/hp-managed-set.json" >/dev/null ||
+  fail "an explicit managed declaration over core.hooksPath was not reported: $(jq -c '[.findings[] | select(.id == "hooks-owner")]' "$tmp/hp-managed-set.json")"
+jq -e '.compliant == false' "$tmp/hp-managed-set.json" >/dev/null ||
+  fail "an explicit managed declaration over core.hooksPath was reported compliant"
+jq -e 'any(.findings[]; .id == "hooks-owner" and (.actual | test("\\(local config\\)")) and (.remediation | test("--local --unset")))' "$tmp/hp-managed-set.json" >/dev/null ||
+  fail "the managed contradiction did not name the scope the value came from: $(jq -c '[.findings[] | select(.id == "hooks-owner")]' "$tmp/hp-managed-set.json")"
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN" and .remediation == "")' "$tmp/hp-managed-set.json" >/dev/null ||
+  fail "git-hook offered a second, contradictory fix beside the hooks-owner row: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/hp-managed-set.json")"
+
+# Not JSON at all: the report still prints, carrying the CONFLICT the resolver
+# produced, instead of `declared` aborting the run under set -e with no output.
+printf '%s\n' '{bad' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-badjson.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "policy" and .status == "CONFLICT" and (.actual | test("invalid JSON")))' "$tmp/hp-badjson.json" >/dev/null ||
+  fail "invalid JSON in .llmctx.json produced no report: $(head -c 200 "$tmp/hp-badjson.json")"
+
+# core.hooksPath may be written with a tilde. git expands it when it runs the
+# hooks, so the checker has to, or a directory that exists reads as missing.
+# HOME is the repository here, so the expanded directory is inside it and the
+# declaration is honoured; a tilde that lands outside is the global case below.
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"repo-owned"}' >"$hp/.llmctx.json"
+# shellcheck disable=SC2088 # the literal tilde is the case: git stores it unexpanded and expands it at run time
+git -C "$hp" config core.hooksPath '~/.githooks'
+HOME="$hp" "$CLI" repo diff "$hp" --json >"$tmp/hp-tilde.json" ||
+  fail "a tilde core.hooksPath was not expanded: $(jq -c '[.findings[] | select(.status != "OK")]' "$tmp/hp-tilde.json")"
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "OVERRIDE" and (.actual | test("/\\.githooks")))' "$tmp/hp-tilde.json" >/dev/null ||
+  fail "a declared hook under a tilde path was not recorded as an override with the expanded path: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/hp-tilde.json")"
+
+# Declared, but core.hooksPath is unset in this clone: the declaration says the
+# repository's hooks are the guard and git is running the managed path instead.
+# The managed hook is installed first, so the contradiction is the run's only
+# failure and the non-compliant verdict is its doing alone.
+git -C "$hp" config --unset core.hooksPath
+"$CLI" repo diff "$hp" --json >"$tmp/hp-declared-noinstall.json" 2>/dev/null || true
+jq -e '[.findings[] | select(.id == "git-hook" or .id == "git-policy-library") | .remediation] == ["", ""]' "$tmp/hp-declared-noinstall.json" >/dev/null ||
+  fail "the managed rows offered the installer beside a repo-owned CONFLICT: $(jq -c '[.findings[] | select(.id == "git-hook" or .id == "git-policy-library")]' "$tmp/hp-declared-noinstall.json")"
+"$SRC/bin/install-git-hooks.sh" "$hp" >/dev/null
+"$CLI" repo diff "$hp" --json >"$tmp/hp-declared-unset.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("core.hooksPath is unset")))' "$tmp/hp-declared-unset.json" >/dev/null ||
+  fail "a repo-owned declaration with core.hooksPath unset was not reported: $(jq -c '[.findings[] | select(.id == "hooks-owner" or .id == "git-hook")]' "$tmp/hp-declared-unset.json")"
+jq -e '[.findings[] | select(.status != "OK" and .status != "OVERRIDE") | .id] == ["hooks-owner"]' "$tmp/hp-declared-unset.json" >/dev/null ||
+  fail "the contradicted declaration was not the only failure: $(jq -c '[.findings[] | select(.status != "OK")]' "$tmp/hp-declared-unset.json")"
+jq -e '.compliant == false' "$tmp/hp-declared-unset.json" >/dev/null ||
+  fail "a contradicted hooks declaration was reported compliant"
+
+# An explicit managed with core.hooksPath unset is the ordinary managed state,
+# and the documented default: compliant, with no hooks-owner row at all.
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"managed"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-managed-unset.json" ||
+  fail "an explicit managed declaration was not compliant: $(jq -c '[.findings[] | select(.status != "OK")]' "$tmp/hp-managed-unset.json")"
+if jq -e 'any(.findings[]; .id == "hooks-owner")' "$tmp/hp-managed-unset.json" >/dev/null; then
+  fail "an explicit managed declaration produced a hooks-owner finding"
+fi
+
+# core.hooksPath naming a file is "not a directory", never "does not exist".
+git -C "$hp" config core.hooksPath .githooks/pre-commit
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"repo-owned"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-file.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "MISSING" and (.actual | test("is a file, not a directory")))' "$tmp/hp-file.json" >/dev/null ||
+  fail "a core.hooksPath that is a file was not reported as such: $(jq -c '[.findings[] | select(.id == "policy-enforcement")]' "$tmp/hp-file.json")"
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN" and (.actual | test("is a file, not a directory")))' "$tmp/hp-file.json" >/dev/null ||
+  fail "git-hook called an existing file a missing directory: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/hp-file.json")"
+git -C "$hp" config --unset core.hooksPath
+
+# A global core.hooksPath is not a framework the repository commits, however
+# good its branch check: a fresh clone would have no hook at all. repo-owned over
+# it is a CONFLICT naming the scope, and the rows stay UNKNOWN, never OVERRIDE.
+mkdir -p "$tmp/ghooks"
+printf '%s\n' '#!/bin/sh' 'git symbolic-ref --short HEAD' >"$tmp/ghooks/pre-commit"
+git config --global core.hooksPath "$tmp/ghooks"
+# Undeclared first: the pre-existing rows name the scope too, and their fix
+# unsets the value where it is, not locally where it is not.
+printf '%s\n' '{"schemaVersion":1,"profile":"personal"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-global-undeclared.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN" and .source == "git-global") and any(.findings[]; .id == "policy-enforcement" and (.remediation | test("--global --unset")))' "$tmp/hp-global-undeclared.json" >/dev/null ||
+  fail "an undeclared global core.hooksPath was attributed to local config: $(jq -c '[.findings[] | select(.id == "git-hook" or .id == "policy-enforcement")]' "$tmp/hp-global-undeclared.json")"
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"repo-owned"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-global.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("no tracked hook")) and (.actual | test("\\(global config\\)")))' "$tmp/hp-global.json" >/dev/null ||
+  fail "repo-owned over a global core.hooksPath was honoured or misdescribed: $(jq -c '[.findings[] | select(.id == "hooks-owner" or .id == "git-hook")]' "$tmp/hp-global.json")"
+if jq -e 'any(.findings[]; .status == "OVERRIDE" and (.id == "git-hook" or .id == "policy-enforcement"))' "$tmp/hp-global.json" >/dev/null; then
+  fail "a global core.hooksPath satisfied a repo-owned declaration"
+fi
+jq -e '.compliant == false' "$tmp/hp-global.json" >/dev/null || fail "repo-owned over a global core.hooksPath was reported compliant"
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"managed"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-global-managed.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.remediation | test("--global --unset")))' "$tmp/hp-global-managed.json" >/dev/null ||
+  fail "the managed contradiction over a global core.hooksPath did not point at the global scope: $(jq -c '[.findings[] | select(.id == "hooks-owner")]' "$tmp/hp-global-managed.json")"
+git config --global --unset core.hooksPath
+
+# "Commits" is the repository's index, not the path: an untracked directory
+# under the root fails it, and so does .git/hooks itself. A directory that
+# cannot be entered lists nothing and is "not tracked", never an aborted run.
+mkdir -p "$hp/.githooks-untracked"
+printf '%s\n' '#!/bin/sh' 'git symbolic-ref --short HEAD' >"$hp/.githooks-untracked/pre-commit"
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"repo-owned"}' >"$hp/.llmctx.json"
+for hp_case in .githooks-untracked .git/hooks; do
+  git -C "$hp" config core.hooksPath "$hp_case"
+  "$CLI" repo diff "$hp" --json >"$tmp/hp-untracked.json" 2>/dev/null || true
+  jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("no tracked hook")))' "$tmp/hp-untracked.json" >/dev/null ||
+    fail "repo-owned over $hp_case was honoured: $(jq -c '[.findings[] | select(.id == "hooks-owner" or .id == "git-hook")]' "$tmp/hp-untracked.json")"
+  if jq -e 'any(.findings[]; .status == "OVERRIDE")' "$tmp/hp-untracked.json" >/dev/null; then
+    fail "repo-owned over $hp_case produced an override"
+  fi
+done
+if [[ "$(id -u)" -ne 0 ]]; then
+  chmod 000 "$hp/.githooks-untracked"
+  git -C "$hp" config core.hooksPath .githooks-untracked
+  "$CLI" repo diff "$hp" --json >"$tmp/hp-unreadable.json" 2>/dev/null || true
+  chmod 755 "$hp/.githooks-untracked"
+  jq -e '.findings | length > 3' "$tmp/hp-unreadable.json" >/dev/null ||
+    fail "an unreadable hooks directory aborted the run: $(head -c 200 "$tmp/hp-unreadable.json")"
+  jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN" and (.actual | test("cannot be read")))' "$tmp/hp-unreadable.json" >/dev/null ||
+    fail "an unreadable hooks directory was not named as such: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/hp-unreadable.json")"
+  jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "MISSING" and (.actual | test("cannot be read")))' "$tmp/hp-unreadable.json" >/dev/null ||
+    fail "an unreadable hooks directory was graded as if it had been read: $(jq -c '[.findings[] | select(.id == "policy-enforcement")]' "$tmp/hp-unreadable.json")"
+fi
+
+# The index is applied to the hook files, not to any file: a tracked README
+# beside an untracked hook is no guard in a clone.
+mkdir -p "$hp/.githooks-readme"
+printf '%s\n' '# hooks' >"$hp/.githooks-readme/README.md"
+printf '%s\n' '#!/bin/sh' 'git symbolic-ref --short HEAD' >"$hp/.githooks-readme/pre-commit"
+git -C "$hp" add .githooks-readme/README.md
+git -C "$hp" config core.hooksPath .githooks-readme
+"$CLI" repo diff "$hp" --json >"$tmp/hp-readme.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("no tracked hook")))' "$tmp/hp-readme.json" >/dev/null ||
+  fail "a tracked README qualified an untracked hook: $(jq -c '[.findings[] | select(.id == "hooks-owner" or .id == "git-hook")]' "$tmp/hp-readme.json")"
+if jq -e 'any(.findings[]; .status == "OVERRIDE")' "$tmp/hp-readme.json" >/dev/null; then
+  fail "a tracked README beside an untracked hook produced an override"
+fi
+git -C "$hp" config --unset core.hooksPath
+
+# A value injected with -c or GIT_CONFIG_PARAMETERS has scope "command", which
+# no `git config --<scope>` flag names; the remediation says so in prose.
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"managed"}' >"$hp/.llmctx.json"
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=.githooks "$CLI" repo diff "$hp" --json >"$tmp/hp-command.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "hooks-owner" and .status == "CONFLICT" and (.actual | test("\\(command config\\)")) and (.remediation | test("--command") | not) and (.remediation | test("GIT_CONFIG_PARAMETERS")))' "$tmp/hp-command.json" >/dev/null ||
+  fail "a command-scope core.hooksPath got a git flag that does not exist: $(jq -c '[.findings[] | select(.id == "hooks-owner")]' "$tmp/hp-command.json")"
+
+# A tilde git cannot expand is not "unset": the directory is reported missing,
+# which is what git itself says at commit time, and git-hook names the declared
+# directory that is not there instead of a framework to integrate with. This
+# case runs last: once the value is set, git refuses every later command in
+# this repository, the --unset that would clear it included.
+# shellcheck disable=SC2088 # the literal tilde is the case: git stores it and fails to expand it later
+git -C "$hp" config core.hooksPath '~nosuchuser-llmctx/hk'
+printf '%s\n' '{"schemaVersion":1,"profile":"personal","hooks":"repo-owned"}' >"$hp/.llmctx.json"
+"$CLI" repo diff "$hp" --json >"$tmp/hp-badtilde.json" 2>/dev/null || true
+jq -e 'any(.findings[]; .id == "policy-enforcement" and .status == "MISSING" and (.actual | test("does not exist")))' "$tmp/hp-badtilde.json" >/dev/null ||
+  fail "an unexpandable core.hooksPath was not reported as a missing directory: $(jq -c '[.findings[] | select(.status != "OK")]' "$tmp/hp-badtilde.json")"
+if jq -e 'any(.findings[]; .id == "hooks-owner" and (.actual | test("unset")))' "$tmp/hp-badtilde.json" >/dev/null; then
+  fail "an unexpandable core.hooksPath was read as unset"
+fi
+jq -e 'any(.findings[]; .id == "git-hook" and .status == "UNKNOWN" and (.actual | test("does not exist")))' "$tmp/hp-badtilde.json" >/dev/null ||
+  fail "git-hook did not name the declared directory that is missing: $(jq -c '[.findings[] | select(.id == "git-hook")]' "$tmp/hp-badtilde.json")"
+
 # --- a scaffold shim is MISSING, a foreign hook is UNKNOWN -------------------
 #
 # Both used to report one undifferentiated UNKNOWN. The shim is asking to be
