@@ -18,11 +18,11 @@ import sys
 MIN_PY = (3, 10)
 
 VIDEO_COST_NOTE = """\
-Video generation (gemini-omni-1.1-flash) has NO free tier: it bills from the
-first clip. Published list prices as of late 2026, per second of output video:
-  360p  ~$0.03     720p  ~$0.10     1080p ~$0.15     4K  ~$0.30
-A 10s draft at 360p is ~$0.30; the same clip at 720p ~$1.00. Draft at 360p,
-finalize once. Prices change: https://ai.google.dev/gemini-api/docs/pricing
+Video generation (gemini-omni-1.2-flash) has NO free tier: it bills from the
+first clip. Published list prices as of November 2026, per second of output video:
+  360p  ~$0.023    720p  ~$0.07     1080p ~$0.104    4K  ~$0.209
+A 10s draft at 360p is ~$0.23; the same clip at 720p ~$0.70. Draft at 360p,
+finalize once. Prices change: https://aistudio.google.com/docs/pricing
 Billing must be enabled on the Google AI Studio project that owns the key."""
 
 

@@ -79,10 +79,10 @@ single clip:
 ## Keeping shots consistent
 
 Shots are independent clips. Chaining them as extends of one another was
-rejected because an extend bills the whole output every time: four 10-second
-extends would bill 100 s for a 40 s video, and editing shot 2 would re-bill
-everything after it. Continuity has to come from the inputs instead, in order
-of strength:
+rejected because an extend bills the whole output every time, and Omni 1.2
+stops an extended clip at 30 s: three 10-second extends would bill 60 s for a
+30 s video, and editing shot 2 would re-bill everything after it. Continuity
+has to come from the inputs instead, in order of strength:
 
 - `first_frame` / `last_frame`: a still per shot, generated once (with
   `generate_image.py`, a screenshot, a photo) and reused. Ending one shot on the
