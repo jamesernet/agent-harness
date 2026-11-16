@@ -648,4 +648,23 @@ refused "check with a deleted reference on a selected shot"
 grep -q 'image not found' <<<"$out" ||
   fail "check did not refuse the deleted reference by name: $out"
 
+# 36. A run interrupted after its first shot is not resumed by the command
+#     that started it: the token prices what is still missing, so the old one
+#     is refused and check prints the smaller one to ask for again.
+reset_plan
+seed_rendered
+python3 - "$tmp/out/manifest.json" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1]))
+m["shots"] = {"desk": m["shots"]["desk"]}
+json.dump(m, open(sys.argv[1], "w"))
+PY
+sb render "$plan" --approve 18s@720p
+refused "render on the pre-interruption token"
+grep -q "bills 10s@720p but --approve says '18s@720p'" <<<"$out" ||
+  fail "the pre-interruption token was not refused for the smaller price: $out"
+sb check "$plan"
+grep -q 'approve 10s@720p' <<<"$out" ||
+  fail "check after an interruption did not price only the missing shots: $out"
+
 echo "gemini-motion gate tests: passed"

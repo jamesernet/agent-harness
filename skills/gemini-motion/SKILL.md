@@ -10,7 +10,7 @@ and reviewer; Gemini does the rendering or writes the keyframes.
 
 | Path | Produces | Model | Cost | Reach for it when |
 |---|---|---|---|---|
-| **A. Rendered video** | .mp4, 3–10 s (extend to 30 s), native audio | `gemini-omni-1.2-flash` | **paid only**, ~$0.023/s draft, ~$0.07/s at 720p | photoreal or cinematic, live-action feel, sound, "a video of …", social clips, something a browser can't draw |
+| **A. Rendered video** | .mp4, 3–10 s (one take extends to 30 s), native audio | `gemini-omni-1.2-flash` | **paid only**, ~$0.023/s draft, ~$0.07/s at 720p | photoreal or cinematic, live-action feel, sound, "a video of …", social clips, something a browser can't draw |
 | **B. Code animation** | one self-contained .html / .svg / Lottie .json | `gemini-3.8-flash` | free tier | UI motion, logos, loaders, hero backgrounds, diagrams that animate, anything that ships inside a web page or app |
 | **C. Storyboard** | one stitched .mp4 from several 3–10 s shots | `gemini-omni-1.2-flash` | **paid only**, A's rates, priced for the whole plan before anything renders | anything over 10 s, several scenes, explainers, trailers, promos, B-roll |
 | (all) **Assets / keyframes** | .png | `gemini-nano-banana-2.1` | cents | a first/last frame for a video, a sprite or illustration for an animation |
@@ -153,11 +153,13 @@ every turn.
    ```
 3. **Render** with the printed command, in the background: it takes minutes.
    Only shots that are missing or changed are billed. An untouched shot is
-   never rendered again, wherever it moves in the plan, and an interrupted run
-   resumes by running the same command.
+   never rendered again, wherever it moves in the plan. After an interrupted
+   run the old token is refused, because the price now covers only the shots
+   still missing: run `check` again and get a yes for that smaller figure.
 4. **Fix a shot** by editing it, then `check --only <id>` and render with the
    token that prints. Editing `style` changes every shot, so it re-bills the
-   whole plan; say so before doing it.
+   whole plan, and `--only` cannot avoid that: `stitch` refuses until every
+   shot matches the new style. Say so before doing it.
 5. **Final.** Set the plan's `resolution` to 720p or higher and `check` again.
    Every shot is pending again, since resolution is part of each shot's spec,
    so the final costs the full plan at the new rate. Get the yes, render, then

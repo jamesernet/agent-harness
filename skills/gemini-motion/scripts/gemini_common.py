@@ -63,7 +63,8 @@ MAX_CLIP_SECONDS = 10
 """The longest clip every Omni mode accepts, and so the cap on a pinned length.
 
 Omni 1.2 renders text and reference clips up to 15 s, but first/last-frame
-clips and each extend turn stop at 10. Longer needs --previous-id to extend.
+clips and each extend turn stop at 10. Longer is a storyboard of shots
+(storyboard.py), or for one unbroken take an extend via --previous-id.
 """
 
 MAX_UNPINNED_SECONDS = 15
