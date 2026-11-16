@@ -1,18 +1,19 @@
 ---
 name: gemini-motion
-description: Make short videos (mp4 with audio) and small code animations (HTML/CSS/SVG/Lottie) with Google's Gemini API — Gemini Omni Flash for rendered video, Gemini 3.8 Flash for animation code, Nano Banana for image assets and keyframes. Use this whenever the user wants something that moves and mentions Gemini, Veo, Omni, Nano Banana or Google's models, or asks to make, render, animate, loop, edit or extend a short clip, reel, intro/outro, product shot, logo animation, loader, hero animation, explainer or GIF-style motion piece — even if they don't say "video" or "animation" explicitly. Also use it when a request needs an actual rendered clip (photoreal, cinematic, with sound) rather than code, since that requires the Omni video model.
+description: Make short videos (mp4 with audio) and small code animations (HTML/CSS/SVG/Lottie) with Google's Gemini API — Gemini Omni Flash for rendered video, Gemini 3.8 Flash for animation code, Nano Banana for image assets and keyframes. Use this whenever the user wants something that moves and mentions Gemini, Veo, Omni, Nano Banana or Google's models, or asks to make, render, animate, loop, edit or extend a short clip, reel, intro/outro, product shot, logo animation, loader, hero animation, explainer, trailer, promo, B-roll or GIF-style motion piece, or a longer video storyboarded shot by shot — even if they don't say "video" or "animation" explicitly. Also use it when a request needs an actual rendered clip (photoreal, cinematic, with sound) rather than code, since that requires the Omni video model.
 ---
 
 # gemini-motion
 
-Two ways to get motion out of Gemini, one shared setup. Claude is the director
+Three ways to get motion out of Gemini, one shared setup. Claude is the director
 and reviewer; Gemini does the rendering or writes the keyframes.
 
 | Path | Produces | Model | Cost | Reach for it when |
 |---|---|---|---|---|
 | **A. Rendered video** | .mp4, 3–10 s (extend to 30 s), native audio | `gemini-omni-1.2-flash` | **paid only**, ~$0.023/s draft, ~$0.07/s at 720p | photoreal or cinematic, live-action feel, sound, "a video of …", social clips, something a browser can't draw |
 | **B. Code animation** | one self-contained .html / .svg / Lottie .json | `gemini-3.8-flash` | free tier | UI motion, logos, loaders, hero backgrounds, diagrams that animate, anything that ships inside a web page or app |
-| (both) **Assets / keyframes** | .png | `gemini-nano-banana-2.1` | cents | a first/last frame for a video, a sprite or illustration for an animation |
+| **C. Storyboard** | one stitched .mp4 from several 3–10 s shots | `gemini-omni-1.2-flash` | **paid only**, A's rates, priced for the whole plan before anything renders | anything over 10 s, several scenes, explainers, trailers, promos, B-roll |
+| (all) **Assets / keyframes** | .png | `gemini-nano-banana-2.1` | cents | a first/last frame for a video, a sprite or illustration for an animation |
 
 If the request fits both ("an animated logo for our launch video"), ask one
 question — *where will it play?* A web page → B. A video timeline/social post
@@ -76,8 +77,9 @@ recipe and limits there are what separate a usable clip from a generic one.
    concept → fix the prompt file and draft again. Two or three drafts is
    normal; tell the user the running spend.
 5. **Final.** Same prompt at `--resolution 720p` (or 1080p/4k if they need
-   it; both are upscales). Extend with `--previous-id` + "Extend this video:
-   …" when they need more than 10 s, up to 30 s.
+   it; both are upscales). More than 10 s → path C, a storyboard of separate
+   shots. Extend with `--previous-id` + "Extend this video: …" only for one
+   continuous take that cannot be cut, and only up to 30 s.
 
    **An extend is priced by the whole clip, not the part added.** The rate is
    per second of output and an extend returns the finished video, so a second
@@ -126,6 +128,44 @@ are the method.
    interaction id, what was verified and how. Need an mp4/gif of it →
    `snapshot_animation.py --fps 24 --mp4 out.mp4` (needs Playwright + ffmpeg).
 
+## C. Storyboard (several Omni shots, stitched)
+
+For anything longer than one clip: a JSON plan of independent shots, each one
+billed Omni call, stitched with ffmpeg. Read `references/storyboard-plan.md`
+before writing the plan and start from `references/storyboard-example.json`.
+Shots are not chained as extends, because an extend bills the whole output on
+every turn.
+
+1. **Write the plan** to `plan.json` in its own directory, outside any
+   repository unless the user names one, next to the images it uses. One
+   camera move per shot, 3–10 s each, one resolution and aspect for the plan.
+   Shared look and audio go in `style`. Continuity comes from `first_frame` /
+   `last_frame` stills and the same `images` on every shot that shows the
+   subject, so make those with `generate_image.py` first when they matter.
+2. **Price it.** Set `"resolution": "360p"` for drafts and run
+   `storyboard.py check plan.json`. It validates the plan, then prints a line
+   per shot, the total seconds, a dollar estimate and the full `render` command
+   with its token, `<total>s@<resolution>`. Show the user that output and get a
+   real yes.
+   ```bash
+   python <skill>/scripts/storyboard.py check motion/launch/plan.json
+   # -> to render: 3 shots, 18s at 360p, about $0.41 / approve with: … render … --approve 18s@360p
+   ```
+3. **Render** with the printed command, in the background: it takes minutes.
+   Only shots that are missing or changed are billed. An untouched shot is
+   never rendered again, wherever it moves in the plan, and an interrupted run
+   resumes by running the same command.
+4. **Fix a shot** by editing it, then `check --only <id>` and render with the
+   token that prints. Editing `style` changes every shot, so it re-bills the
+   whole plan; say so before doing it.
+5. **Final.** Set the plan's `resolution` to 720p or higher and `check` again.
+   Every shot is pending again, since resolution is part of each shot's spec,
+   so the final costs the full plan at the new rate. Get the yes, render, then
+   `storyboard.py stitch plan.json` writes `out/<title-slug>.mp4` (needs
+   ffmpeg). `out/` sits next to the plan and keeps itself out of git.
+6. **Hand over:** the stitched file, the plan path, what was billed in total,
+   and the SynthID note if it's going somewhere public.
+
 ## Things that keep this from going wrong
 
 - **Don't write the animation yourself and call it the skill.** The point is
@@ -139,7 +179,7 @@ are the method.
   render should be the one you expect to keep. The billed call also runs with
   the SDK's retries off, so a lost response cannot be charged twice.
 - **Don't promise what Omni can't do:** >15 s in one shot (and this script
-  pins at most 10), exact dialogue
+  pins at most 10; longer is path C), exact dialogue
   edits, voice changes, prepending/mid-clip edits, real-person likenesses,
   minors, precise frame-accurate sync. Say so early and offer the nearest thing.
 - **Keep the thread, but don't depend on it.** Chaining `--previous-id` is
@@ -171,10 +211,13 @@ are the method.
 
 - `scripts/check_setup.py` — readiness check (`--ping`, `--video`)
 - `scripts/generate_video.py` — text/image/keyframes → mp4; edit/extend via `--previous-id` or `--video`
+- `scripts/storyboard.py` — a plan of shots → priced, rendered, resumable, stitched mp4 (`check`, `render`, `stitch`)
 - `scripts/generate_animation.py` — brief → .html / .svg / Lottie .json; iterate via `--previous-id`
 - `scripts/generate_image.py` — Nano Banana stills for keyframes and sprites
 - `scripts/snapshot_animation.py` — frames/mp4/gif from an HTML or SVG animation (Playwright, ffmpeg)
 - `scripts/gemini_common.py` — shared client, content blocks, logging, and the one billed video call (approval token, `render_clip`)
 - `references/setup.md` — key, SDK, billing, troubleshooting
 - `references/video-prompting.md` — Omni prompt recipe, flags, editing/extending, limits, cost
+- `references/storyboard-plan.md` — the plan format, continuity, cost and approval, resume
+- `references/storyboard-example.json` — a three-shot plan to start from
 - `references/animation-brief.md` — brief template, format choice, QA checklist, assets
