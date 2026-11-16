@@ -24,7 +24,7 @@ this file explains the choices. Start from `storyboard-example.json`.
       "duration": 6,
       "first_frame": "frames/handoff-start.png",
       "images": ["refs/mug.png"],
-      "prompt": "The camera tilts up from the laptop to a window as morning light floods the room; the mug <IMAGE_REF_0> stays in the foreground. Sound design: low ambient hum."
+      "prompt": "The camera tilts up from the laptop to a window as morning light floods the room; the mug from the reference image stays in the foreground. Sound design: low ambient hum."
     }
   ]
 }
@@ -56,7 +56,7 @@ money.
 | `duration` | yes | whole seconds, 3 to 10: what one Omni call renders. Billed per second, so every shot pins its length |
 | `first_frame` | no | image the shot starts on; locks composition between shots |
 | `last_frame` | no | image the shot ends on; needs `first_frame`; Omni interpolates between the two |
-| `images` | no | reference images for a subject, product or style; refer to them in the prompt as `<IMAGE_REF_0>`, `<IMAGE_REF_1>` in list order |
+| `images` | no | reference images for a subject, product or style; name each in the prompt by what it shows ("the mug from the first image"), not with `<IMAGE_REF_0>` tags, which Omni 1.2 deprecates |
 
 Images are PNG, JPEG, WebP, HEIC or HEIF. `check` applies the render's own
 rules to every one (type by extension, present, not empty) and reads each file
