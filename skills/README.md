@@ -148,7 +148,6 @@ the video path has no free tier.
 | skill | invoke | focus | what it adds |
 |---|---|---|---|
 | [gemini-motion](gemini-motion/) | `/gemini-motion` · auto | short rendered video, longer videos storyboarded shot by shot, and code animations that ship inside a page | three paths behind one setup — Omni Flash renders mp4 with audio, a storyboard renders a plan of shots through the same gate and stitches them, Gemini 3.8 Flash writes self-contained HTML/CSS/SVG/Lottie; the effort goes into the brief and the review, and a render refuses until the price it will bill, seconds and resolution both, is confirmed back to it |
-| [plan-to-video](plan-to-video/) | `/plan-to-video` | Claude writes a shot plan, Veo (Gemini API) renders each shot behind a per-render price approval, ffmpeg stitches | the plan is the contract: a JSON file a human reads, edits and approves before anything is billed; supporting [plan-format](plan-to-video/references/plan-format.md) and [example-plan](plan-to-video/references/example-plan.json) |
 
 ## What depends on things outside this repository
 
