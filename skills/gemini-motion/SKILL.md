@@ -157,9 +157,10 @@ every turn.
    ```
 3. **Render** with the printed command, in the background: it takes minutes.
    Only shots that are missing or changed are billed. An untouched shot is
-   never rendered again, wherever it moves in the plan. After an interrupted
-   run the old token is refused, because the price now covers only the shots
-   still missing: run `check` again and get a yes for that smaller figure.
+   never rendered again, wherever it moves in the plan. If any shot finished
+   before a run was interrupted, the old token is refused, because the price
+   now covers only the shots still missing: run `check` again and get a yes
+   for that smaller figure.
 4. **Fix a shot** by editing it, then `check --only <id>` and render with the
    token that prints. Editing `style` changes every shot, so it re-bills the
    whole plan, and `--only` cannot avoid that: `stitch` refuses until every

@@ -112,9 +112,9 @@ adjusting the token yourself.
 
 Without `--approve`, `render` prints the same lines `check` prints and refuses,
 so going straight to `render` still shows the price first. With nothing pending
-it says so and exits 0. After an interrupted run the old token is refused,
-because the price now covers only the shots still missing: re-run `check` and
-ask again for that smaller figure.
+it says so and exits 0. If any shot finished before a run was interrupted, the
+old token is refused, because the price now covers only the shots still
+missing: re-run `check` and ask again for that smaller figure.
 
 Rendering is resumable and incremental. `out/manifest.json` records what each
 clip was rendered from (model, resolution, aspect, full prompt, duration, image
