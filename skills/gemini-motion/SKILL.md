@@ -78,8 +78,12 @@ recipe and limits there are what separate a usable clip from a generic one.
    normal; tell the user the running spend.
 5. **Final.** Same prompt at `--resolution 720p` (or 1080p/4k if they need
    it; both are upscales). More than 10 s → path C, a storyboard of separate
-   shots. Extend with `--previous-id` + "Extend this video: …" only for one
-   continuous take that cannot be cut, and only up to 30 s.
+   shots. One continuous take that cannot be cut has two routes, and no
+   other case does: up to 15 s, leave `--duration` off and name the length in
+   the prompt — the model follows it up to 15 s, one call, one bill, and the
+   gate quotes the 15 s worst case (`15s@720p`) because the length is a
+   request, not a pin. Over 15 s, extend with `--previous-id` + "Extend this
+   video: …", up to 30 s.
 
    **An extend is priced by the whole clip, not the part added.** The rate is
    per second of output and an extend returns the finished video, so a second
@@ -180,8 +184,9 @@ every turn.
   render rather than re-pricing it silently. Draft at 360p; the first 720p
   render should be the one you expect to keep. The billed call also runs with
   the SDK's retries off, so a lost response cannot be charged twice.
-- **Don't promise what Omni can't do:** >15 s in one shot (and this script
-  pins at most 10; longer is path C), exact dialogue
+- **Don't promise what Omni can't do:** >15 s in one shot (`--duration` pins
+  at most 10, a prompt-named length reaches 15; longer is path C, or an
+  extend for one uncut take), exact dialogue
   edits, voice changes, prepending/mid-clip edits, real-person likenesses,
   minors, precise frame-accurate sync. Say so early and offer the nearest thing.
 - **Keep the thread, but don't depend on it.** Chaining `--previous-id` is
