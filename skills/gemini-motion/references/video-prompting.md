@@ -70,7 +70,9 @@ No scene cuts. No on-screen text. 8 seconds, vertical.
 | `--video` | path to .mp4 ≤15 s | uploads via Files API for editing/extending your own clip |
 | `--previous-id` | interaction id | edit or extend the previous *generated* clip |
 | `--task` | `text_to_video` `image_to_video` `reference_to_video` `edit` `extend` | only when prompting alone picks the wrong mode, since it adds constraints; `edit` also prices an edit as one clip |
-| `--no-store` | | faster; but the result can't be chained later |
+| `--no-store` | | faster; but the result can't be chained or fetched later |
+| `--fetch` | interaction id | save the clip of a render that was billed but not saved; renders and bills nothing |
+| `--timeout` / `--delivery-timeout` | seconds | the render (default 1800) / the wait and download after it (default 900) |
 
 ## Image inputs: three different jobs
 

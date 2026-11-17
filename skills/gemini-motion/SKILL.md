@@ -156,6 +156,8 @@ every turn.
    never rendered again, wherever it moves in the plan. After an interrupted
    run the old token is refused, because the price now covers only the shots
    still missing: run `check` again and get a yes for that smaller figure.
+   A shot that rendered but was not saved shows as "billed, not saved", and
+   `render` fetches it free; when nothing else is pending it needs no token.
 4. **Fix a shot** by editing it, then `check --only <id>` and render with the
    token that prints. Editing `style` changes every shot, so it re-bills the
    whole plan, and `--only` cannot avoid that: `stitch` refuses until every
@@ -180,6 +182,11 @@ every turn.
   render rather than re-pricing it silently. Draft at 360p; the first 720p
   render should be the one you expect to keep. The billed call also runs with
   the SDK's retries off, so a lost response cannot be charged twice.
+- **A clip that rendered but failed to save is not lost.** Its interaction id
+  is logged before the download starts, and the error prints a `--fetch` command
+  that collects it without billing again (not after `--no-store`). Run that, not
+  the render. `--timeout` bounds the render; `--delivery-timeout` bounds the
+  wait and download after it.
 - **Don't promise what Omni can't do:** >15 s in one shot (and this script
   pins at most 10; longer is path C), exact dialogue
   edits, voice changes, prepending/mid-clip edits, real-person likenesses,
