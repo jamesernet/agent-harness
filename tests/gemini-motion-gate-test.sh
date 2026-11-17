@@ -667,4 +667,24 @@ sb check "$plan"
 grep -q 'approve 10s@720p' <<<"$out" ||
   fail "check after an interruption did not price only the missing shots: $out"
 
+# 37. resolution is part of the spec hash in its own right, not only a
+#     recorded field: an entry whose recorded resolution is edited to agree
+#     with the plan, while its clip was rendered at another one, is still
+#     stale and still re-priced. stale_fields alone would pass it.
+reset_plan
+set_plan resolution '"360p"'
+seed_rendered
+set_plan resolution '"720p"'
+python3 - "$tmp/out/manifest.json" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1]))
+for e in m["shots"].values():
+    e["resolution"] = "720p"
+json.dump(m, open(sys.argv[1], "w"))
+PY
+sb check "$plan"
+[ "$rc" -eq 0 ] || fail "check after a doctored recorded resolution exited $rc: $out"
+grep -q 'to render: 3 shots, 18s at 720p' <<<"$out" ||
+  fail "a clip rendered at 360p passed as current at 720p once its recorded resolution was edited: $out"
+
 echo "gemini-motion gate tests: passed"
