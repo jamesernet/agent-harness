@@ -47,12 +47,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gemini_common import (  # noqa: E402
     ASPECTS,
     DEFAULT_TIMEOUT_S,
+    DELIVERY_TIMEOUT_S,
     MAX_CLIP_SECONDS,
     MIN_CLIP_SECONDS,
     MODELS,
     VIDEO_RATES_USD,
+    DeliveryFailed,
     check_image,
     die,
+    fetch_clip,
     ignored_dir,
     log_run,
     positive_timeout,
@@ -291,12 +294,19 @@ class Pending(NamedTuple):
     shots: list[tuple[int, dict, str]]  # (position, shot, spec hash)
     seconds: int
     manifest: dict
+    # Shots rendered and billed but never saved: collected by id, free.
+    fetch: list[tuple[int, dict, str]] = []
 
 
 def pending(plan: dict, base: Path, only: set[str]) -> Pending:
-    """Every selected shot without a current clip, with the seconds they total."""
+    """Every selected shot without a current clip, with the seconds they total.
+
+    A shot whose entry matches but whose clip is missing, and which carries an
+    interaction id, was billed and not saved -- the id goes on record before
+    the clip is collected -- so it is fetched, not priced again.
+    """
     manifest = load_manifest(base)
-    todo = []
+    todo, fetch = [], []
     for i, shot in enumerate(plan["shots"], 1):
         if only and shot["id"] not in only:
             continue
@@ -308,9 +318,11 @@ def pending(plan: dict, base: Path, only: set[str]) -> Pending:
         h = spec_hash(plan, shot, base)
         entry = manifest["shots"].get(shot["id"], {})
         changed, missing = stale_fields(entry, plan, shot)
-        if entry.get("spec") != h or changed or missing or not clip_path(base, shot).is_file():
+        if entry.get("spec") != h or changed or missing:
             todo.append((i, shot, h))
-    return Pending(todo, sum(s["duration"] for _, s, _ in todo), manifest)
+        elif not clip_path(base, shot).is_file():
+            (fetch if entry.get("interaction_id") else todo).append((i, shot, h))
+    return Pending(todo, sum(s["duration"] for _, s, _ in todo), manifest, fetch)
 
 
 # --- commands ----------------------------------------------------------------
@@ -328,19 +340,26 @@ def style_changed(plan: dict, pend: Pending, only: set[str]) -> bool:
 def report(plan: dict, pend: Pending, only: set[str], plan_path: Path) -> None:
     """What check prints, and what an unapproved render prints before refusing."""
     pending_ids = {s["id"] for _, s, _ in pend.shots}
+    fetch_ids = {s["id"] for _, s, _ in pend.fetch}
     res = plan["resolution"]
     print(f"plan: {plan['title']} -- {len(plan['shots'])} shots, "
           f"{sum(s['duration'] for s in plan['shots'])}s at {res}, {plan.get('aspect_ratio', ASPECTS[0])}")
     for i, shot in enumerate(plan["shots"], 1):
         if shot["id"] in pending_ids:
             note = ""
+        elif shot["id"] in fetch_ids:
+            note = "  billed, not saved: render fetches it, free"
         elif only and shot["id"] not in only:
             note = "  not selected"
         else:
             note = "  rendered"
         print(f"  {i:02d} {shot['id']:<20} {shot['duration']:>2}s{note}")
+    if pend.fetch:
+        n = len(pend.fetch)
+        print(f"to fetch: {n} shot{'s' if n > 1 else ''} already billed, collected free by render")
     if not pend.shots:
-        print("to render: nothing -- every selected shot is current")
+        print("to render: nothing -- every selected shot is current"
+              if not pend.fetch else "to render: nothing billed; run render to fetch")
         return
     priced = price(pend.seconds, res)
     print(f"to render: {len(pend.shots)} shots, {priced.text}")
@@ -372,10 +391,10 @@ def cmd_render(args) -> int:
     base = plan_path.parent
     only = selected(plan, args.only)
     pend = pending(plan, base, only)
-    if not pend.shots:
+    if not pend.shots and not pend.fetch:
         print("nothing to render -- every selected shot is current")
         return 0
-    if args.approve is None:
+    if pend.shots and args.approve is None:
         # The gate as generate_video.py has it: price, print the token, refuse.
         # Nothing is written and no client is made.
         report(plan, pend, only, plan_path)
@@ -384,35 +403,64 @@ def cmd_render(args) -> int:
     # The token is recomputed from the plan on disk -- the same seconds report()
     # prices -- so a plan edited after the price was shown no longer matches,
     # and the run stops here.
-    require_approval(args.approve, price(pend.seconds, res).token)
+    if pend.shots:
+        require_approval(args.approve, price(pend.seconds, res).token)
 
     ignored_dir(base / OUT_DIR_NAME)
     manifest = pend.manifest
     manifest["title"] = plan["title"]
+    manifest_name = f"{OUT_DIR_NAME}/manifest.json"
+
+    for i, shot, _ in pend.fetch:
+        entry = manifest["shots"][shot["id"]]
+        try:
+            fetch_clip(entry["interaction_id"], clip_path(base, shot), timeout=args.delivery_timeout)
+        except DeliveryFailed as e:
+            die(f"{shot['id']}: {e}\nrun render again to retry. To give up on it and render "
+                f"the shot again, which bills again, delete \"{shot['id']}\" from {manifest_name}.")
+        log_run("storyboard-fetch", plan=str(plan_path), shot=shot["id"],
+                interaction_id=entry["interaction_id"])
+        print(f"{i:02d} {shot['id']}: fetched {entry['file']} (already billed)")
+
     for i, shot, h in pend.shots:
         clip = clip_path(base, shot)
         prompt = full_prompt(plan, shot)
-        interaction, render_seconds = render_clip(
-            prompt, clip, resolution=res, timeout=args.timeout,
-            aspect=plan.get("aspect_ratio"), duration=shot["duration"],
-            images=[base / p for p in shot.get("images", [])],
-            first_frame=base / shot["first_frame"] if shot.get("first_frame") else None,
-            last_frame=base / shot["last_frame"] if shot.get("last_frame") else None,
-            announce=f"{i:02d} {shot['id']}: generating with {MODELS['video']} at {res}, "
-                     f"{shot['duration']}s ...",
-        )
-        elapsed = round(render_seconds, 1)
         entry = {
             "spec": h,
             "file": str(clip.relative_to(base)),
             **recorded(plan, shot),
             "style": plan.get("style", ""),
-            "interaction_id": interaction.id,
-            "rendered_at": int(time.time()),
         }
-        manifest["shots"][shot["id"]] = entry
-        # Saved after every shot, so an interrupted run resumes instead of re-paying.
-        save_manifest(base, manifest)
+
+        def billed(interaction, entry=entry, shot=shot, clip=clip):
+            # On record before the clip is collected: if that fails, the next
+            # render fetches this id instead of billing the shot again. The old
+            # clip goes first: once the entry carries the new spec, a clip left
+            # at the path would read as the new one, and stitch.
+            clip.unlink(missing_ok=True)
+            entry["interaction_id"] = interaction.id
+            entry["rendered_at"] = int(time.time())
+            manifest["shots"][shot["id"]] = entry
+            save_manifest(base, manifest)
+            log_run("storyboard-billed", plan=str(plan_path), shot=shot["id"],
+                    interaction_id=interaction.id,
+                    estimate_usd=round(price(shot["duration"], res).usd, 2))
+
+        try:
+            interaction, render_seconds = render_clip(
+                prompt, clip, resolution=res, timeout=args.timeout,
+                aspect=plan.get("aspect_ratio"), duration=shot["duration"],
+                images=[base / p for p in shot.get("images", [])],
+                first_frame=base / shot["first_frame"] if shot.get("first_frame") else None,
+                last_frame=base / shot["last_frame"] if shot.get("last_frame") else None,
+                announce=f"{i:02d} {shot['id']}: generating with {MODELS['video']} at {res}, "
+                         f"{shot['duration']}s ...",
+                delivery_timeout=args.delivery_timeout, on_created=billed,
+            )
+        except DeliveryFailed as e:
+            die(f"{shot['id']}: {e}\nit is in {manifest_name}; run render again to fetch it "
+                "without paying again.")
+        elapsed = round(render_seconds, 1)
         log_run("storyboard", plan=str(plan_path), shot=shot["id"], **entry,
                 estimate_usd=round(price(shot["duration"], res).usd, 2),
                 seconds=elapsed, usage=usage_summary(interaction))
@@ -505,6 +553,9 @@ def main() -> int:
                    help="the price you agreed to pay, as the exact token this script prints; it\n"
                         "carries the resolution too, because that sets the per-second rate.\n"
                         "Without it, render prices what is pending and refuses")
+    r.add_argument("--delivery-timeout", type=positive_timeout, default=DELIVERY_TIMEOUT_S,
+                   help=f"seconds to wait for each rendered clip to be saved (default {DELIVERY_TIMEOUT_S}); "
+                        "a shot that runs out is fetched, not re-billed, on the next render")
     r.add_argument("--timeout", type=positive_timeout, default=DEFAULT_TIMEOUT_S["video"],
                    help=f"seconds to wait for each shot before giving up (default {DEFAULT_TIMEOUT_S['video']})")
     s = sub.add_parser("stitch", help="concatenate the rendered shots in plan order")

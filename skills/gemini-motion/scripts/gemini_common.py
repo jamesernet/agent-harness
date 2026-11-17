@@ -21,6 +21,7 @@ import re
 import signal
 import sys
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple, NoReturn
@@ -49,6 +50,14 @@ nothing surfaces to act on.
 Video is generous on purpose. A client-side timeout does not cancel work the
 server already accepted, so cutting a paid render short risks being billed
 for a clip that is never collected.
+"""
+
+DELIVERY_TIMEOUT_S = 900
+"""How long collecting a rendered clip may take: the URI wait and the download.
+
+Separate from the render's --timeout because the render is already billed by
+then. Giving up on delivery abandons nothing: the interaction id is on record,
+and fetch_clip collects the same clip without paying again.
 """
 
 MIN_ATTEMPT_S = 20
@@ -199,22 +208,31 @@ def create(client, timeout: float, **kwargs):
     """
     if timeout <= 0:
         raise ValueError(f"create() needs a positive deadline, got {timeout}")
+    with deadline(timeout, f"no response after {timeout:.0f}s; abandoned locally because the SDK's "
+                  "own timeout does not reliably bound the call. Work the server already "
+                  "accepted may still complete and, for video, still bill."):
+        return client.interactions.create(timeout=timeout, **kwargs)
 
+
+@contextmanager
+def deadline(seconds: float, message: str):
+    """Raise Timeout(message) if the block runs longer than `seconds` of wall clock.
+
+    SIGALRM interrupts a blocking call whatever the SDK is doing underneath.
+    It is Unix-only and must run on the main thread, which is how these
+    scripts run; elsewhere the block runs unbounded.
+    """
     def _fire(signum, frame):
-        raise Timeout(
-            f"no response after {timeout:.0f}s; abandoned locally because the SDK's "
-            "own timeout does not reliably bound the call. Work the server already "
-            "accepted may still complete and, for video, still bill."
-        )
+        raise Timeout(message)
 
     try:
         previous = signal.signal(signal.SIGALRM, _fire)
     except (AttributeError, ValueError):
-        return client.interactions.create(timeout=timeout, **kwargs)
-
-    signal.setitimer(signal.ITIMER_REAL, timeout)
+        yield
+        return
+    signal.setitimer(signal.ITIMER_REAL, seconds)
     try:
-        return client.interactions.create(timeout=timeout, **kwargs)
+        yield
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous)
@@ -469,25 +487,96 @@ def omni_input(client, prompt: str, *, images=(), first_frame=None, last_frame=N
     return blocks
 
 
-def wait_for_uri(client, uri: str, timeout_s: int = 900) -> None:
-    """Poll the Files API until a URI-delivered video is ACTIVE."""
+def wait_for_uri(client, uri: str) -> None:
+    """Poll the Files API until a URI-delivered video is ACTIVE.
+
+    Unbounded on its own: deliver() runs it under the delivery deadline.
+    """
     name = "files/" + uri.split("/files/")[-1].split(":")[0].split("?")[0]
-    start = time.time()
     while True:
         info = client.files.get(name=name)
         state = getattr(info.state, "name", str(info.state))
         if state == "ACTIVE":
             return
         if state == "FAILED":
-            die("video generation failed while processing the file")
-        if time.time() - start > timeout_s:
-            die(f"timed out waiting for {name}")
+            raise RuntimeError("the file failed while processing")
         time.sleep(5)
+
+
+class DeliveryFailed(Exception):
+    """A clip was rendered, and billed, but not saved. `interaction_id` collects it."""
+
+    def __init__(self, interaction_id: str, cause: BaseException):
+        self.interaction_id = interaction_id
+        detail = str(cause) or type(cause).__name__
+        super().__init__(f"rendered and billed as {interaction_id}, but not saved: {detail}")
+
+
+def deliver(client, clip, out: Path, timeout: float) -> None:
+    """Save a rendered clip to `out` whole, or leave `out` as it was.
+
+    The bytes go to a hidden sibling and are renamed into place, so an
+    interrupted download never replaces a good clip with a partial one, and a
+    file at `out` is always a finished clip. The URI wait and the download
+    share one deadline.
+    """
+    out.parent.mkdir(parents=True, exist_ok=True)
+    part = out.with_name(f".{out.name}.part")
+    try:
+        with deadline(timeout, f"delivery took more than {timeout:.0f}s"):
+            if getattr(clip, "data", None):
+                part.write_bytes(base64.b64decode(clip.data))
+            elif getattr(clip, "uri", None):
+                wait_for_uri(client, clip.uri)
+                client.files.download(file=clip.uri, destination=str(part))
+            else:
+                raise RuntimeError("the video block had neither inline data nor a uri")
+        os.replace(part, out)
+    finally:
+        part.unlink(missing_ok=True)
+
+
+def video_of(interaction):
+    """The interaction's video block, or a refusal quoting what the model said instead."""
+    clip = getattr(interaction, "output_video", None)
+    if clip is None:
+        status = getattr(interaction, "status", "?")
+        text = (getattr(interaction, "output_text", "") or "")[:500]
+        die(f"no video in response (status={status}). Model said: {text!r}\n"
+            "Prompts that trip the safety filter return no video; rephrase and retry.")
+    return clip
+
+
+def fetch_clip(interaction_id: str, out: Path, *, timeout: float = DELIVERY_TIMEOUT_S):
+    """Collect the clip of an interaction that already rendered. This does NOT bill.
+
+    It reads the stored interaction back, so it works only for a render that
+    was stored (the default; not --no-store). Raises DeliveryFailed.
+    """
+    client = get_client()
+    try:
+        with deadline(timeout, f"fetching {interaction_id} took more than {timeout:.0f}s"):
+            interaction = client.interactions.get(interaction_id)
+    except Exception as e:  # noqa: BLE001
+        raise DeliveryFailed(interaction_id, e) from e
+    # Not video_of: a billed render read back without its video is a failed
+    # fetch, and the safety-filter advice to rephrase would be wrong for it.
+    clip = getattr(interaction, "output_video", None)
+    if clip is None:
+        status = getattr(interaction, "status", "?")
+        raise DeliveryFailed(interaction_id, RuntimeError(
+            f"the stored interaction has no video (status={status})"))
+    try:
+        deliver(client, clip, out, timeout)
+    except Exception as e:  # noqa: BLE001
+        raise DeliveryFailed(interaction_id, e) from e
+    return interaction
 
 
 def render_clip(prompt: str, out: Path, *, resolution: str, timeout: float, aspect=None,
                 duration=None, images=(), first_frame=None, last_frame=None, video=None,
-                previous_id=None, task=None, uri=False, store=True, announce=None):
+                previous_id=None, task=None, uri=False, store=True, announce=None,
+                delivery_timeout=DELIVERY_TIMEOUT_S, on_created=None):
     """Render one Omni clip to `out`; return the interaction and its seconds. This call BILLS.
 
     It checks no price: call it only after require_approval has passed, for a
@@ -498,6 +587,12 @@ def render_clip(prompt: str, out: Path, *, resolution: str, timeout: float, aspe
     the billed call, so a bad input fails without claiming to be generating.
     The seconds returned are timed from that same point: the render and its
     collection, not the input reads or a --video upload before it.
+
+    `on_created(interaction)` runs as soon as the billed call returns, before
+    the clip is collected, so the caller can put the id on record while it is
+    the only way to reach a clip already paid for. If collecting it then fails,
+    this raises DeliveryFailed and `out` is left as it was; fetch_clip with the
+    id collects it without billing again.
     """
     client = get_client()
     inp = omni_input(client, prompt, images=images, first_frame=first_frame,
@@ -530,19 +625,11 @@ def render_clip(prompt: str, out: Path, *, resolution: str, timeout: float, aspe
     except Exception as e:  # noqa: BLE001
         die(f"{type(e).__name__}: {e}")
 
-    clip = getattr(interaction, "output_video", None)
-    if clip is None:
-        status = getattr(interaction, "status", "?")
-        text = (getattr(interaction, "output_text", "") or "")[:500]
-        die(f"no video in response (status={status}). Model said: {text!r}\n"
-            "Prompts that trip the safety filter return no video; rephrase and retry.")
-
-    if getattr(clip, "data", None):
-        save_b64(clip.data, out)
-    elif getattr(clip, "uri", None):
-        wait_for_uri(client, clip.uri)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        client.files.download(file=clip.uri, destination=str(out))
-    else:
-        die("video block had neither inline data nor a uri")
+    clip = video_of(interaction)
+    if on_created:
+        on_created(interaction)
+    try:
+        deliver(client, clip, out, delivery_timeout)
+    except Exception as e:  # noqa: BLE001
+        raise DeliveryFailed(interaction.id, e) from e
     return interaction, time.time() - t0

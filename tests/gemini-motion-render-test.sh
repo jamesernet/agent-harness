@@ -51,7 +51,7 @@ class Client:
         # "default" is the SDK's own retry policy; 1 is retries off.
         self.retries = http_options.retry_options.attempts if http_options else "default"
         self.files = SimpleNamespace(upload=self._upload, get=self._get, download=self._download)
-        self.interactions = SimpleNamespace(create=self._create)
+        self.interactions = SimpleNamespace(create=self._create, get=self._get_interaction)
 
     def _upload(self, file):
         _log(call="upload", retries=self.retries)
@@ -59,11 +59,23 @@ class Client:
         return SimpleNamespace(name="files/up", uri="https://stub/files/up", state="ACTIVE")
 
     def _get(self, name):
-        return SimpleNamespace(name=name, state=SimpleNamespace(name="ACTIVE"))
+        state = os.environ.get("STUB_FILE_STATE", "ACTIVE")
+        return SimpleNamespace(name=name, state=SimpleNamespace(name=state))
 
     def _download(self, file, destination):
-        _log(call="download", retries=self.retries)
+        _log(call="download", retries=self.retries, destination=os.path.basename(destination))
+        if os.environ.get("STUB_DOWNLOAD_FAIL"):
+            open(destination, "wb").write(b"partial")
+            raise ConnectionResetError("stub: connection reset mid-download")
         open(destination, "wb").write(b"uri-clip")
+
+    def _get_interaction(self, id, **kw):
+        _log(call="get", retries=self.retries, id=id)
+        time.sleep(float(os.environ.get("STUB_GET_DELAY", "0")))
+        if os.environ.get("STUB_GET_NOVIDEO"):
+            return SimpleNamespace(id=id, status="completed", output_video=None, output_text="", usage=None)
+        clip = SimpleNamespace(data=base64.b64encode(b"fetched-clip").decode(), uri=None)
+        return SimpleNamespace(id=id, status="completed", output_video=clip, usage=None)
 
     def _create(self, timeout, **kw):
         inp = kw.pop("input")
@@ -92,6 +104,16 @@ render() {
   (cd "$dir" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$dir/calls" \
     PYTHONPATH="$stub" python3 "$GEN" "$@" --out clip.mp4 >"$dir/out" 2>&1) ||
     fail "$* exited non-zero: $(cat "$dir/out")"
+}
+
+# render_fails <case> <args...>: the same, for a run that must exit non-zero.
+render_fails() {
+  local dir="$tmp/$1"
+  shift
+  mkdir -p "$dir"
+  ! (cd "$dir" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$dir/calls" \
+    PYTHONPATH="$stub" python3 "$GEN" "$@" --out clip.mp4 >"$dir/out" 2>&1) ||
+    fail "$* exited 0, but should have failed: $(cat "$dir/out")"
 }
 
 # field <case> <call> <python expression over the entry e>
@@ -201,5 +223,105 @@ storyboard render plan.json
 grep -q 'nothing to render' "$sbdir/log" || fail "a second render was not a no-op: $(cat "$sbdir/log")"
 [[ "$(grep -c '"call": "create"' "$sbdir/calls")" == 3 ]] ||
   fail "a second render billed again: $(cat "$sbdir/calls")"
+
+# 8. A billed clip whose download fails keeps its interaction id, and the
+#    clip it would have replaced. The id used to exist only inside the failed
+#    process, so the clip that was paid for could not be fetched, and a
+#    storyboard billed the shot again; and the download wrote straight to the
+#    final path, so a reset mid-file replaced a good clip with a partial one.
+mkdir -p "$tmp/dlfail"
+printf 'old-clip' >"$tmp/dlfail/clip.mp4"
+STUB_DOWNLOAD_FAIL=1 render_fails dlfail "a cat" --uri --duration 3 --draft --approve 3s@360p
+[[ "$(cat "$tmp/dlfail/clip.mp4")" == old-clip ]] ||
+  fail "a failed download replaced the clip at --out: $(cat "$tmp/dlfail/clip.mp4")"
+[[ "$(cd "$tmp/dlfail" && ls -A | sort | tr '\n' ' ')" == ".gemini-motion calls clip.mp4 out " ]] ||
+  fail "a failed download left a file behind: $(ls -A "$tmp/dlfail")"
+grep -q -- '--fetch v1_stub' "$tmp/dlfail/out" ||
+  fail "a failed download did not say how to fetch the clip that was paid for: $(cat "$tmp/dlfail/out")"
+grep -q '"interaction_id": "v1_stub"' "$tmp/dlfail/.gemini-motion/runs.jsonl" ||
+  fail "a failed download did not log the interaction id: $(cat "$tmp/dlfail/.gemini-motion/runs.jsonl")"
+
+# 9. --fetch collects a clip that was already billed: no create, no approval.
+render dlfail --fetch v1_stub
+[[ "$(cat "$tmp/dlfail/clip.mp4")" == fetched-clip ]] ||
+  fail "--fetch did not save the clip: $(cat "$tmp/dlfail/out")"
+[[ "$(grep -c '"call": "create"' "$tmp/dlfail/calls")" == 1 ]] ||
+  fail "--fetch billed a render: $(cat "$tmp/dlfail/calls")"
+[[ "$(field dlfail get 'e["id"]')" == v1_stub ]] ||
+  fail "--fetch did not get the interaction by id: $(cat "$tmp/dlfail/calls")"
+
+# 10. --delivery-timeout bounds the wait for a URI clip. --timeout bounds the
+#     billed call only, and the wait after it used to be a fixed 900 s.
+start=$SECONDS
+STUB_FILE_STATE=PROCESSING render_fails slowuri "a cat" --uri --duration 3 --draft \
+  --approve 3s@360p --delivery-timeout 1
+((SECONDS - start < 5)) || fail "--delivery-timeout 1 waited $((SECONDS - start)) s"
+grep -q 'delivery' "$tmp/slowuri/out" && grep -q -- '--fetch v1_stub' "$tmp/slowuri/out" ||
+  fail "a delivery timeout did not say so and how to fetch the clip: $(cat "$tmp/slowuri/out")"
+
+# 11. A storyboard shot whose delivery failed is fetched on the next render,
+#     not billed again: its id is in the manifest before the download starts.
+sb2="$tmp/storyboard-fail"
+mkdir -p "$sb2"
+python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); p["resolution"]="1080p"; json.dump(p, open(sys.argv[2],"w"))' \
+  "$EXAMPLE" "$sb2/plan.json"
+! (cd "$sb2" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$sb2/calls" STUB_DOWNLOAD_FAIL=1 \
+  PYTHONPATH="$stub" python3 "$SB" render plan.json --approve 18s@1080p >"$sb2/log" 2>&1) ||
+  fail "a storyboard render whose download failed exited 0: $(cat "$sb2/log")"
+[[ ! -e "$sb2/out/shots/desk.mp4" ]] || fail "a failed download left a clip at its final path"
+(cd "$sb2" && env -u GEMINI_API_KEY -u GOOGLE_API_KEY python3 "$SB" check plan.json >"$sb2/check" 2>&1) ||
+  fail "check after a failed download exited non-zero: $(cat "$sb2/check")"
+grep -q 'approve 10s@1080p' "$sb2/check" ||
+  fail "check priced the shot that was already billed: $(cat "$sb2/check")"
+(cd "$sb2" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$sb2/calls" \
+  PYTHONPATH="$stub" python3 "$SB" render plan.json --approve 10s@1080p >"$sb2/log" 2>&1) ||
+  fail "the resumed storyboard render exited non-zero: $(cat "$sb2/log")"
+[[ "$(cat "$sb2/out/shots/desk.mp4")" == fetched-clip ]] ||
+  fail "the billed shot was not fetched: $(cat "$sb2/log")"
+[[ "$(grep -c '"call": "create"' "$sb2/calls")" == 3 ]] ||
+  fail "the shot whose download failed was billed again: $(cat "$sb2/calls")"
+# With nothing to bill, render needs no approval: a fetch costs nothing.
+rm "$sb2/out/shots/desk.mp4"
+(cd "$sb2" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$sb2/calls" \
+  PYTHONPATH="$stub" python3 "$SB" render plan.json >"$sb2/log" 2>&1) ||
+  fail "render of an already-billed shot asked for approval: $(cat "$sb2/log")"
+[[ "$(cat "$sb2/out/shots/desk.mp4")" == fetched-clip ]] && [[ "$(grep -c '"call": "create"' "$sb2/calls")" == 3 ]] ||
+  fail "a missing clip with an id on record was not fetched free: $(cat "$sb2/log")"
+grep -q '"kind": "storyboard-billed"' "$sb2/.gemini-motion/runs.jsonl" ||
+  fail "the run log has no line for the shot billed but not saved: $(cat "$sb2/.gemini-motion/runs.jsonl")"
+
+# 12. A re-render whose download fails does not leave the old clip passing as
+#     the new one. The manifest takes the new spec and id before the download,
+#     so an old clip still at the path read as current, and stitched.
+(cd "$sb2" && python3 -c 'import json; p=json.load(open("plan.json")); p["shots"][1]["prompt"]+=" Slower."; json.dump(p, open("plan.json","w"))')
+! (cd "$sb2" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$sb2/calls" STUB_DOWNLOAD_FAIL=1 \
+  PYTHONPATH="$stub" python3 "$SB" render plan.json --approve 4s@1080p >"$sb2/log" 2>&1) ||
+  fail "a re-render whose download failed exited 0: $(cat "$sb2/log")"
+(cd "$sb2" && env -u GEMINI_API_KEY -u GOOGLE_API_KEY python3 "$SB" check plan.json >"$sb2/check" 2>&1)
+grep -q 'coffee.*billed, not saved' "$sb2/check" ||
+  fail "the old clip of a re-rendered shot passed as current: $(cat "$sb2/check")"
+(cd "$sb2" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$sb2/calls" \
+  PYTHONPATH="$stub" python3 "$SB" render plan.json >"$sb2/log" 2>&1) ||
+  fail "the billed re-render was not fetched: $(cat "$sb2/log")"
+[[ "$(cat "$sb2/out/shots/coffee.mp4")" == fetched-clip ]] && [[ "$(grep -c '"call": "create"' "$sb2/calls")" == 4 ]] ||
+  fail "the billed re-render was billed again or not saved: $(cat "$sb2/calls")"
+
+# 13. A stored interaction that comes back without a video is a failed fetch,
+#     with the way out, not a safety-filter refusal telling the user to rephrase
+#     a shot that was already paid for.
+STUB_GET_NOVIDEO=1 render_fails novideo --fetch v1_gone
+grep -q 'billed as v1_gone, but not saved' "$tmp/novideo/out" && ! grep -q rephrase "$tmp/novideo/out" ||
+  fail "a fetch with no video was not reported as one: $(cat "$tmp/novideo/out")"
+rm "$sb2/out/shots/coffee.mp4"
+! (cd "$sb2" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$sb2/calls" STUB_GET_NOVIDEO=1 \
+  PYTHONPATH="$stub" python3 "$SB" render plan.json >"$sb2/log" 2>&1) ||
+  fail "a storyboard fetch with no video exited 0: $(cat "$sb2/log")"
+grep -q 'delete "coffee" from out/manifest.json' "$sb2/log" ||
+  fail "a storyboard fetch with no video did not say how to give the shot up: $(cat "$sb2/log")"
+
+# 14. --delivery-timeout bounds reading the interaction back, not only the download.
+start=$SECONDS
+STUB_GET_DELAY=4 render_fails slowget --fetch v1_stub --delivery-timeout 1
+((SECONDS - start < 4)) || fail "--delivery-timeout 1 let a fetch wait $((SECONDS - start)) s"
 
 echo "gemini-motion render tests: passed"

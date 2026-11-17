@@ -123,6 +123,14 @@ an edited one re-renders. To redo one shot, edit it and pass `--only <id>`;
 `check --only <id>` prints the token for just that shot. The manifest is saved
 after every shot, so an interrupted run resumes instead of re-paying.
 
+A shot's interaction id goes into the manifest as soon as its render returns,
+before the clip is downloaded, and a clip is written whole or not at all. So a
+shot that was billed but not saved -- a failed download, `--delivery-timeout`
+running out -- is listed by `check` as "billed, not saved" and collected by
+the next `render` from that id, free, with no token needed when nothing else
+is pending. If it can no longer be fetched, the error says how to give it up and
+render it again, which bills again.
+
 `out/` is created next to the plan and ignores itself (a `.gitignore` with `*`),
 the way `.gemini-motion/` does: billed clips and whole prompts do not belong in
 a repository, and the protection arrives with the directory.
