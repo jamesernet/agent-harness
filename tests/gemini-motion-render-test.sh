@@ -71,6 +71,9 @@ class Client:
 
     def _get_interaction(self, id, **kw):
         _log(call="get", retries=self.retries, id=id)
+        time.sleep(float(os.environ.get("STUB_GET_DELAY", "0")))
+        if os.environ.get("STUB_GET_NOVIDEO"):
+            return SimpleNamespace(id=id, status="completed", output_video=None, output_text="", usage=None)
         clip = SimpleNamespace(data=base64.b64encode(b"fetched-clip").decode(), uri=None)
         return SimpleNamespace(id=id, status="completed", output_video=clip, usage=None)
 
@@ -284,5 +287,41 @@ rm "$sb2/out/shots/desk.mp4"
   fail "render of an already-billed shot asked for approval: $(cat "$sb2/log")"
 [[ "$(cat "$sb2/out/shots/desk.mp4")" == fetched-clip ]] && [[ "$(grep -c '"call": "create"' "$sb2/calls")" == 3 ]] ||
   fail "a missing clip with an id on record was not fetched free: $(cat "$sb2/log")"
+grep -q '"kind": "storyboard-billed"' "$sb2/.gemini-motion/runs.jsonl" ||
+  fail "the run log has no line for the shot billed but not saved: $(cat "$sb2/.gemini-motion/runs.jsonl")"
+
+# 12. A re-render whose download fails does not leave the old clip passing as
+#     the new one. The manifest takes the new spec and id before the download,
+#     so an old clip still at the path read as current, and stitched.
+(cd "$sb2" && python3 -c 'import json; p=json.load(open("plan.json")); p["shots"][1]["prompt"]+=" Slower."; json.dump(p, open("plan.json","w"))')
+! (cd "$sb2" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$sb2/calls" STUB_DOWNLOAD_FAIL=1 \
+  PYTHONPATH="$stub" python3 "$SB" render plan.json --approve 4s@1080p >"$sb2/log" 2>&1) ||
+  fail "a re-render whose download failed exited 0: $(cat "$sb2/log")"
+(cd "$sb2" && env -u GEMINI_API_KEY -u GOOGLE_API_KEY python3 "$SB" check plan.json >"$sb2/check" 2>&1)
+grep -q 'coffee.*billed, not saved' "$sb2/check" ||
+  fail "the old clip of a re-rendered shot passed as current: $(cat "$sb2/check")"
+(cd "$sb2" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$sb2/calls" \
+  PYTHONPATH="$stub" python3 "$SB" render plan.json >"$sb2/log" 2>&1) ||
+  fail "the billed re-render was not fetched: $(cat "$sb2/log")"
+[[ "$(cat "$sb2/out/shots/coffee.mp4")" == fetched-clip ]] && [[ "$(grep -c '"call": "create"' "$sb2/calls")" == 4 ]] ||
+  fail "the billed re-render was billed again or not saved: $(cat "$sb2/calls")"
+
+# 13. A stored interaction that comes back without a video is a failed fetch,
+#     with the way out, not a safety-filter refusal telling the user to rephrase
+#     a shot that was already paid for.
+STUB_GET_NOVIDEO=1 render_fails novideo --fetch v1_gone
+grep -q 'billed as v1_gone, but not saved' "$tmp/novideo/out" && ! grep -q rephrase "$tmp/novideo/out" ||
+  fail "a fetch with no video was not reported as one: $(cat "$tmp/novideo/out")"
+rm "$sb2/out/shots/coffee.mp4"
+! (cd "$sb2" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$sb2/calls" STUB_GET_NOVIDEO=1 \
+  PYTHONPATH="$stub" python3 "$SB" render plan.json >"$sb2/log" 2>&1) ||
+  fail "a storyboard fetch with no video exited 0: $(cat "$sb2/log")"
+grep -q 'delete "coffee" from out/manifest.json' "$sb2/log" ||
+  fail "a storyboard fetch with no video did not say how to give the shot up: $(cat "$sb2/log")"
+
+# 14. --delivery-timeout bounds reading the interaction back, not only the download.
+start=$SECONDS
+STUB_GET_DELAY=4 render_fails slowget --fetch v1_stub --delivery-timeout 1
+((SECONDS - start < 4)) || fail "--delivery-timeout 1 let a fetch wait $((SECONDS - start)) s"
 
 echo "gemini-motion render tests: passed"

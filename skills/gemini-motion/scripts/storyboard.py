@@ -355,7 +355,8 @@ def report(plan: dict, pend: Pending, only: set[str], plan_path: Path) -> None:
             note = "  rendered"
         print(f"  {i:02d} {shot['id']:<20} {shot['duration']:>2}s{note}")
     if pend.fetch:
-        print(f"to fetch: {len(pend.fetch)} shots already billed, collected free by render")
+        n = len(pend.fetch)
+        print(f"to fetch: {n} shot{'s' if n > 1 else ''} already billed, collected free by render")
     if not pend.shots:
         print("to render: nothing -- every selected shot is current"
               if not pend.fetch else "to render: nothing billed; run render to fetch")
@@ -417,6 +418,8 @@ def cmd_render(args) -> int:
         except DeliveryFailed as e:
             die(f"{shot['id']}: {e}\nrun render again to retry. To give up on it and render "
                 f"the shot again, which bills again, delete \"{shot['id']}\" from {manifest_name}.")
+        log_run("storyboard-fetch", plan=str(plan_path), shot=shot["id"],
+                interaction_id=entry["interaction_id"])
         print(f"{i:02d} {shot['id']}: fetched {entry['file']} (already billed)")
 
     for i, shot, h in pend.shots:
@@ -429,13 +432,19 @@ def cmd_render(args) -> int:
             "style": plan.get("style", ""),
         }
 
-        def billed(interaction, entry=entry, shot_id=shot["id"]):
+        def billed(interaction, entry=entry, shot=shot, clip=clip):
             # On record before the clip is collected: if that fails, the next
-            # render fetches this id instead of billing the shot again.
+            # render fetches this id instead of billing the shot again. The old
+            # clip goes first: once the entry carries the new spec, a clip left
+            # at the path would read as the new one, and stitch.
+            clip.unlink(missing_ok=True)
             entry["interaction_id"] = interaction.id
             entry["rendered_at"] = int(time.time())
-            manifest["shots"][shot_id] = entry
+            manifest["shots"][shot["id"]] = entry
             save_manifest(base, manifest)
+            log_run("storyboard-billed", plan=str(plan_path), shot=shot["id"],
+                    interaction_id=interaction.id,
+                    estimate_usd=round(price(shot["duration"], res).usd, 2))
 
         try:
             interaction, render_seconds = render_clip(

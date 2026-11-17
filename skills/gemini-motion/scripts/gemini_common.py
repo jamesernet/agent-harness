@@ -559,7 +559,13 @@ def fetch_clip(interaction_id: str, out: Path, *, timeout: float = DELIVERY_TIME
             interaction = client.interactions.get(interaction_id)
     except Exception as e:  # noqa: BLE001
         raise DeliveryFailed(interaction_id, e) from e
-    clip = video_of(interaction)
+    # Not video_of: a billed render read back without its video is a failed
+    # fetch, and the safety-filter advice to rephrase would be wrong for it.
+    clip = getattr(interaction, "output_video", None)
+    if clip is None:
+        status = getattr(interaction, "status", "?")
+        raise DeliveryFailed(interaction_id, RuntimeError(
+            f"the stored interaction has no video (status={status})"))
     try:
         deliver(client, clip, out, timeout)
     except Exception as e:  # noqa: BLE001
