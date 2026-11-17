@@ -10,6 +10,7 @@ One script covers every Omni mode; which one runs depends on what you pass:
   edit previous clip   generate_video.py "Make it night. Keep everything else the same." --previous-id v1_abc
   extend previous clip generate_video.py "Extend this video: the camera pans left." --previous-id v1_abc
   edit/extend a file   generate_video.py "Make it anime" --video my_clip.mp4   (<=15s uploads)
+  collect a paid clip  generate_video.py --fetch v1_abc --out clip.mp4         (free; no render)
 
 Draft cheaply, then finalize:
   generate_video.py "..." --draft               # 360p, ~1/3 the cost of 720p
@@ -36,8 +37,11 @@ from gemini_common import (  # noqa: E402
     MAX_UNPINNED_SECONDS,
     MIN_CLIP_SECONDS,
     DEFAULT_TIMEOUT_S,
+    DELIVERY_TIMEOUT_S,
     MODELS,
+    DeliveryFailed,
     die,
+    fetch_clip,
     log_run,
     price,
     read_text_arg,
@@ -84,10 +88,28 @@ def main() -> int:
                          "(for example 6s@360p); it carries BOTH numbers, because seconds\n"
                          "alone approved a figure that --resolution could still multiply")
     ap.add_argument("--timeout", type=positive_timeout, default=DEFAULT_TIMEOUT_S["video"],
-                    help="seconds to wait for the API before giving up "
+                    help="seconds to wait for the render before giving up "
                          f"(default {DEFAULT_TIMEOUT_S['video']}); the SDK sets none, so without this a stall hangs forever")
+    ap.add_argument("--delivery-timeout", type=positive_timeout, default=DELIVERY_TIMEOUT_S,
+                    help="seconds to wait for a rendered clip to be ready and downloaded "
+                         f"(default {DELIVERY_TIMEOUT_S}); the render is billed by then, so "
+                         "giving up abandons nothing: --fetch collects it later")
+    ap.add_argument("--fetch", metavar="INTERACTION_ID",
+                    help="save the clip of a render that was billed but not saved; renders "
+                         "nothing and bills nothing")
     ap.add_argument("--json", action="store_true", help="print a JSON summary only")
     args = ap.parse_args()
+
+    if args.fetch:
+        out = Path(args.out) if args.out else default_out(args.fetch)
+        try:
+            fetch_clip(args.fetch, out, timeout=args.delivery_timeout)
+        except DeliveryFailed as e:
+            die(str(e))
+        log_run("video-fetch", interaction_id=args.fetch, out=str(out))
+        print(json.dumps({"out": str(out), "interaction_id": args.fetch}) if args.json
+              else f"saved {out}")
+        return 0
 
     prompt = read_text_arg(args.prompt, args.prompt_file, "prompt")
     if args.draft and args.resolution:
@@ -156,12 +178,26 @@ def main() -> int:
                     + (" (edit/extend of previous clip)" if args.previous_id else "")
                     + " ...")
 
-    interaction, render_seconds = render_clip(
-        prompt, out, resolution=resolution, timeout=args.timeout, aspect=args.aspect,
-        duration=args.duration, images=args.image or (), first_frame=args.first_frame,
-        last_frame=args.last_frame, video=args.video, previous_id=args.previous_id,
-        task=args.task, uri=args.uri, store=not args.no_store, announce=announce,
-    )
+    def billed(interaction):
+        # Logged before the clip is collected: if that fails, this line is
+        # where the id of a clip already paid for is found.
+        log_run("video-billed", prompt=prompt, interaction_id=interaction.id, out=str(out),
+                resolution=resolution, billed_seconds=billable,
+                estimate_usd=round(priced.usd, 2))
+
+    try:
+        interaction, render_seconds = render_clip(
+            prompt, out, resolution=resolution, timeout=args.timeout, aspect=args.aspect,
+            duration=args.duration, images=args.image or (), first_frame=args.first_frame,
+            last_frame=args.last_frame, video=args.video, previous_id=args.previous_id,
+            task=args.task, uri=args.uri, store=not args.no_store, announce=announce,
+            delivery_timeout=args.delivery_timeout, on_created=billed,
+        )
+    except DeliveryFailed as e:
+        if args.no_store:
+            die(f"{e}\nit was rendered with --no-store, so it cannot be fetched.")
+        die(f"{e}\ncollect it without paying again: "
+            f"{Path(sys.argv[0]).name} --fetch {e.interaction_id} --out {out}")
 
     elapsed = round(render_seconds, 1)
     summary = {
