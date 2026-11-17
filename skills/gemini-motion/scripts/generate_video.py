@@ -144,7 +144,8 @@ def main() -> int:
             print("  pass --output-seconds N with the finished length to approve less.")
         elif not continuing and not args.duration:
             print(f"  length is unset, so the model chooses it; {MAX_UNPINNED_SECONDS}s is the worst case.")
-            print("  pass --duration 3..10 to pin it and approve a smaller number.")
+            print("  pass --duration 3..10 to pin it and approve a smaller number, unless")
+            print("  one uncut take has to run past 10 s (text or reference clips only).")
         print(f"approve with: --approve {priced.token}")
         return 2
     require_approval(args.approve, priced.token)

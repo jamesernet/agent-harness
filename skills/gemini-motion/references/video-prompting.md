@@ -2,12 +2,13 @@
 
 Model: `gemini-omni-1.2-flash`. One call returns a 3–10 second .mp4 with
 native audio (24 fps). Extension adds up to 10 s per turn, 30 s total, and
-bills the whole clip on every turn, so anything longer than one clip is a
-storyboard of separate shots (path C in SKILL.md) unless it has to be one
-uncut take.
+is priced as the whole clip on every turn, so anything longer than one clip
+is a storyboard of separate shots (path C in SKILL.md) unless it has to be
+one uncut take.
 Length is a parameter: `--duration 3..10` sets `response_format.duration`
 ("3s".."10s"). Unpinned, the model defaults to 10 s but follows a length the
-prompt names, up to 15 s. Prefer the flag over asking in prose — you are billed per second of
+prompt names, up to 15 s from text or references (first/last-frame clips stop
+at 10 s). Prefer the flag over asking in prose — you are billed per second of
 output, and the flag is honoured where a sentence may not be. Still use
 timecodes in the prompt for structure *within* the clip.
 
@@ -119,8 +120,9 @@ pass `--no-store` on clips you may want to edit).
 For one continuous take that cannot be cut, and only then: anything else
 longer than one clip is a storyboard of separate shots (path C in SKILL.md),
 because an extend is priced as the whole finished clip on every turn. Up to
-15 s, an unpinned render that names its length in the prompt is one call and
-one bill; an extend is for 16–30 s.
+15 s from text or references, an unpinned render that names its length in the
+prompt is one call and one bill, with the gate quoting the 15 s worst case; an
+extend is for 16–30 s, and for any keyframed take over 10 s.
 
 `--previous-id <id>` plus a prompt like `Extend this video: the camera keeps
 panning left to reveal the harbour. Music continues into the chorus.` The
@@ -132,9 +134,10 @@ the whole finished clip, up to 30 s, unless `--output-seconds` says less.
 
 ## Limits worth knowing before promising anything
 
-- 3–10 s per generation here (15 s unpinned, length named in the prompt); up
-  to 30 s via extensions, for one uncut take only. Longer than one clip
-  otherwise means a storyboard (path C in SKILL.md).
+- 3–10 s per generation here (15 s unpinned from text or references, length
+  named in the prompt; keyframed clips stop at 10); up to 30 s via
+  extensions, for one uncut take only. Longer than one clip otherwise means a
+  storyboard (path C in SKILL.md).
 - No system instructions, temperature, top_p, stop sequences or negative
   prompt parameters on this model.
 - No voice editing; no audio reference uploads; audio in a reference video is
