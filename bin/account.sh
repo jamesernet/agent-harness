@@ -21,7 +21,8 @@ as `default` for their provider.
 Route a repository to an account with direnv, in the directory above it:
   echo 'export CLAUDE_CONFIG_DIR="$HOME/.claude-acme"' > .envrc && direnv allow
 A repository with its own .envrc needs `source_up_if_exists` as its first line,
-or it shadows the parent silently and the routing does not apply.
+or it shadows the parent silently and the routing does not apply; `llmctx doctor`
+names one under a routed tree that does not.
 USAGE
 }
 

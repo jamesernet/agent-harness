@@ -25,6 +25,9 @@ set -euo pipefail
 # PreToolUse hook runs after the first of those. This fails the session fast, at
 # the first write, rather than preventing the first request. Early enough to stop
 # a long run landing on the wrong account; not a billing boundary.
+# routing-tripwire.sh says the same thing at session start, before the first
+# prompt, through the same library; a SessionStart hook cannot refuse anything,
+# so this hook remains the gate.
 #
 # ESCAPE HATCH: a sentinel file in the ACTIVE account's config dir, because this
 # hook inherits Claude Code's environment and a variable set inside a tool call
