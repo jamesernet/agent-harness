@@ -80,6 +80,9 @@ llmctx_routes_load
 # suspended guard never pays for jq.
 active_dir="$(llmctx_routes_active_dir)"
 [[ -e "$active_dir/.allow-cross-account" ]] && exit 0
+# An unregistered config dir cannot be judged. The library says so too, but
+# said here first the payload is never parsed for it, as before the extraction.
+[[ -n "$(llmctx_routes_active_account)" ]] || exit 0
 
 input="$(cat)"
 tool="$(printf '%s' "$input" | jq -r '.tool_name // ""')"

@@ -26,7 +26,9 @@
 #                                      call: "route<TAB>route path<TAB>expected dir<TAB>active
 #                                      name<TAB>active dir" when the path is routed to an account
 #                                      other than the active one and both are registered;
-#                                      nothing otherwise
+#                                      nothing otherwise. The path is expanded and canonicalised
+#                                      here, so a caller cannot miss a route by handing over
+#                                      /var where the route resolved to /private/var
 #   llmctx_routes_fix_text <route path> <active name> <active dir>
 #                                      the remediation both hooks print, word for word
 #
@@ -143,10 +145,12 @@ llmctx_routes_account_dir() { # <account name>
   return 0
 }
 
-llmctx_routes_judge() { # <canonical absolute path>
-  local target="$1" active_dir active_name match route_name route_path expected_dir
+llmctx_routes_judge() { # <absolute path>
+  local target active_dir active_name match route_name route_path expected_dir
   llmctx_routes_loaded
   [[ -n "$LLMCTX_ROUTES" ]] || return 0
+  target="$(llmctx_target_canonical "$(llmctx_target_expand_home "$1")")"
+  [[ "$target" == /* ]] || return 0
   active_dir="$(llmctx_routes_active_dir)"
   [[ ! -e "$active_dir/.allow-cross-account" ]] || return 0
   active_name="$(llmctx_routes_active_account)"

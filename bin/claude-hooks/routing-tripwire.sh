@@ -48,6 +48,9 @@ llmctx_routes_load
 # The sentinel is judged again inside the library; it is read here first so a
 # suspended tripwire never pays for jq.
 [[ -e "$(llmctx_routes_active_dir)/.allow-cross-account" ]] && exit 0
+# An unregistered config dir cannot be judged; said here first, the payload is
+# never parsed for it.
+[[ -n "$(llmctx_routes_active_account)" ]] || exit 0
 
 # The payload's cwd is the only cwd a hook may trust; the process cwd is
 # whatever Claude Code happened to spawn the hook in.
@@ -69,7 +72,8 @@ message="This session started in a directory routed to the \"$route_name\" Claud
   route              $route_path  ->  $route_name
   CLAUDE_CONFIG_DIR  ${CLAUDE_CONFIG_DIR:-<unset>}   (expected $expected_dir)
 
-Nothing has been written yet, and account-guard.sh will refuse the first write under that route.
+account-guard.sh refuses writes under that route from this account.
+
 $(llmctx_routes_fix_text "$route_path" "$active_name" "$active_dir")"
 
 agent_note="Routing tripwire: this session is on the \"$active_name\" Claude account, but its working directory is routed to \"$route_name\". Do not edit, write or run commands under $route_path on this account; account-guard.sh refuses them, and the person has been shown how to restart the session on the right account. Tell them this is why, and stop. The notice they were shown:

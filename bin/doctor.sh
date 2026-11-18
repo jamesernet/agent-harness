@@ -695,8 +695,11 @@ fi
 #
 # Presence, not position: `strict_env` or `dotenv` before the directive is an
 # ordinary direnv file that does load its parent, and a check that fails
-# ordinary files gets ignored. A commented-out directive does not count. An
-# empty file shadows too, so it fails.
+# ordinary files gets ignored. `source_env ../.envrc` is direnv's other way to
+# load a parent and counts, and so does a directive after a guard such as
+# `[ -f ../.envrc ] &&`. A commented-out directive does not count, nor does a
+# longer name that happens to contain one. An empty file shadows too, so it
+# fails.
 #
 # Depth is bounded: the routed directory's own .envrc is the parent and is not
 # judged; repositories sit one level below it and worktrees two
@@ -718,7 +721,7 @@ if [[ -n "$routes" ]]; then
       [[ -n "$envrc" ]] || continue
       [[ "$envrc" != "$route_path/.envrc" ]] || continue
       scanned=$((scanned + 1))
-      grep -qE '^[[:space:]]*(source_up_if_exists|source_up)([[:space:]]|$)' "$envrc" 2>/dev/null ||
+      grep -qE '^([^#]*[^A-Za-z0-9_#])?(source_up|source_up_if_exists|source_env|source_env_if_exists)([^A-Za-z0-9_]|$)' "$envrc" 2>/dev/null ||
         shadowing="$shadowing $envrc"
     done < <(find "$route_path" -maxdepth 3 \( -name .git -o -name node_modules \) -prune -o \( -type f -o -type l \) -name .envrc -print 2>/dev/null | LC_ALL=C sort)
   done <<<"$routes"
@@ -727,9 +730,9 @@ if [[ -n "$routes" ]]; then
       "repository .envrc file(s) under a routed tree never run source_up_if_exists, so the parent's CLAUDE_CONFIG_DIR does not apply there:$shadowing" \
       "add 'source_up_if_exists' to each file (its first line is the usual place), then direnv allow it"
   elif [[ "$scanned" -gt 0 ]]; then
-    add_check envrc-source-up PASS "$scanned repository .envrc file(s) under routed trees source their parent" ""
+    add_check envrc-source-up PASS "$scanned repository .envrc file(s) within three levels of a routed tree source their parent" ""
   else
-    add_check envrc-source-up PASS "no repository .envrc under a routed tree" ""
+    add_check envrc-source-up PASS "no repository .envrc within three levels of a routed tree" ""
   fi
 fi
 

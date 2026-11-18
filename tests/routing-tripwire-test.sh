@@ -91,7 +91,21 @@ fired "$(run "$HOME/repos/acme/mine" "$HOME/.claude-acme")" ||
 # The sentinel suspends it for the active account only, as it does the guard.
 touch "$HOME/.claude/.allow-cross-account"
 [[ -z "$(run "$HOME/repos/acme/app")" ]] || fail "the sentinel did not suspend the tripwire"
+# Both hooks read the sentinel before they parse a payload, so the library's own
+# sentinel case is reached by no hook; it is part of judge's contract, so it is
+# pinned here directly, for the caller that does not pre-check.
+judge() { (
+  # shellcheck source=../bin/lib/routes.sh
+  source "$SRC/bin/lib/routes.sh"
+  llmctx_routes_judge "$1"
+); }
+[[ -z "$(judge "$HOME/repos/acme/app")" ]] || fail "the library judged a path under the sentinel"
 rm "$HOME/.claude/.allow-cross-account"
+# The route path comes back canonical, which on macOS is /private/var for a
+# mktemp home; the path handed in is the uncanonical spelling on purpose, since
+# that is the mistake a caller would make.
+[[ "$(judge "$HOME/repos/acme/app")" == "acme	$(cd "$HOME/repos/acme" && pwd -P)	$HOME/.claude-acme	default	"* ]] ||
+  fail "the library's verdict is not route, route path, expected dir, active name: $(judge "$HOME/repos/acme/app")"
 
 # A route naming an unregistered account is doctor's finding, not this hook's.
 git config --global --add llmctx.accountRoute "ghost=~/repos/personal"
@@ -151,6 +165,13 @@ r="$(envrc_check)"
 printf 'strict_env\ndotenv_if_exists\nsource_up_if_exists\n' >"$HOME/repos/acme/app/.envrc"
 r="$(envrc_check)"
 [[ "$(jq -r .status <<<"$r")" == PASS ]] || fail "strict_env before the directive was reported as shadowing: $r"
+# direnv's other way to load a parent, and a directive behind a guard or
+# followed by a semicolon, all load it; a check that fails them gets ignored.
+for loads in 'source_env_if_exists ../.envrc' '[ -f ../.envrc ] && source_up_if_exists' 'source_up_if_exists;'; do
+  printf '%s\nexport FOO=1\n' "$loads" >"$HOME/repos/acme/app/.envrc"
+  r="$(envrc_check)"
+  [[ "$(jq -r .status <<<"$r")" == PASS ]] || fail "'$loads' was reported as shadowing: $r"
+done
 # One that exports without sourcing up, one with the directive only in a
 # comment, and an empty one, all shadow. Files under .git and node_modules are
 # not repositories and are not walked, at depth one under the route as well as
