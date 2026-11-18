@@ -12,6 +12,7 @@ from typing import Callable
 
 import yaml
 
+from .config import render_disclosure
 from .contract import Contract
 from .feeds import Story
 from .pipeline import Outcome
@@ -32,7 +33,7 @@ def split_headline(body: str, fallback: str) -> tuple[str, str]:
 
 
 def disclosure(contract: Contract, display_name: str) -> str:
-    return contract.config.output.disclosure.format_map({"display_name": display_name, "org": contract.config.org_name})
+    return render_disclosure(contract.config.output.disclosure, display_name, contract.config.org_name)
 
 
 def _frontmatter(fields: dict) -> str:

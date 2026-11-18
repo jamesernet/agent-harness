@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from .config import Config, ConfigError, is_blank, load_config
+from .config import DISCLOSURE_PLACEHOLDERS, Config, ConfigError, is_blank, load_config, render_disclosure
 
 
 class ContractError(ValueError):
@@ -131,6 +131,16 @@ def load_contract(path: Path) -> Contract:
     missing = [n for n in config.personas.enabled if n not in personas]
     if missing:
         raise ContractError(f"config.yml personas.enabled names {missing}, which have no personas/<name>/persona.md")
+    # The render a run does at publish time, with the values it would use, so a
+    # template that fails there fails here first and one that renders is not refused.
+    allowed = ", ".join("{" + n + "}" for n in sorted(DISCLOSURE_PLACEHOLDERS))
+    for name in config.personas.enabled:
+        try:
+            render_disclosure(config.output.disclosure, personas[name].display_name, config.org_name)
+        except KeyError as e:
+            raise ContractError(f"config.yml output.disclosure names {{{e.args[0]}}}; the placeholders are {allowed}") from e
+        except (ValueError, IndexError, AttributeError, TypeError) as e:
+            raise ContractError(f"config.yml output.disclosure cannot be rendered for personas/{name} ({e}); the placeholders are {allowed}") from e
     return Contract(
         path=path,
         config=config,

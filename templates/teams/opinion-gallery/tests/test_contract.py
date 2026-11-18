@@ -129,15 +129,28 @@ def test_the_shipped_contracts_leave_room_for_a_model_that_thinks():
         assert all(v >= floor for v in budgets.values()), f"{name}: {budgets}"
 
 
-def test_disclosure_placeholder_typo_is_refused_at_load():
-    # delivery.disclosure fills {display_name} and {org}. Anything else used to
-    # pass validation and raise KeyError at publish time, after the model calls.
-    raw = _raw()
-    raw["output"]["disclosure"] = "AI-drafted by {display_name} on behalf of {client}."
-    with pytest.raises(ConfigError, match=r"output\.disclosure names \{client\}; the placeholders are \{display_name\}, \{org\}"):
-        parse_config(raw)
-    # The string is rendered once at load, so every way format_map can fail is caught, not only a bare unknown name.
-    for bad in ("AI-drafted by {display_name", "AI-drafted by {display_name:{width}}", "by {org.upper()}", "by {org[name]}", "by {}"):
-        raw["output"]["disclosure"] = bad
-        with pytest.raises(ConfigError, match=r"output\.disclosure (names|cannot be rendered)"):
-            parse_config(raw)
+def test_disclosure_is_refused_at_load_exactly_when_a_run_would_fail_to_render_it(tmp_path):
+    # delivery renders output.disclosure with {display_name} and {org}. load_contract
+    # runs that same render for every enabled persona with the real org name, so
+    # whatever a run would raise at publish time, after the model calls, is refused
+    # here instead, and nothing a run would render is refused.
+    def load(i, disclosure):
+        return load_contract(write_contract(tmp_path / str(i), overrides={"output": {"disclosure": disclosure}}))
+
+    with pytest.raises(ContractError, match=r"output\.disclosure names \{client\}; the placeholders are \{display_name\}, \{org\}"):
+        load(0, "AI-drafted by {display_name} on behalf of {client}.")
+    refused = (
+        "AI-drafted by {display_name",
+        "AI-drafted by {display_name:{width}}",
+        "by {org.upper()}",
+        "by {org[name]}",
+        "by {}",
+        # A declared name nested inside a format spec: a dry run with blanks passed
+        # it, because "" is a valid spec, and the real value is not.
+        "by {display_name:{org}}",
+    )
+    for i, bad in enumerate(refused, 1):
+        with pytest.raises(ContractError, match=r"output\.disclosure (names|cannot be rendered)"):
+            load(i, bad)
+    # Rendering with the real values also means a template a run renders is not refused.
+    assert load(99, "by {org[0]}").config.output.disclosure == "by {org[0]}"

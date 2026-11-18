@@ -11,11 +11,15 @@ import yaml
 KNOWN_TOP_LEVEL = {"org", "feed", "provider", "personas", "debate", "output", "review", "guardrails", "run"}
 PROVIDER_KINDS = {"openai", "anthropic", "fake"}
 DEBATE_OUTCOMES = {"auto", "two-views"}
-# What delivery.disclosure fills in. The string is rendered once at load with
-# these names, so a typo, a nested or positional field or an attribute access
-# fails here, where check sees it, instead of raising at publish time after the
-# model calls have been paid for.
+# What render_disclosure fills in, named for the error a wrong template gets.
 DISCLOSURE_PLACEHOLDERS = {"display_name", "org"}
+
+
+def render_disclosure(template: str, display_name: str, org: str) -> str:
+    """The one render of output.disclosure. Delivery calls it per draft; load_contract
+    calls it once per enabled persona, so a template that would fail at publish time,
+    after the model calls have been paid for, fails at check with the same error."""
+    return template.format_map({"display_name": display_name, "org": org})
 
 
 class ConfigError(ValueError):
@@ -257,13 +261,6 @@ def parse_config(raw: Mapping[str, Any]) -> Config:
     )
     if not output.disclosure:
         raise ConfigError("output.disclosure is empty")
-    allowed = ", ".join("{" + n + "}" for n in sorted(DISCLOSURE_PLACEHOLDERS))
-    try:
-        output.disclosure.format_map({n: "" for n in DISCLOSURE_PLACEHOLDERS})
-    except KeyError as e:
-        raise ConfigError(f"output.disclosure names {{{e.args[0]}}}; the placeholders are {allowed}") from e
-    except (ValueError, IndexError, AttributeError, TypeError) as e:
-        raise ConfigError(f"output.disclosure cannot be rendered ({e}); the placeholders are {allowed}") from e
 
     review = ReviewConfig(reviewers=_str_list((raw.get("review") or {}).get("reviewers"), "review.reviewers"))
     g = raw.get("guardrails") or {}

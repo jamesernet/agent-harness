@@ -19,7 +19,7 @@ def test_slugify_and_headline():
 
 
 def test_disclosure_fills_every_declared_placeholder(contract):
-    # config refuses a name outside DISCLOSURE_PLACEHOLDERS at load; this is the
+    # load_contract refuses a name outside DISCLOSURE_PLACEHOLDERS; this is the
     # other direction, that delivery fills every name the constant declares.
     contract.config.output.disclosure = " ".join("{" + n + "}" for n in sorted(DISCLOSURE_PLACEHOLDERS))
     assert delivery.disclosure(contract, "The Evidence Desk") == "The Evidence Desk Example Org"
