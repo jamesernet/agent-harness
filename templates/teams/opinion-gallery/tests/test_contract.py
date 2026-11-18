@@ -154,3 +154,8 @@ def test_disclosure_is_refused_at_load_exactly_when_a_run_would_fail_to_render_i
             load(i, bad)
     # Rendering with the real values also means a template a run renders is not refused.
     assert load(99, "by {org[0]}").config.output.disclosure == "by {org[0]}"
+    # The values are each enabled persona's own display name and the org name, not
+    # stand-ins: the starter names are 13 to 17 characters, so [0] renders and [40] does not.
+    assert load(98, "by {display_name[0]}").config.output.disclosure == "by {display_name[0]}"
+    with pytest.raises(ContractError, match=r"cannot be rendered for personas/\w+ \(string index out of range\)"):
+        load(97, "by {display_name[40]}")
