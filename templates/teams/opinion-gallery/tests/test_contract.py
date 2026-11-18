@@ -127,3 +127,15 @@ def test_the_shipped_contracts_leave_room_for_a_model_that_thinks():
         budgets = load_contract(STARTER.parent / name).config.provider.max_tokens
         assert set(budgets) == {"triage", "draft", "debate"}, name
         assert all(v >= floor for v in budgets.values()), f"{name}: {budgets}"
+
+
+def test_disclosure_placeholder_typo_is_refused_at_load():
+    # delivery.disclosure fills {display_name} and {org}. Anything else used to
+    # pass validation and raise KeyError at publish time, after the model calls.
+    raw = _raw()
+    raw["output"]["disclosure"] = "AI-drafted by {display_name} on behalf of {client}."
+    with pytest.raises(ConfigError, match=r"output\.disclosure names \{client\}; the placeholders are \{display_name\}, \{org\}"):
+        parse_config(raw)
+    raw["output"]["disclosure"] = "AI-drafted by {display_name"
+    with pytest.raises(ConfigError, match=r"output\.disclosure is not a valid format string"):
+        parse_config(raw)

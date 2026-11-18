@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import string
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -11,6 +12,10 @@ import yaml
 KNOWN_TOP_LEVEL = {"org", "feed", "provider", "personas", "debate", "output", "review", "guardrails", "run"}
 PROVIDER_KINDS = {"openai", "anthropic", "fake"}
 DEBATE_OUTCOMES = {"auto", "two-views"}
+# What delivery.disclosure fills in. Any other name in output.disclosure is a
+# typo that str.format would raise KeyError on at publish time, after the model
+# calls have been paid for, so it is refused here, where preflight sees it.
+DISCLOSURE_PLACEHOLDERS = {"display_name", "org"}
 
 
 class ConfigError(ValueError):
@@ -20,6 +25,15 @@ class ConfigError(ValueError):
 def is_blank(value: Any) -> bool:
     """A value still written `<< like this >>` in the template."""
     return isinstance(value, str) and "<<" in value
+
+
+def _placeholders(template: str, key: str) -> set[str]:
+    """The names a str.format template reads, by root (`{org.upper}` reads `org`)."""
+    try:
+        fields = [f for _, f, _, _ in string.Formatter().parse(template) if f is not None]
+    except ValueError as e:
+        raise ConfigError(f"{key} is not a valid format string: {e}") from e
+    return {f.split(".")[0].split("[")[0] for f in fields}
 
 
 @dataclass
@@ -252,6 +266,11 @@ def parse_config(raw: Mapping[str, Any]) -> Config:
     )
     if not output.disclosure:
         raise ConfigError("output.disclosure is empty")
+    unknown = _placeholders(output.disclosure, "output.disclosure") - DISCLOSURE_PLACEHOLDERS
+    if unknown:
+        names = ", ".join("{" + n + "}" for n in sorted(unknown))
+        allowed = ", ".join("{" + n + "}" for n in sorted(DISCLOSURE_PLACEHOLDERS))
+        raise ConfigError(f"output.disclosure names {names}; the placeholders are {allowed}")
 
     review = ReviewConfig(reviewers=_str_list((raw.get("review") or {}).get("reviewers"), "review.reviewers"))
     g = raw.get("guardrails") or {}

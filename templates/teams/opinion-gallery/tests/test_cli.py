@@ -110,3 +110,19 @@ def test_dotenv_ignores_lines_that_are_not_variables(tmp_path, monkeypatch):
 
     assert os.environ["GOOD"] == "yes"
     assert not any(k for k in os.environ if not cli.IDENTIFIER_RE.fullmatch(k))
+
+
+def _exit_code(argv) -> int:
+    try:
+        return cli.main(argv)
+    except SystemExit as e:
+        return int(e.code)
+
+
+def test_check_and_run_refuse_a_disclosure_typo_before_any_model_call(tmp_path, capsys):
+    c = write_contract(tmp_path, overrides={"output": {"disclosure": "AI-drafted by {display_name} for {client}."}})
+    assert _exit_code(["check", "--contract", str(c)]) == 2
+    assert "{client}" in capsys.readouterr().err
+    code = _exit_code(["run", "--contract", str(c), "--report-only", "--fake-replies", str(FIXTURES / "fake_replies.json")])
+    assert code == 2 and "{client}" in capsys.readouterr().err
+    assert not (tmp_path / "drafts").exists()
