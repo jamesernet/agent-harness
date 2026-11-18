@@ -125,6 +125,11 @@ def get_client(retries: bool = True):
     HttpRetryOptions.attempts documents "If 0 or 1, it means no retries".
     Uploads and downloads keep the retries, because repeating those costs
     nothing.
+
+    Every client is pinned to v1beta. google-genai 3.2.0 to 3.4.0 default to
+    v1, where on 2026-11-18 the model list served no gemini-omni-1.2-flash and
+    an Omni create came back 404 "Model not found"; the image and text models
+    here are listed under both.
     """
     try:
         from google import genai
@@ -139,13 +144,14 @@ def get_client(retries: bool = True):
             "GEMINI_API_KEY is not set. Create a key at https://aistudio.google.com/apikey\n"
             "  then:  export GEMINI_API_KEY=\"...\"   (see references/setup.md)"
         )
-    if retries:
-        return genai.Client(api_key=key)
     from google.genai import types
 
+    if retries:
+        return genai.Client(api_key=key, http_options=types.HttpOptions(api_version="v1beta"))
     return genai.Client(
         api_key=key,
-        http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1)),
+        http_options=types.HttpOptions(
+            api_version="v1beta", retry_options=types.HttpRetryOptions(attempts=1)),
     )
 
 

@@ -34,8 +34,9 @@ class HttpRetryOptions:
     def __init__(self, attempts=None):
         self.attempts = attempts
 class HttpOptions:
-    def __init__(self, retry_options=None):
+    def __init__(self, retry_options=None, api_version=None):
         self.retry_options = retry_options
+        self.api_version = api_version
 PY
 cat >"$stub/google/genai/__init__.py" <<'PY'
 import base64, json, os, time
@@ -49,7 +50,10 @@ def _log(**entry):
 class Client:
     def __init__(self, api_key=None, http_options=None):
         # "default" is the SDK's own retry policy; 1 is retries off.
-        self.retries = http_options.retry_options.attempts if http_options else "default"
+        retry = http_options.retry_options if http_options else None
+        self.retries = retry.attempts if retry else "default"
+        # "default" is the SDK's v1, where no Omni model is served.
+        self.api_version = (http_options.api_version if http_options else None) or "default"
         self.files = SimpleNamespace(upload=self._upload, get=self._get, download=self._download)
         self.interactions = SimpleNamespace(create=self._create, get=self._get_interaction)
 
@@ -70,7 +74,7 @@ class Client:
         open(destination, "wb").write(b"uri-clip")
 
     def _get_interaction(self, id, **kw):
-        _log(call="get", retries=self.retries, id=id)
+        _log(call="get", retries=self.retries, api_version=self.api_version, id=id)
         time.sleep(float(os.environ.get("STUB_GET_DELAY", "0")))
         if os.environ.get("STUB_GET_NOVIDEO"):
             return SimpleNamespace(id=id, status="completed", output_video=None, output_text="", usage=None)
@@ -83,7 +87,7 @@ class Client:
             inp = [{"type": "text", "text": inp}]
         kw["blocks"] = [b["type"] for b in inp]
         kw["text"] = inp[-1]["text"]
-        _log(call="create", retries=self.retries, timeout=timeout, **kw)
+        _log(call="create", retries=self.retries, api_version=self.api_version, timeout=timeout, **kw)
         if kw["response_format"].get("delivery") == "uri":
             clip = SimpleNamespace(data=None, uri="https://stub/files/clip:download")
         else:
@@ -323,5 +327,12 @@ grep -q 'delete "coffee" from out/manifest.json' "$sb2/log" ||
 start=$SECONDS
 STUB_GET_DELAY=4 render_fails slowget --fetch v1_stub --delivery-timeout 1
 ((SECONDS - start < 4)) || fail "--delivery-timeout 1 let a fetch wait $((SECONDS - start)) s"
+
+# 15. The render and the fetch go out on v1beta. google-genai defaults to v1,
+#     which serves no Omni model: a live create there is a 404.
+[[ "$(field small create 'e["api_version"]')" == v1beta ]] ||
+  fail "the billed create did not go out on v1beta: $(cat "$tmp/small/calls")"
+[[ "$(field dlfail get 'e["api_version"]')" == v1beta ]] ||
+  fail "--fetch did not read the interaction on v1beta: $(cat "$tmp/dlfail/calls")"
 
 echo "gemini-motion render tests: passed"
