@@ -82,13 +82,16 @@ if [ -n "$duplicate_names" ]; then
   while IFS= read -r name; do err "$name" "duplicate skill name"; done <<<"$duplicate_names"
 fi
 
-# Bundle wiring is checked in both directions. Every owned skill must belong to
-# at least one bundle, or an added skill silently installs under `all` and
-# nowhere else. And every member a bundle names must exist: a skill under
-# skills/ or vendor/, or a bundle this file defines (`+<bundle>`). A removed
+# Bundle wiring is checked in both directions, by line. Every owned skill must
+# belong to at least one bundle, or an added skill silently installs under
+# `all` and nowhere else. And every line must be one the installer reads: a
+# bundle name it can match exactly, and a member that exists, as a skill under
+# skills/ or vendor/ or as a bundle this file defines (`+<bundle>`). A removed
 # skill leaves its bundle line behind, and install-skills.sh only warns about
 # that, on the user's machine, where nobody reads a warning in a long install;
-# an undefined +bundle it expands to nothing without a word.
+# an undefined +bundle it expands to nothing without a word. `all` is computed
+# in install-skills.sh and never read from this file, so a line defining or
+# including it is read by nothing.
 bundles_file="$SRC/skills/bundles.conf"
 if [ -f "$bundles_file" ]; then
   for dir in "$SRC"/skills/*/; do
@@ -97,19 +100,26 @@ if [ -f "$bundles_file" ]; then
     grep -q "^[a-z0-9-]*|${name}\$" "$bundles_file" ||
       err "$name" "in no bundle (add a line to skills/bundles.conf)"
   done
-  while IFS='|' read -r bundle member; do
+  defined_bundles="$(grep -v '^[[:space:]]*#' "$bundles_file" | grep '|' | cut -d'|' -f1 | LC_ALL=C sort -u || true)"
+  while IFS='|' read -r lineno bundle member; do
+    where="skills/bundles.conf:$lineno"
+    case "$bundle" in
+      all) err "$where" "bundle \"all\" is computed by install-skills.sh; a line defining it is never read" ;;
+      '' | *[!a-z0-9-]*) err "$where" "bundle name \"$bundle\" is not [a-z0-9-], so the installer never matches this line" ;;
+    esac
     case "$member" in
       '') ;;
+      '+all') err "$where" "bundle \"$bundle\" includes \"+all\", which is computed, not defined here, so the installer expands it to nothing" ;;
       '+'*)
-        grep -q "^${member#+}|" "$bundles_file" ||
-          err "skills/bundles.conf" "bundle \"$bundle\" includes \"$member\", which no line defines"
+        grep -qxF -- "${member#+}" <<<"$defined_bundles" ||
+          err "$where" "bundle \"$bundle\" includes \"$member\", which no line defines"
         ;;
       *)
         [ -f "$SRC/skills/$member/SKILL.md" ] || [ -f "$SRC/vendor/$member/SKILL.md" ] ||
-          err "skills/bundles.conf" "bundle \"$bundle\" names \"$member\", which has no SKILL.md under skills/ or vendor/"
+          err "$where" "bundle \"$bundle\" names \"$member\", which has no SKILL.md under skills/ or vendor/"
         ;;
     esac
-  done < <(grep -v '^[[:space:]]*#' "$bundles_file" | grep '|' || true)
+  done < <(grep -n -v '^[[:space:]]*#' "$bundles_file" | grep '|' | sed 's/:/|/' || true)
 else
   err "skills/bundles.conf" "missing"
 fi
