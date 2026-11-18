@@ -696,9 +696,13 @@ fi
 # Presence, not position: `strict_env` or `dotenv` before the directive is an
 # ordinary direnv file that does load its parent, and a check that fails
 # ordinary files gets ignored. `source_env ../.envrc` is direnv's other way to
-# load a parent and counts, and so does a directive after a guard such as
-# `[ -f ../.envrc ] &&`. A commented-out directive does not count, nor does a
-# longer name that happens to contain one. An empty file shadows too, so it
+# load a parent and counts, but only when its argument reaches up a directory:
+# `source_env_if_exists .envrc.local` is the common idiom for a LOCAL file and
+# loads no parent at all, so it is exactly the shadowing file this exists to
+# name. A directive after a guard such as `[ -f ../.envrc ] &&` counts. A
+# commented-out directive does not, nor does a longer name that happens to
+# contain one; a `#` anywhere earlier on the line hides it, which errs towards
+# naming a file, where the person can see it. An empty file shadows too, so it
 # fails.
 #
 # Depth is bounded: the routed directory's own .envrc is the parent and is not
@@ -721,7 +725,7 @@ if [[ -n "$routes" ]]; then
       [[ -n "$envrc" ]] || continue
       [[ "$envrc" != "$route_path/.envrc" ]] || continue
       scanned=$((scanned + 1))
-      grep -qE '^([^#]*[^A-Za-z0-9_#])?(source_up|source_up_if_exists|source_env|source_env_if_exists)([^A-Za-z0-9_]|$)' "$envrc" 2>/dev/null ||
+      grep -qE '^([^#]*[^A-Za-z0-9_#])?(source_up(_if_exists)?([^A-Za-z0-9_]|$)|source_env(_if_exists)?[[:space:]]+[^[:space:]#]*\.\.)' "$envrc" 2>/dev/null ||
         shadowing="$shadowing $envrc"
     done < <(find "$route_path" -maxdepth 3 \( -name .git -o -name node_modules \) -prune -o \( -type f -o -type l \) -name .envrc -print 2>/dev/null | LC_ALL=C sort)
   done <<<"$routes"

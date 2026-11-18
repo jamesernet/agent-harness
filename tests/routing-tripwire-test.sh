@@ -167,10 +167,19 @@ r="$(envrc_check)"
 [[ "$(jq -r .status <<<"$r")" == PASS ]] || fail "strict_env before the directive was reported as shadowing: $r"
 # direnv's other way to load a parent, and a directive behind a guard or
 # followed by a semicolon, all load it; a check that fails them gets ignored.
-for loads in 'source_env_if_exists ../.envrc' '[ -f ../.envrc ] && source_up_if_exists' 'source_up_if_exists;'; do
+for loads in 'source_env_if_exists ../.envrc' 'source_env ../../.envrc' '[ -f ../.envrc ] && source_up_if_exists' 'source_up_if_exists;'; do
   printf '%s\nexport FOO=1\n' "$loads" >"$HOME/repos/acme/app/.envrc"
   r="$(envrc_check)"
   [[ "$(jq -r .status <<<"$r")" == PASS ]] || fail "'$loads' was reported as shadowing: $r"
+done
+# source_env with a LOCAL argument loads no parent: the common `.envrc.local`
+# idiom is the shadowing file itself, and the first broadening of this check
+# let it through. Named, every time.
+for shadows in 'source_env_if_exists .envrc.local' 'source_env ./local.env' 'dotenv' 'my_source_up_if_exists'; do
+  printf '%s\nexport FOO=1\n' "$shadows" >"$HOME/repos/acme/app/.envrc"
+  r="$(envrc_check)"
+  [[ "$(jq -r .status <<<"$r")" == FAIL && "$(jq -r .detail <<<"$r")" == *"repos/acme/app/.envrc"* ]] ||
+    fail "'$shadows' loads no parent and was not named: $r"
 done
 # One that exports without sourcing up, one with the directive only in a
 # comment, and an empty one, all shadow. Files under .git and node_modules are
