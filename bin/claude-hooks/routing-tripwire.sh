@@ -42,12 +42,12 @@ source "$ROUTES_LIB"
 # No routes, no work. This is the common case on a machine without clients, and
 # it runs on every startup, resume, clear, compact and fork, so it must cost
 # nothing.
-[[ -n "$(llmctx_routes_list)" ]] || exit 0
+llmctx_routes_load
+[[ -n "$LLMCTX_ROUTES" ]] || exit 0
 
-active_dir="$(llmctx_routes_active_dir)"
-[[ -e "$active_dir/.allow-cross-account" ]] && exit 0
-active_name="$(llmctx_routes_active_account)"
-[[ -n "$active_name" ]] || exit 0
+# The sentinel is judged again inside the library; it is read here first so a
+# suspended tripwire never pays for jq.
+[[ -e "$(llmctx_routes_active_dir)/.allow-cross-account" ]] && exit 0
 
 # The payload's cwd is the only cwd a hook may trust; the process cwd is
 # whatever Claude Code happened to spawn the hook in.
@@ -57,17 +57,11 @@ cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
 cwd="$(llmctx_target_canonical "$(llmctx_target_expand_home "$cwd")")"
 [[ "$cwd" == /* ]] || exit 0
 
-match="$(llmctx_routes_match "$cwd")"
-[[ -n "$match" ]] || exit 0
-route_name="${match%%	*}"
-route_path="${match#*	}"
-[[ "$route_name" != "$active_name" ]] || exit 0
-
-# A route to an account this machine has not registered is doctor's finding,
-# not this hook's; a notice naming a directory that does not exist would send
-# the person the wrong way.
-expected_dir="$(llmctx_routes_account_dir "$route_name")"
-[[ -n "$expected_dir" ]] || exit 0
+# The same verdict account-guard.sh reaches at the first write, from the same
+# library call, for the session cwd instead of a write target.
+verdict="$(llmctx_routes_judge "$cwd")"
+[[ -n "$verdict" ]] || exit 0
+IFS=$'\t' read -r route_name route_path expected_dir active_name active_dir <<<"$verdict"
 
 message="This session started in a directory routed to the \"$route_name\" Claude account, but it is running on \"$active_name\".
 
@@ -75,15 +69,8 @@ message="This session started in a directory routed to the \"$route_name\" Claud
   route              $route_path  ->  $route_name
   CLAUDE_CONFIG_DIR  ${CLAUDE_CONFIG_DIR:-<unset>}   (expected $expected_dir)
 
-Nothing has been written yet, and account-guard.sh will refuse the first write under that route. The likely cause is a shell that never loaded direnv. From a terminal OUTSIDE this session:
-  cd \"$route_path\" && direnv allow .
-  # then start a new session there: claude    and confirm with /status
-
-If a repo under that path has its own .envrc, it needs 'source_up_if_exists' as its
-first line, or it shadows the parent entirely and this keeps firing.
-
-To work here on the \"$active_name\" account deliberately, suspend the guard:
-  touch \"$active_dir/.allow-cross-account\"    # then rm it when done"
+Nothing has been written yet, and account-guard.sh will refuse the first write under that route.
+$(llmctx_routes_fix_text "$route_path" "$active_name" "$active_dir")"
 
 agent_note="Routing tripwire: this session is on the \"$active_name\" Claude account, but its working directory is routed to \"$route_name\". Do not edit, write or run commands under $route_path on this account; account-guard.sh refuses them, and the person has been shown how to restart the session on the right account. Tell them this is why, and stop. The notice they were shown:
 

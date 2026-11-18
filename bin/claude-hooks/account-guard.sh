@@ -73,16 +73,13 @@ canonical() { llmctx_target_canonical "$1"; }
 
 # No routes, no work. This is the common case on a machine without clients, and
 # it must cost nothing.
-[[ -n "$(llmctx_routes_list)" ]] || exit 0
+llmctx_routes_load
+[[ -n "$LLMCTX_ROUTES" ]] || exit 0
 
+# The sentinel is judged again inside the library; it is read here first so a
+# suspended guard never pays for jq.
 active_dir="$(llmctx_routes_active_dir)"
 [[ -e "$active_dir/.allow-cross-account" ]] && exit 0
-
-# Which account is active: the registry maps name=dir; $HOME/.claude is always
-# `default`, registered or not. An unregistered config dir cannot be judged;
-# say nothing rather than guess.
-active_name="$(llmctx_routes_active_account)"
-[[ -n "$active_name" ]] || exit 0
 
 input="$(cat)"
 tool="$(printf '%s' "$input" | jq -r '.tool_name // ""')"
@@ -124,18 +121,13 @@ case "$target" in
   "$active_dir" | "$active_dir"/*) exit 0 ;;
 esac
 
-# Longest matching route wins.
-match="$(llmctx_routes_match "$target")"
-[[ -n "$match" ]] || exit 0
-route_name="${match%%	*}"
-route_path="${match#*	}"
-[[ "$route_name" != "$active_name" ]] || exit 0
-
-# A route to an account this machine has not registered is a misconfiguration
-# doctor reports; enforcing it here would deny with directions to a directory
-# that does not exist. Fail open instead.
-expected_dir="$(llmctx_routes_account_dir "$route_name")"
-[[ -n "$expected_dir" ]] || exit 0
+# Everything that decides whether this write belongs to another account is one
+# library call, shared with routing-tripwire.sh. Silence is "cannot tell" or
+# "nothing to say"; the library's header lists which cases, and every one of
+# them fails open.
+verdict="$(llmctx_routes_judge "$target")"
+[[ -n "$verdict" ]] || exit 0
+IFS=$'\t' read -r route_name route_path expected_dir active_name _ <<<"$verdict"
 
 reason="This path is routed to the \"$route_name\" Claude account, but the session is on \"$active_name\".
 
@@ -143,15 +135,7 @@ reason="This path is routed to the \"$route_name\" Claude account, but the sessi
   route              $route_path  ->  $route_name
   CLAUDE_CONFIG_DIR  ${CLAUDE_CONFIG_DIR:-<unset>}   (expected $expected_dir)
 
-The likely cause is a shell that never loaded direnv. From a terminal OUTSIDE this session:
-  cd \"$route_path\" && direnv allow .
-  # then start a new session there: claude    and confirm with /status
-
-If a repo under that path has its own .envrc, it needs 'source_up_if_exists' as its
-first line, or it shadows the parent entirely and this keeps firing.
-
-To work here on the \"$active_name\" account deliberately, suspend the guard:
-  touch \"$active_dir/.allow-cross-account\"    # then rm it when done"
+$(llmctx_routes_fix_text "$route_path" "$active_name" "$active_dir")"
 
 jq -n --arg r "$reason" \
   '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'

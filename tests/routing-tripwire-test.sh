@@ -146,25 +146,43 @@ printf 'source_up\n' >"$HOME/repos/acme/app-worktrees/slug/.envrc"
 r="$(envrc_check)"
 [[ "$(jq -r .status <<<"$r")" == PASS && "$(jq -r .detail <<<"$r")" == "2 repository .envrc"* ]] ||
   fail "two sourcing .envrc files were not counted as a pass: $r"
-# One that exports without sourcing up, and an empty one, both shadow. Files
-# under .git and node_modules are not repositories and are not walked.
+# Presence, not position: the direnv stdlib pattern puts strict_env first, and
+# a file like that does load its parent. A commented-out directive does not.
+printf 'strict_env\ndotenv_if_exists\nsource_up_if_exists\n' >"$HOME/repos/acme/app/.envrc"
+r="$(envrc_check)"
+[[ "$(jq -r .status <<<"$r")" == PASS ]] || fail "strict_env before the directive was reported as shadowing: $r"
+# One that exports without sourcing up, one with the directive only in a
+# comment, and an empty one, all shadow. Files under .git and node_modules are
+# not repositories and are not walked, at depth one under the route as well as
+# below a repository: -mindepth would have suppressed the prune at depth one.
 printf 'export FOO=1\n' >"$HOME/repos/acme/mine/.envrc"
+printf '# source_up_if_exists\nexport FOO=1\n' >"$HOME/repos/acme/app/.envrc"
 : >"$HOME/repos/acme/app-worktrees/slug/.envrc"
-mkdir -p "$HOME/repos/acme/app/node_modules/pkg" "$HOME/repos/acme/app/.git"
-printf 'export X=1\n' >"$HOME/repos/acme/app/node_modules/pkg/.envrc"
-printf 'export X=1\n' >"$HOME/repos/acme/app/.git/.envrc"
+mkdir -p "$HOME/repos/acme/node_modules/pkg" "$HOME/repos/acme/.git" "$HOME/repos/acme/mine/node_modules" "$HOME/repos/acme/mine/.git"
+printf 'export X=1\n' >"$HOME/repos/acme/node_modules/pkg/.envrc"
+printf 'export X=1\n' >"$HOME/repos/acme/.git/.envrc"
+printf 'export X=1\n' >"$HOME/repos/acme/mine/node_modules/.envrc"
+printf 'export X=1\n' >"$HOME/repos/acme/mine/.git/.envrc"
 r="$(envrc_check)"
 [[ "$(jq -r .status <<<"$r")" == FAIL ]] || fail "shadowing .envrc files were not reported: $r"
 detail="$(jq -r .detail <<<"$r")"
 [[ "$detail" == *"repos/acme/mine/.envrc"* ]] || fail "the exporting .envrc was not named: $r"
 [[ "$detail" == *"app-worktrees/slug/.envrc"* ]] || fail "the empty .envrc was not named: $r"
-[[ "$detail" != *"repos/acme/app/.envrc"* ]] || fail "a sourcing .envrc was named as shadowing: $r"
+[[ "$detail" == *"repos/acme/app/.envrc"* ]] || fail "a commented-out directive was taken as sourcing: $r"
 [[ "$detail" != *"repos/acme/.envrc"* ]] || fail "the parent .envrc was judged: $r"
 [[ "$detail" != *node_modules* && "$detail" != *"/.git/"* ]] || fail "pruned directories were walked: $r"
 [[ "$(jq -r .remediation <<<"$r")" == *source_up_if_exists* ]] || fail "the fix did not name the directive: $r"
+# A route to an unregistered account fails the routes check; it does not make
+# this one vanish, and the files under the valid route are still named.
+git config --global --add llmctx.accountRoute "ghost=~/repos/personal"
+r="$(envrc_check)"
+[[ "$(jq -r .status <<<"$r")" == FAIL && "$(jq -r .detail <<<"$r")" == *"repos/acme/mine/.envrc"* ]] ||
+  fail "a bad route hid the envrc check: $r"
+git config --global --unset llmctx.accountRoute "ghost=~/repos/personal"
 # Fixed, it clears.
 printf 'source_up_if_exists\nexport FOO=1\n' >"$HOME/repos/acme/mine/.envrc"
 printf 'source_up_if_exists\n' >"$HOME/repos/acme/app-worktrees/slug/.envrc"
+printf 'source_up_if_exists\n' >"$HOME/repos/acme/app/.envrc"
 r="$(envrc_check)"
 [[ "$(jq -r .status <<<"$r")" == PASS ]] || fail "fixing the files did not clear the check: $r"
 # A route whose directory does not exist is skipped here; the routes check owns it.
