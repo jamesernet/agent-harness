@@ -101,7 +101,7 @@ CLAUDE_HOOKS_SRC="$SRC/bin/claude-hooks"
 # bin/claude-hooks (below); a library is now installed by naming it here.
 #
 #   bin/lib/<name>.sh  ->  <account>/hooks/llmctx-<name>.sh
-HOOK_LIBS=(policy target)
+HOOK_LIBS=(policy target routes)
 hook_lib_src() { printf '%s\n' "$SRC/bin/lib/$1.sh"; }
 hook_lib_dest() { printf '%s\n' "$CLAUDE_HOOKS_DEST/llmctx-$1.sh"; }
 

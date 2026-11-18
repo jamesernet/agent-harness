@@ -51,6 +51,13 @@ TARGET_LIB="$SCRIPT_DIR/llmctx-target.sh"
 [[ -f "$TARGET_LIB" ]] || exit 0
 # shellcheck source=../lib/target.sh
 source "$TARGET_LIB"
+# Routes and the account registry are read through one library, shared with the
+# SessionStart tripwire (routing-tripwire.sh), so the two cannot drift apart.
+ROUTES_LIB="$SCRIPT_DIR/llmctx-routes.sh"
+[[ -f "$ROUTES_LIB" ]] || ROUTES_LIB="$SCRIPT_DIR/../lib/routes.sh"
+[[ -f "$ROUTES_LIB" ]] || exit 0
+# shellcheck source=../lib/routes.sh
+source "$ROUTES_LIB"
 
 # Tilde expansion has one implementation, in the library. It is used here for
 # route paths and config directories as well as for a command target, so it is
@@ -63,26 +70,15 @@ canonical() { llmctx_target_canonical "$1"; }
 
 # No routes, no work. This is the common case on a machine without clients, and
 # it must cost nothing.
-routes="$(git config --global --get-all llmctx.accountRoute 2>/dev/null || true)"
-[[ -n "$routes" ]] || exit 0
+[[ -n "$(llmctx_routes_list)" ]] || exit 0
 
-active_dir="$(canonical "$(expand_home "${CLAUDE_CONFIG_DIR:-$HOME/.claude}")")"
-home_claude="$(canonical "$HOME/.claude")"
+active_dir="$(llmctx_routes_active_dir)"
 [[ -e "$active_dir/.allow-cross-account" ]] && exit 0
 
 # Which account is active: the registry maps name=dir; $HOME/.claude is always
-# `default`, registered or not.
-active_name=""
-[[ "$active_dir" == "$home_claude" ]] && active_name="default"
-if [[ -z "$active_name" ]]; then
-  while IFS= read -r entry; do
-    [[ -n "$entry" ]] || continue
-    name="${entry%%=*}"
-    dir="$(canonical "$(expand_home "${entry#*=}")")"
-    [[ "$dir" == "$active_dir" ]] && active_name="$name" && break
-  done < <(git config --global --get-all llmctx.claudeAccount 2>/dev/null || true)
-fi
-# An unregistered config dir cannot be judged; say nothing rather than guess.
+# `default`, registered or not. An unregistered config dir cannot be judged;
+# say nothing rather than guess.
+active_name="$(llmctx_routes_active_account)"
 [[ -n "$active_name" ]] || exit 0
 
 input="$(cat)"
@@ -126,38 +122,16 @@ case "$target" in
 esac
 
 # Longest matching route wins.
-route_name=""
-route_path=""
-while IFS= read -r entry; do
-  [[ -n "$entry" ]] || continue
-  name="${entry%%=*}"
-  path="$(expand_home "${entry#*=}")"
-  [[ "$path" == /* ]] || continue
-  path="$(canonical "$path")"
-  [[ -n "$path" ]] || continue
-  case "$target" in
-    "$path" | "$path"/*)
-      if [[ "${#path}" -gt "${#route_path}" ]]; then
-        route_name="$name"
-        route_path="$path"
-      fi
-      ;;
-  esac
-done <<<"$routes"
-[[ -n "$route_name" ]] || exit 0
+match="$(llmctx_routes_match "$target")"
+[[ -n "$match" ]] || exit 0
+route_name="${match%%	*}"
+route_path="${match#*	}"
 [[ "$route_name" != "$active_name" ]] || exit 0
 
 # A route to an account this machine has not registered is a misconfiguration
 # doctor reports; enforcing it here would deny with directions to a directory
 # that does not exist. Fail open instead.
-expected_dir=""
-if [[ "$route_name" == "default" ]]; then
-  expected_dir="$HOME/.claude"
-else
-  while IFS= read -r entry; do
-    [[ "${entry%%=*}" == "$route_name" ]] && expected_dir="$(expand_home "${entry#*=}")" && break
-  done < <(git config --global --get-all llmctx.claudeAccount 2>/dev/null || true)
-fi
+expected_dir="$(llmctx_routes_account_dir "$route_name")"
 [[ -n "$expected_dir" ]] || exit 0
 
 reason="This path is routed to the \"$route_name\" Claude account, but the session is on \"$active_name\".
