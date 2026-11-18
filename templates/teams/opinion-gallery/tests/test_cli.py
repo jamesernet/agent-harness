@@ -116,13 +116,18 @@ def _exit_code(argv) -> int:
     try:
         return cli.main(argv)
     except SystemExit as e:
-        return int(e.code)
+        return e.code if isinstance(e.code, int) else 1
 
 
-def test_check_and_run_refuse_a_disclosure_typo_before_any_model_call(tmp_path, capsys):
+def test_check_and_run_refuse_a_disclosure_typo_before_any_model_call(tmp_path, capsys, monkeypatch):
+    import opinion_gallery.run as run_mod
+    from conftest import file_fetch
+
+    # Stubbed as in test_run_report_only_with_fake_provider, so a regression here fails on the exit code, not on the network.
+    monkeypatch.setattr(run_mod.feeds, "http_fetch", file_fetch)
     c = write_contract(tmp_path, overrides={"output": {"disclosure": "AI-drafted by {display_name} for {client}."}})
     assert _exit_code(["check", "--contract", str(c)]) == 2
     assert "{client}" in capsys.readouterr().err
-    code = _exit_code(["run", "--contract", str(c), "--report-only", "--fake-replies", str(FIXTURES / "fake_replies.json")])
+    code = _exit_code(["run", "--contract", str(c), "--report-only", "--date", "2026-11-03", "--fake-replies", str(FIXTURES / "fake_replies.json")])
     assert code == 2 and "{client}" in capsys.readouterr().err
     assert not (tmp_path / "drafts").exists()

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import string
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -12,9 +11,10 @@ import yaml
 KNOWN_TOP_LEVEL = {"org", "feed", "provider", "personas", "debate", "output", "review", "guardrails", "run"}
 PROVIDER_KINDS = {"openai", "anthropic", "fake"}
 DEBATE_OUTCOMES = {"auto", "two-views"}
-# What delivery.disclosure fills in. Any other name in output.disclosure is a
-# typo that str.format would raise KeyError on at publish time, after the model
-# calls have been paid for, so it is refused here, where preflight sees it.
+# What delivery.disclosure fills in. The string is rendered once at load with
+# these names, so a typo, a nested or positional field or an attribute access
+# fails here, where check sees it, instead of raising at publish time after the
+# model calls have been paid for.
 DISCLOSURE_PLACEHOLDERS = {"display_name", "org"}
 
 
@@ -25,15 +25,6 @@ class ConfigError(ValueError):
 def is_blank(value: Any) -> bool:
     """A value still written `<< like this >>` in the template."""
     return isinstance(value, str) and "<<" in value
-
-
-def _placeholders(template: str, key: str) -> set[str]:
-    """The names a str.format template reads, by root (`{org.upper}` reads `org`)."""
-    try:
-        fields = [f for _, f, _, _ in string.Formatter().parse(template) if f is not None]
-    except ValueError as e:
-        raise ConfigError(f"{key} is not a valid format string: {e}") from e
-    return {f.split(".")[0].split("[")[0] for f in fields}
 
 
 @dataclass
@@ -266,11 +257,13 @@ def parse_config(raw: Mapping[str, Any]) -> Config:
     )
     if not output.disclosure:
         raise ConfigError("output.disclosure is empty")
-    unknown = _placeholders(output.disclosure, "output.disclosure") - DISCLOSURE_PLACEHOLDERS
-    if unknown:
-        names = ", ".join("{" + n + "}" for n in sorted(unknown))
-        allowed = ", ".join("{" + n + "}" for n in sorted(DISCLOSURE_PLACEHOLDERS))
-        raise ConfigError(f"output.disclosure names {names}; the placeholders are {allowed}")
+    allowed = ", ".join("{" + n + "}" for n in sorted(DISCLOSURE_PLACEHOLDERS))
+    try:
+        output.disclosure.format_map({n: "" for n in DISCLOSURE_PLACEHOLDERS})
+    except KeyError as e:
+        raise ConfigError(f"output.disclosure names {{{e.args[0]}}}; the placeholders are {allowed}") from e
+    except (ValueError, IndexError, AttributeError, TypeError) as e:
+        raise ConfigError(f"output.disclosure cannot be rendered ({e}); the placeholders are {allowed}") from e
 
     review = ReviewConfig(reviewers=_str_list((raw.get("review") or {}).get("reviewers"), "review.reviewers"))
     g = raw.get("guardrails") or {}

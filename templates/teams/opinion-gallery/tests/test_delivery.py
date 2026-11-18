@@ -4,6 +4,7 @@ import yaml
 from conftest import NOW
 
 from opinion_gallery import delivery
+from opinion_gallery.config import DISCLOSURE_PLACEHOLDERS
 from opinion_gallery.pipeline import Draft, Outcome, Reply
 
 
@@ -15,6 +16,13 @@ def test_slugify_and_headline():
     assert delivery.slugify("Regulator proposes NEW rules, for pets!") == "regulator-proposes-new-rules-for-pets"
     assert delivery.split_headline("# Hello\n\nbody", "fb") == ("Hello", "body")
     assert delivery.split_headline("no heading", "fb") == ("fb", "no heading")
+
+
+def test_disclosure_fills_every_declared_placeholder(contract):
+    # config refuses a name outside DISCLOSURE_PLACEHOLDERS at load; this is the
+    # other direction, that delivery fills every name the constant declares.
+    contract.config.output.disclosure = " ".join("{" + n + "}" for n in sorted(DISCLOSURE_PLACEHOLDERS))
+    assert delivery.disclosure(contract, "The Evidence Desk") == "The Evidence Desk Example Org"
 
 
 def test_render_single(contract, stories):

@@ -136,6 +136,8 @@ def test_disclosure_placeholder_typo_is_refused_at_load():
     raw["output"]["disclosure"] = "AI-drafted by {display_name} on behalf of {client}."
     with pytest.raises(ConfigError, match=r"output\.disclosure names \{client\}; the placeholders are \{display_name\}, \{org\}"):
         parse_config(raw)
-    raw["output"]["disclosure"] = "AI-drafted by {display_name"
-    with pytest.raises(ConfigError, match=r"output\.disclosure is not a valid format string"):
-        parse_config(raw)
+    # The string is rendered once at load, so every way format_map can fail is caught, not only a bare unknown name.
+    for bad in ("AI-drafted by {display_name", "AI-drafted by {display_name:{width}}", "by {org.upper()}", "by {org[name]}", "by {}"):
+        raw["output"]["disclosure"] = bad
+        with pytest.raises(ConfigError, match=r"output\.disclosure (names|cannot be rendered)"):
+            parse_config(raw)
