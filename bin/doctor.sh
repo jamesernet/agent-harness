@@ -686,6 +686,51 @@ else
   fi
 fi
 
+# A repository .envrc under a routed tree that does not begin with
+# `source_up_if_exists` shadows the directory-level .envrc carrying
+# CLAUDE_CONFIG_DIR -- silently, direnv loads only the nearest file -- and the
+# routing does not apply there. That is the state account-guard.sh and
+# routing-tripwire.sh then catch at run time; README has said so since the
+# routes arrived. This names WHICH file, before a session is started in it.
+#
+# Depth is bounded: the routed directory's own .envrc is the parent and is not
+# judged; repositories sit one level below it and worktrees two
+# (<repo>-worktrees/<slug>). .git and node_modules are pruned, so the walk
+# costs a directory listing. An empty .envrc shadows too, so the test is on the
+# first line that is neither blank nor a comment, and "no such line" fails it.
+if [[ -n "$routes" && -z "$accounts_error" && -z "${bad_routes:-}" && -z "${relative_routes:-}" ]]; then
+  shadowing=""
+  scanned=0
+  tilde="~"
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    route_path="${entry#*=}"
+    case "$route_path" in
+      "$tilde") route_path="$HOME" ;;
+      "$tilde"/*) route_path="$HOME/${route_path#"$tilde"/}" ;;
+    esac
+    [[ -d "$route_path" ]] || continue
+    while IFS= read -r envrc; do
+      [[ -n "$envrc" ]] || continue
+      scanned=$((scanned + 1))
+      first="$(sed -e 's/^[[:space:]]*//' -e '/^#/d' -e '/^$/d' "$envrc" 2>/dev/null | head -1)"
+      case "$first" in
+        source_up_if_exists | source_up_if_exists[[:space:]]* | source_up | source_up[[:space:]]*) ;;
+        *) shadowing="$shadowing $envrc" ;;
+      esac
+    done < <(find "$route_path" -mindepth 2 -maxdepth 3 \( -name .git -o -name node_modules \) -prune -o \( -type f -o -type l \) -name .envrc -print 2>/dev/null | LC_ALL=C sort)
+  done <<<"$routes"
+  if [[ -n "$shadowing" ]]; then
+    add_check envrc-source-up FAIL \
+      "repository .envrc file(s) under a routed tree do not begin with source_up_if_exists, so the parent's CLAUDE_CONFIG_DIR does not apply there:$shadowing" \
+      "add 'source_up_if_exists' as the first line of each file, then direnv allow it"
+  elif [[ "$scanned" -gt 0 ]]; then
+    add_check envrc-source-up PASS "$scanned repository .envrc file(s) under routed trees source their parent" ""
+  else
+    add_check envrc-source-up PASS "no repository .envrc under a routed tree" ""
+  fi
+fi
+
 if [[ "$quiet" -eq 0 ]]; then
   if [[ "$output_json" -eq 1 ]]; then
     jq -s --argjson healthy "$([[ "$failures" -eq 0 ]] && echo true || echo false)" \

@@ -123,4 +123,53 @@ jq -e '[.hooks.SessionStart[]?.hooks[]?.command] | any(test("/hooks/routing-trip
 fired "$(CLAUDE_CONFIG_DIR="" bash "$HOME/.claude/hooks/routing-tripwire.sh" <<<"$(payload "$HOME/repos/acme/app")")" ||
   fail "the installed tripwire did not fire"
 
+# --- doctor: a repository .envrc under a routed tree must source its parent ---
+# direnv loads only the nearest .envrc, so a repository file that does not
+# begin with source_up_if_exists shadows the directory-level one carrying
+# CLAUDE_CONFIG_DIR, silently, and the routing does not apply there. The two
+# hooks above then catch it at run time; doctor names the file before that.
+git config --global --unset-all llmctx.accountRoute
+git config --global --add llmctx.accountRoute "acme=~/repos/acme"
+envrc_check() { # -> the envrc-source-up check as compact JSON
+  HOME="$HOME" "$SRC/bin/doctor.sh" --json >"$tmp/doctor.json" 2>/dev/null || true
+  jq -c '[.checks[] | select(.id == "envrc-source-up")][0]' "$tmp/doctor.json"
+}
+# The routed directory's own .envrc is the parent and is never judged.
+printf 'export CLAUDE_CONFIG_DIR="$HOME/.claude-acme"\n' >"$HOME/repos/acme/.envrc"
+r="$(envrc_check)"
+[[ "$(jq -r .status <<<"$r")" == PASS && "$(jq -r .detail <<<"$r")" == *"no repository .envrc"* ]] ||
+  fail "a routed tree with only the parent .envrc was not a pass: $r"
+# Comments and blank lines before the directive are fine, and so is plain source_up.
+printf '# repo\n\n  source_up_if_exists\nexport FOO=1\n' >"$HOME/repos/acme/app/.envrc"
+mkdir -p "$HOME/repos/acme/app-worktrees/slug"
+printf 'source_up\n' >"$HOME/repos/acme/app-worktrees/slug/.envrc"
+r="$(envrc_check)"
+[[ "$(jq -r .status <<<"$r")" == PASS && "$(jq -r .detail <<<"$r")" == "2 repository .envrc"* ]] ||
+  fail "two sourcing .envrc files were not counted as a pass: $r"
+# One that exports without sourcing up, and an empty one, both shadow. Files
+# under .git and node_modules are not repositories and are not walked.
+printf 'export FOO=1\n' >"$HOME/repos/acme/mine/.envrc"
+: >"$HOME/repos/acme/app-worktrees/slug/.envrc"
+mkdir -p "$HOME/repos/acme/app/node_modules/pkg" "$HOME/repos/acme/app/.git"
+printf 'export X=1\n' >"$HOME/repos/acme/app/node_modules/pkg/.envrc"
+printf 'export X=1\n' >"$HOME/repos/acme/app/.git/.envrc"
+r="$(envrc_check)"
+[[ "$(jq -r .status <<<"$r")" == FAIL ]] || fail "shadowing .envrc files were not reported: $r"
+detail="$(jq -r .detail <<<"$r")"
+[[ "$detail" == *"repos/acme/mine/.envrc"* ]] || fail "the exporting .envrc was not named: $r"
+[[ "$detail" == *"app-worktrees/slug/.envrc"* ]] || fail "the empty .envrc was not named: $r"
+[[ "$detail" != *"repos/acme/app/.envrc"* ]] || fail "a sourcing .envrc was named as shadowing: $r"
+[[ "$detail" != *"repos/acme/.envrc"* ]] || fail "the parent .envrc was judged: $r"
+[[ "$detail" != *node_modules* && "$detail" != *"/.git/"* ]] || fail "pruned directories were walked: $r"
+[[ "$(jq -r .remediation <<<"$r")" == *source_up_if_exists* ]] || fail "the fix did not name the directive: $r"
+# Fixed, it clears.
+printf 'source_up_if_exists\nexport FOO=1\n' >"$HOME/repos/acme/mine/.envrc"
+printf 'source_up_if_exists\n' >"$HOME/repos/acme/app-worktrees/slug/.envrc"
+r="$(envrc_check)"
+[[ "$(jq -r .status <<<"$r")" == PASS ]] || fail "fixing the files did not clear the check: $r"
+# A route whose directory does not exist is skipped here; the routes check owns it.
+git config --global --add llmctx.accountRoute "acme=~/repos/nowhere"
+r="$(envrc_check)"
+[[ "$(jq -r .status <<<"$r")" == PASS ]] || fail "a route to a missing directory broke the check: $r"
+
 echo "routing tripwire tests: passed"
