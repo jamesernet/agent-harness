@@ -76,6 +76,13 @@ class Client:
     def _get_interaction(self, id, **kw):
         _log(call="get", retries=self.retries, api_version=self.api_version, id=id)
         time.sleep(float(os.environ.get("STUB_GET_DELAY", "0")))
+        if os.environ.get("STUB_GET_EXPIRED"):
+            # What google-genai 3.4.0 raised for a well-formed id with no
+            # stored interaction behind it, measured 2026-11-19.
+            class NotFoundError(Exception):
+                status_code = 404
+            raise NotFoundError("Error code: 404 - {'error': {'message': "
+                                "'Requested entity was not found.', 'code': 'not_found'}}")
         if os.environ.get("STUB_GET_NOVIDEO"):
             return SimpleNamespace(id=id, status="completed", output_video=None, output_text="", usage=None)
         clip = SimpleNamespace(data=base64.b64encode(b"fetched-clip").decode(), uri=None)
@@ -100,12 +107,26 @@ got="$(PYTHONPATH="$stub" python3 -c 'import os, google.genai; print(os.path.rea
 [[ "$got" == "$(cd "$stub" && pwd -P)/google/genai/__init__.py" ]] ||
   fail "google.genai resolves to $got, not the stub; these renders would reach the real SDK"
 
+# bounded <seconds> <cmd...>: run cmd, killing it and everything it started
+# once the time is up. The deadline cases (10, 14) wait on a URI that never
+# finishes processing, so a regression that dropped the deadline would hang
+# the suite, and the commit hook with it, instead of failing; under this bound
+# it fails their elapsed-time check. macOS has no timeout(1), hence perl, which
+# both platforms ship. The process group matters: killing bash alone leaves
+# python holding the pipe open.
+bounded() {
+  perl -e 'my $s = shift; my $pid = fork; if (!$pid) { setpgrp; exec @ARGV or exit 127 }
+    $SIG{ALRM} = sub { kill "TERM", -$pid }; alarm $s; waitpid $pid, 0;
+    exit($? & 127 ? 124 : $? >> 8)' "$@"
+}
+BOUND_S=30
+
 # render <case> <args...>: run one approved render in its own directory.
 render() {
   local dir="$tmp/$1"
   shift
   mkdir -p "$dir"
-  (cd "$dir" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$dir/calls" \
+  (cd "$dir" && bounded "$BOUND_S" env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$dir/calls" \
     PYTHONPATH="$stub" python3 "$GEN" "$@" --out clip.mp4 >"$dir/out" 2>&1) ||
     fail "$* exited non-zero: $(cat "$dir/out")"
 }
@@ -115,7 +136,7 @@ render_fails() {
   local dir="$tmp/$1"
   shift
   mkdir -p "$dir"
-  ! (cd "$dir" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$dir/calls" \
+  ! (cd "$dir" && bounded "$BOUND_S" env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$dir/calls" \
     PYTHONPATH="$stub" python3 "$GEN" "$@" --out clip.mp4 >"$dir/out" 2>&1) ||
     fail "$* exited 0, but should have failed: $(cat "$dir/out")"
 }
@@ -253,6 +274,11 @@ render dlfail --fetch v1_stub
   fail "--fetch billed a render: $(cat "$tmp/dlfail/calls")"
 [[ "$(field dlfail get 'e["id"]')" == v1_stub ]] ||
   fail "--fetch did not get the interaction by id: $(cat "$tmp/dlfail/calls")"
+# A fetched clip gets the suffix a rendered one would.
+(cd "$tmp/dlfail" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$tmp/dlfail/calls" \
+  PYTHONPATH="$stub" python3 "$GEN" --fetch v1_stub --out noext >/dev/null 2>&1) ||
+  fail "--fetch --out noext exited non-zero"
+[[ -f "$tmp/dlfail/noext.mp4" ]] || fail "--fetch --out noext did not save noext.mp4: $(ls "$tmp/dlfail")"
 
 # 10. --delivery-timeout bounds the wait for a URI clip. --timeout bounds the
 #     billed call only, and the wait after it used to be a fixed 900 s.
@@ -334,5 +360,19 @@ STUB_GET_DELAY=4 render_fails slowget --fetch v1_stub --delivery-timeout 1
   fail "the billed create did not go out on v1beta: $(cat "$tmp/small/calls")"
 [[ "$(field dlfail get 'e["api_version"]')" == v1beta ]] ||
   fail "--fetch did not read the interaction on v1beta: $(cat "$tmp/dlfail/calls")"
+
+# 16. A stored render is kept 55 days at most. Once it is gone, a fetch says so
+#     and how to render it again; a retry can never succeed, so the storyboard
+#     does not tell the user to run render again to retry.
+STUB_GET_EXPIRED=1 render_fails expired --fetch v1_old
+grep -q 'no longer stored' "$tmp/expired/out" ||
+  fail "an expired fetch did not say the render is gone: $(cat "$tmp/expired/out")"
+! (cd "$sb2" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$sb2/calls" STUB_GET_EXPIRED=1 \
+  PYTHONPATH="$stub" python3 "$SB" render plan.json >"$sb2/log" 2>&1) ||
+  fail "a storyboard fetch of an expired render exited 0: $(cat "$sb2/log")"
+grep -q 'no longer stored' "$sb2/log" && grep -q 'delete "coffee" from out/manifest.json' "$sb2/log" ||
+  fail "an expired storyboard fetch did not say the render is gone and how to give it up: $(cat "$sb2/log")"
+! grep -q 'run render again to retry' "$sb2/log" ||
+  fail "an expired storyboard fetch told the user to retry: $(cat "$sb2/log")"
 
 echo "gemini-motion render tests: passed"
