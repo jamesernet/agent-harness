@@ -128,8 +128,10 @@ before the clip is downloaded, and a clip is written whole or not at all. So a
 shot that was billed but not saved -- a failed download, `--delivery-timeout`
 running out -- is listed by `check` as "billed, not saved" and collected by
 the next `render` from that id, free, with no token needed when nothing else
-is pending. If it can no longer be fetched, the error says how to give it up and
-render it again, which bills again.
+is pending. Google keeps a stored render 55 days on the paid tier, or less if
+the project's retention is set shorter in AI Studio. After that it can no longer
+be fetched: the error says it is gone and how to give it up and render it again,
+which bills again.
 
 `out/` is created next to the plan and ignores itself (a `.gitignore` with `*`),
 the way `.gemini-motion/` does: billed clips and whole prompts do not belong in

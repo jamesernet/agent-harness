@@ -416,8 +416,10 @@ def cmd_render(args) -> int:
         try:
             fetch_clip(entry["interaction_id"], clip_path(base, shot), timeout=args.delivery_timeout)
         except DeliveryFailed as e:
-            die(f"{shot['id']}: {e}\nrun render again to retry. To give up on it and render "
-                f"the shot again, which bills again, delete \"{shot['id']}\" from {manifest_name}.")
+            # An expired render cannot come back, so a retry is not offered.
+            retry = "" if e.expired else "run render again to retry. "
+            die(f"{shot['id']}: {e}\n{retry}To give up on it and render the shot again, which "
+                f"bills again, delete \"{shot['id']}\" from {manifest_name}.")
         log_run("storyboard-fetch", plan=str(plan_path), shot=shot["id"],
                 interaction_id=entry["interaction_id"])
         print(f"{i:02d} {shot['id']}: fetched {entry['file']} (already billed)")

@@ -512,9 +512,14 @@ def wait_for_uri(client, uri: str) -> None:
 class DeliveryFailed(Exception):
     """A clip was rendered, and billed, but not saved. `interaction_id` collects it."""
 
-    def __init__(self, interaction_id: str, cause: BaseException):
+    def __init__(self, interaction_id: str, cause: BaseException, *, expired: bool = False):
         self.interaction_id = interaction_id
+        self.expired = expired
         detail = str(cause) or type(cause).__name__
+        if expired:
+            detail = (f"it is no longer stored ({detail}). Google keeps a render 55 days, "
+                      "or less if AI Studio's retention is set shorter, so it cannot be "
+                      "fetched; rendering it again bills again")
         super().__init__(f"rendered and billed as {interaction_id}, but not saved: {detail}")
 
 
@@ -564,7 +569,10 @@ def fetch_clip(interaction_id: str, out: Path, *, timeout: float = DELIVERY_TIME
         with deadline(timeout, f"fetching {interaction_id} took more than {timeout:.0f}s"):
             interaction = client.interactions.get(interaction_id)
     except Exception as e:  # noqa: BLE001
-        raise DeliveryFailed(interaction_id, e) from e
+        # google-genai 3.4.0 answers a well-formed id with nothing stored
+        # behind it with a 404 (NotFoundError), measured 2026-11-19.
+        raise DeliveryFailed(interaction_id, e,
+                             expired=getattr(e, "status_code", None) == 404) from e
     # Not video_of: a billed render read back without its video is a failed
     # fetch, and the safety-filter advice to rephrase would be wrong for it.
     clip = getattr(interaction, "output_video", None)
