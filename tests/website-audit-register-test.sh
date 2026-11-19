@@ -37,7 +37,7 @@ cat >"$ev/home/page.html" <<'HTML'
 <body><h2>Welcome</h2><img src="a.png"><img src="b.png"><p>short text</p></body></html>
 HTML
 printf 'https://example.test/\n' >"$ev/home/url"
-printf 'HTTP/2 200\r\ndate: Wed, 19 Nov 2026 05:00:00 GMT\r\ncontent-type: text/html\r\nx-robots-tag: noindex\r\n\r\n' >"$ev/home/headers.txt"
+printf 'HTTP/1.1 301\r\ndate: Wed, 19 Nov 2026 04:00:00 GMT\r\nlocation: https://example.test/\r\n\r\nHTTP/2 200\r\ndate: Wed, 19 Nov 2026 05:00:00 GMT\r\ncontent-type: text/html\r\nx-robots-tag: noindex\r\n\r\n' >"$ev/home/headers.txt"
 printf 'User-agent: *\nDisallow: /\n' >"$ev/home/robots.txt"
 printf '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://example.test/about</loc></url></urlset>\n' >"$ev/home/sitemap.xml"
 
@@ -84,6 +84,10 @@ sev() { q ".findings[] | select(.id == \"$1\") | .severity"; }
 [[ "$(sev metadata/home/url_absent_from_sitemap)" == P2 ]] || fail "URL absent from sitemap was not P2"
 [[ "$(sev metadata/home/description_missing)" == P2 ]] || fail "missing description was not P2"
 [[ "$(sev metadata/home/h1_missing)" == P2 ]] || fail "missing h1 was not P2"
+[[ "$(q '[.findings[] | select(.id == "metadata/home/robots_blocks_this_path")] | length')" == 0 ]] ||
+  fail "robots_blocks_this_path fired beside robots_blocks_everything on the same page"
+[[ "$(q '[.findings[] | select(.id == "metadata/home/redirect_chain")] | length')" == 0 ]] ||
+  fail "a single redirect hop was reported as a chain"
 
 # 4. The measured sentence carries the number, not a paraphrase.
 grep -q '2 of 2 images' <<<"$(q '.findings[] | select(.id == "metadata/home/images_missing_alt") | .measured')" ||
@@ -285,6 +289,126 @@ build >/dev/null 2>&1 || fail "build with the shell page failed"
 [[ "$(q '[.findings[] | select(.id == "metadata/shell/thin_raw_text")] | length')" == 0 ]] ||
   fail "thin_raw_text fired beside likely_js_rendered for the same fact"
 rm -rf "$ev/shell"
+build >/dev/null 2>&1 || fail "rebuild after the shell page failed"
+check >/dev/null 2>&1 || fail "check after the shell page failed"
+
+# 20. A url file that is blank is an absent input: the inventory ran without a
+#     URL, so the url-dependent checks are not run, not passed.
+mkdir -p "$ev/blankurl"
+cp "$ev/home/page.html" "$ev/home/robots.txt" "$ev/home/sitemap.xml" "$ev/blankurl/"
+printf '\n' >"$ev/blankurl/url"
+build >/dev/null 2>&1 || fail "build with the blank url page failed"
+grep -q 'url' <<<"$(q '.pages[] | select(.slug == "blankurl") | .inputsAbsent | join(",")')" ||
+  fail "a blank url file was not recorded as an absent input"
+nr="$(q '.limits.checksNotRun.blankurl | join(",")')"
+grep -q 'url_absent_from_sitemap' <<<"$nr" || fail "url_absent_from_sitemap ran against a blank url: $nr"
+grep -q 'robots_blocks_this_path' <<<"$nr" || fail "robots_blocks_this_path ran against a blank url: $nr"
+grep -q 'url_absent_from_sitemap\|robots_blocks_this_path' <<<"$(q '.pages[] | select(.slug == "blankurl") | .checksRun | join(",")')" &&
+  fail "a url-dependent check was listed as run against a blank url"
+rm -rf "$ev/blankurl"
+
+# 21. A refused or failed build removes the register an earlier build left, so a
+#     stale register never stands beside evidence it no longer describes.
+build >/dev/null 2>&1 || fail "rebuild before the stale-register cases failed"
+[[ -f "$reg" && -f "$md" ]] || fail "no register to go stale"
+rc=0
+out="$(build --inventory "$tmp/fake-inventory.py" 2>&1)" || rc=$?
+[[ "$rc" == 1 ]] || fail "the refused rebuild exited $rc, not 1"
+[[ ! -e "$reg" && ! -e "$md" ]] || fail "a refused rebuild left the earlier register standing"
+grep -q 'removed register.json and register.md' <<<"$out" || fail "the refused rebuild did not say it removed the earlier register: $out"
+build >/dev/null 2>&1 || fail "rebuild after the refused one failed"
+rc=0
+out="$(build --inventory "$tmp/failing-inventory.py" 2>&1)" || rc=$?
+[[ "$rc" == 2 && ! -e "$reg" && ! -e "$md" ]] || fail "a failed tool run left the earlier register standing (exit $rc)"
+mkdir -p "$tmp/noev" && printf '{}' >"$tmp/noev/register.json"
+rc=0
+python3 "$REG" build "$tmp/noev" >/dev/null 2>&1 || rc=$?
+[[ "$rc" == 2 && -f "$tmp/noev/register.json" ]] || fail "a build that found no evidence directory touched the register there"
+
+# 22. Evidence that changed since it was measured is refused by hash: check does
+#     not re-measure, build does.
+build >/dev/null 2>&1 || fail "rebuild before the hash case failed"
+cp "$ev/about/page.html" "$tmp/about.bak"
+printf '<!-- edited after measurement -->\n' >>"$ev/about/page.html"
+if out="$(check 2>&1)"; then fail "check passed evidence that changed since it was measured"; fi
+grep -q 'changed since it was measured' <<<"$out" || fail "check did not say the evidence changed: $out"
+grep -q 'about/page.html' <<<"$out" || fail "check did not name the changed file: $out"
+cp "$tmp/about.bak" "$ev/about/page.html"
+check >/dev/null 2>&1 || fail "check did not pass once the evidence was restored"
+cp "$reg" "$tmp/reg.bak"
+jq 'del(.evidenceHashes)' "$tmp/reg.bak" >"$reg"
+if check >/dev/null 2>&1; then fail "check passed a register with no evidence hashes"; fi
+
+# 23. A pointer that resolves but is not what the check was measured from is
+#     refused: the register citing itself, another page's file, or a finding that
+#     dropped the input its row needs.
+jq '(.findings[] | select(.id == "metadata/home/header_noindex") | .evidence) = ["register.json"]' "$tmp/reg.bak" >"$reg"
+if out="$(check 2>&1)"; then fail "check passed a finding citing the register itself"; fi
+grep -q 'not under evidence/metadata-audit/home/' <<<"$out" || fail "the self-citation was not named: $out"
+jq '(.findings[] | select(.id == "metadata/home/header_noindex") | .evidence) = ["evidence/metadata-audit/about/page.html"]' "$tmp/reg.bak" >"$reg"
+if check >/dev/null 2>&1; then fail "check passed a finding citing another page's file"; fi
+jq '(.findings[] | select(.id == "metadata/home/header_noindex") | .evidence) = ["evidence/metadata-audit/home/page.html"]' "$tmp/reg.bak" >"$reg"
+if out="$(check 2>&1)"; then fail "check passed a header finding that does not cite headers.txt"; fi
+grep -q 'does not cite evidence/metadata-audit/home/headers.txt' <<<"$out" || fail "the missing input was not named: $out"
+
+# 24. The remaining provenance fields are each checked, not just severity.
+jq '(.findings[] | select(.id == "metadata/home/images_missing_alt") | .gate) = 1' "$tmp/reg.bak" >"$reg"
+if check >/dev/null 2>&1; then fail "check passed a gate the table does not give"; fi
+jq '(.findings[] | select(.id == "metadata/home/images_missing_alt") | .severitySource) = "a blog post"' "$tmp/reg.bak" >"$reg"
+if check >/dev/null 2>&1; then fail "check passed a severitySource the table does not give"; fi
+jq '.findings += [.findings[0]]' "$tmp/reg.bak" >"$reg"
+if out="$(check 2>&1)"; then fail "check passed two findings with one id"; fi
+grep -q 'duplicate id' <<<"$out" || fail "the duplicate id was not named: $out"
+jq '.limits.sampleSize = 99' "$tmp/reg.bak" >"$reg"
+if check >/dev/null 2>&1; then fail "check passed a sampleSize that disagrees with pages"; fi
+cp "$tmp/reg.bak" "$reg"
+check >/dev/null 2>&1 || fail "check did not pass the restored register after the provenance cases"
+
+# 25. A named group for the general crawler outranks the * group, so "* disallows
+#     everything" is not a P0 when Googlebot is let through by its own group.
+mkdir -p "$ev/named"
+cp "$ev/home/page.html" "$ev/named/page.html"
+printf 'https://example.test/\n' >"$ev/named/url"
+printf 'User-agent: *\nDisallow: /\n\nUser-agent: Googlebot\nAllow: /\n' >"$ev/named/robots.txt"
+build >/dev/null 2>&1 || fail "build with the named-group page failed"
+[[ "$(q '[.findings[] | select(.page == "named" and (.measuredBy.check | startswith("robots_blocks")))] | length')" == 0 ]] ||
+  fail "a robots block fired although the general crawler is allowed by its own group: $(q '[.findings[] | select(.page == "named") | .id]')"
+rm -rf "$ev/named"
+
+# 26. A sitemap that did not parse is its own P1 and says nothing about the URL.
+mkdir -p "$ev/badmap"
+cp "$ev/home/page.html" "$ev/badmap/page.html"
+printf 'https://example.test/\n' >"$ev/badmap/url"
+printf '<!doctype html><html><head><title>Not found</title></head><body>404</body></html>\n' >"$ev/badmap/sitemap.xml"
+build >/dev/null 2>&1 || fail "build with the HTML sitemap failed"
+[[ "$(sev metadata/badmap/sitemap_invalid)" == P1 ]] || fail "an HTML sitemap was not a P1 sitemap_invalid"
+[[ "$(q '[.findings[] | select(.id == "metadata/badmap/url_absent_from_sitemap")] | length')" == 0 ]] ||
+  fail "url_absent_from_sitemap fired against a sitemap that did not parse"
+rm -rf "$ev/badmap"
+
+# 27. A captured time without a timezone is refused, not assumed to be UTC.
+printf '2026-11-18T12:00:00\n' >"$ev/about/captured"
+rc=0
+out="$(build 2>&1)" || rc=$?
+[[ "$rc" == 2 ]] || fail "a zone-less captured time exited $rc, not 2: $out"
+grep -q 'timezone' <<<"$out" || fail "the zone-less captured time was not explained: $out"
+printf '2026-11-18\n' >"$ev/about/captured"
+rc=0
+build >/dev/null 2>&1 || rc=$?
+[[ "$rc" == 2 ]] || fail "a date-only captured value exited $rc, not 2"
+printf '2026-11-18T12:00:00Z\n' >"$ev/about/captured"
+
+# 28. Evidence has to live inside the package: a page.html that is a symlink to a
+#     file outside it is an unusable input, exit 2, naming the path.
+mkdir -p "$ev/linked"
+printf '<!doctype html><html lang="en"><head><title>Outside</title></head><body><main><h1>x</h1></main></body></html>\n' >"$tmp/outside-page.html"
+ln -s "$tmp/outside-page.html" "$ev/linked/page.html"
+rc=0
+out="$(build 2>&1)" || rc=$?
+[[ "$rc" == 2 ]] || fail "a symlinked page.html outside the package exited $rc, not 2: $out"
+grep -q 'linked/page.html' <<<"$out" || fail "the escaping input was not named: $out"
+grep -q 'outside the package' <<<"$out" || fail "the escaping input was not explained: $out"
+rm -rf "$ev/linked"
 build >/dev/null 2>&1 || fail "final rebuild failed"
 check >/dev/null 2>&1 || fail "final check failed"
 

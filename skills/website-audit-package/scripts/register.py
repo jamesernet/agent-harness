@@ -21,14 +21,20 @@ Usage:
 
 `build` validates its own output before writing anything, and `check` validates an
 existing register.json against the package: every evidence pointer must resolve
-to a file inside the package, no finding may lack a measured sentence, a
-falsifier, a state or a measuredBy, and each finding's id, gate, severity and
-source must be what the severity table gives its check. A finding's asOf is the
-capture time: the one-line `captured` file (ISO 8601) if saved, else the Date
+to a file inside the finding's own page directory, with the sha256 the register
+recorded when it was measured; no finding may lack a measured sentence, a
+falsifier, a state or a measuredBy; and each finding's id, gate, severity, source
+and cited inputs must be what the severity table gives its check. `check` does
+not re-measure: a changed evidence file is refused by hash, and `build` is how a
+register is brought back in line. A finding's asOf is the capture time: the
+one-line `captured` file (ISO 8601 with a timezone) if saved, else the last Date
 header in headers.txt, else the page file's own timestamp, and asOfSource says
 which. Exit 0 on success, 1 when the register is refused, 2 when the package or
-the tool is not usable: no evidence directory, nothing measured, the tool
-missing or failing.
+the tool is not usable: no evidence directory, nothing measured, an input that
+resolves outside the package, a captured file without a timezone, the tool
+missing or failing. A refused or failed build removes a register.json and
+register.md left by an earlier build, because they no longer describe the
+evidence; a build that cannot even find the evidence directory touches nothing.
 """
 
 import argparse
@@ -52,7 +58,7 @@ OPTIONAL_INPUTS = ("robots.txt", "llms.txt", "headers.txt", "sitemap.xml", "url"
 NEEDS = {
     "headers.txt": ("header_noindex", "header_nosnippet", "status_not_200", "redirect_chain"),
     "robots.txt": ("robots_is_html", "robots_blocks_everything", "robots_blocks_this_path"),
-    "sitemap.xml": ("url_absent_from_sitemap",),
+    "sitemap.xml": ("url_absent_from_sitemap", "sitemap_invalid"),
     # Without the page's URL the inventory cannot say whether the sitemap lists it
     # or robots.txt allows its path; it reports both as False, which is not a pass.
     "url": ("url_absent_from_sitemap", "robots_blocks_this_path"),
@@ -98,12 +104,15 @@ def _plural(n, word):
 RULES = {
     # Gate 0: reachable
     "status_not_200": dict(
-        gate=0, severity="P0", source=f"{TREE}:27-35",
+        gate=0, severity="P0", source=f"{TREE}:35-36",
         measured=lambda r: "The saved response chain ends in HTTP {}; chain {}".format(
             _resp(r).get("status"), _resp(r).get("status_chain")),
         why="A page that does not return 200 is a Gate 0 problem: the crawler never reads "
             "its robots meta, canonical or structured data.",
-        inputs=("headers.txt",)),
+        inputs=("headers.txt",),
+        note="The tree calls a page that does not return 200 a Gate 0 problem without a "
+             "P-level; P0 is register.py's reading, by analogy with the robots.txt rows at "
+             ":27-30 where a fetch failure is P0."),
     "redirect_chain": dict(
         gate=0, severity="P2", source=f"{TREE}:35",
         measured=lambda r: "{} redirect hops before the final response; chain {}".format(
@@ -173,6 +182,13 @@ RULES = {
         measured=lambda r: "{} is not among the {} URLs in the saved sitemap".format(
             r.get("url"), (r.get("sitemap") or {}).get("url_count")),
         why="A page meant to be indexed that its own sitemap omits relies on being well linked.",
+        inputs=("sitemap.xml",)),
+    "sitemap_invalid": dict(
+        gate=1, severity="P1", source=f"{TREE}:73-75",
+        measured=lambda r: "The saved sitemap.xml is not well-formed XML: {}".format(
+            (r.get("sitemap") or {}).get("error") or "no root element"),
+        why="A parse failure discards the whole sitemap; an HTML page served at the sitemap "
+            "URL is the usual cause.",
         inputs=("sitemap.xml",)),
     # Gate 4: head identity
     "lang_missing": dict(
@@ -360,6 +376,10 @@ def as_of_for(page_dir, inputs):
             print("register: {} is not an ISO 8601 timestamp: {!r}".format(
                 page_dir / "captured", text), file=sys.stderr)
             raise SystemExit(2)
+        if t.tzinfo is None:
+            print("register: {} needs a timezone, for example 2026-11-18T12:00:00Z; "
+                  "got {!r}".format(page_dir / "captured", text), file=sys.stderr)
+            raise SystemExit(2)
         return utc_iso(t), "captured", "captured file"
     if "headers.txt" in inputs:
         found = None
@@ -392,9 +412,12 @@ def robots_facts(result):
     rb = result.get("robots_txt")
     if rb is None:
         return {}
-    blocks_all = bool(rb.get("wildcard_blocks_all"))
     access = rb.get("path_access") or {}
     general = access.get("general_crawler") or {}
+    # A named group for the general crawler outranks the * group (robots groups do
+    # not inherit), so "* disallows everything" is a P0 only when the general
+    # crawler is not allowed through by its own group.
+    blocks_all = bool(rb.get("wildcard_blocks_all")) and general.get("allowed") is not True
     blocks_path = access.get("path") is not None and general.get("allowed") is False
     return {
         "robots_is_html": bool(rb.get("looks_like_html")),
@@ -404,6 +427,32 @@ def robots_facts(result):
     }
 
 
+def sitemap_facts(result):
+    """A sitemap that did not parse is its own finding, and says nothing about the URL."""
+    sm = result.get("sitemap")
+    if sm is None:
+        return {}
+    invalid = sm.get("valid") is False
+    return {"sitemap_invalid": invalid, **({"url_absent_from_sitemap": False} if invalid else {})}
+
+
+def first_line(path):
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
+
+
+def input_present(page_dir, name):
+    """A url file counts only when it names a URL; a blank one is an absent input."""
+    f = page_dir / name
+    if not f.is_file():
+        return False
+    if name == "url":
+        return bool(first_line(f))
+    return True
+
+
 def run_inventory(tool, page_dir, inputs):
     cmd = [sys.executable, str(tool), str(page_dir / "page.html"), "--compact"]
     for flag, name in (("--robots", "robots.txt"), ("--llms", "llms.txt"),
@@ -411,9 +460,7 @@ def run_inventory(tool, page_dir, inputs):
         if name in inputs:
             cmd += [flag, str(page_dir / name)]
     if "url" in inputs:
-        url = (page_dir / "url").read_text(encoding="utf-8").strip().splitlines()
-        if url and url[0]:
-            cmd += ["--url", url[0]]
+        cmd += ["--url", first_line(page_dir / "url")]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         raise RuntimeError("{} exited {} on {}: {}".format(
@@ -433,6 +480,16 @@ def falsifier(check, url, slug, note):
     return text
 
 
+def discard_previous(pkg):
+    """A refused or failed build must not leave an earlier register standing."""
+    gone = [f for f in (pkg / "register.json", pkg / "register.md") if f.exists()]
+    for f in gone:
+        f.unlink()
+    if gone:
+        print("register: removed {} from an earlier build; it no longer described this "
+              "evidence".format(" and ".join(f.name for f in gone)), file=sys.stderr)
+
+
 def build(pkg, tool):
     pkg = Path(pkg).resolve()
     evdir = pkg / "evidence" / "metadata-audit"
@@ -440,21 +497,36 @@ def build(pkg, tool):
         print("register: no {} directory under {}; nothing to measure, so nothing to "
               "register".format("evidence/metadata-audit", pkg), file=sys.stderr)
         raise SystemExit(2)
-    tool = Path(tool).resolve()
+    try:
+        _build(pkg, evdir, Path(tool).resolve())
+    except SystemExit as e:
+        if e.code not in (0, None):
+            discard_previous(pkg)
+        raise
+
+
+def _build(pkg, evdir, tool):
     if not tool.is_file():
         print("register: measuring tool not found: {}".format(tool), file=sys.stderr)
         raise SystemExit(2)
     tool_sha = sha256_of(tool)
 
-    pages, findings, not_measured, checks_not_run, unknown = [], [], [], {}, {}
+    pages, findings, not_measured, checks_not_run, unknown, hashes = [], [], [], {}, {}, {}
     for page_dir in sorted(p for p in evdir.iterdir() if p.is_dir()):
         slug = page_dir.name
         if not (page_dir / "page.html").is_file():
             not_measured.append(slug)
             continue
-        inputs = ["page.html"] + [n for n in OPTIONAL_INPUTS if (page_dir / n).is_file()]
+        inputs = ["page.html"] + [n for n in OPTIONAL_INPUTS if input_present(page_dir, n)]
         absent = [n for n in OPTIONAL_INPUTS if n not in inputs]
         rel = lambda name: os.path.relpath(page_dir / name, pkg)  # noqa: E731
+        for name in inputs:
+            if not resolves(rel(name), pkg):
+                print("register: {} resolves outside the package (a symlink or a path that "
+                      "escapes it); evidence has to live inside the package".format(
+                          page_dir / name), file=sys.stderr)
+                raise SystemExit(2)
+            hashes[rel(name)] = sha256_of(page_dir / name)
         ran_at = utc_iso()
         try:
             result = run_inventory(tool, page_dir, inputs)
@@ -466,6 +538,7 @@ def build(pkg, tool):
         url = result.get("url")
         checks = dict(result.get("checks") or {})
         checks.update(robots_facts(result))
+        checks.update(sitemap_facts(result))
         # One fact, one finding: near-zero text is also thin text.
         if checks.get("likely_js_rendered"):
             checks["thin_raw_text"] = False
@@ -535,6 +608,7 @@ def build(pkg, tool):
                        "python": ".".join(str(n) for n in sys.version_info[:3])},
         "pages": pages,
         "findings": findings,
+        "evidenceHashes": hashes,
         "limits": {
             "sampleSize": len(pages),
             "pagesMeasured": [p["slug"] for p in pages],
@@ -593,6 +667,19 @@ def validate(register, pkg):
     if not isinstance(pages, list) or not isinstance(findings, list):
         return problems + ["pages and findings must be lists"]
     slugs = {p.get("slug") for p in pages}
+    hashes = register.get("evidenceHashes")
+    if not isinstance(hashes, dict):
+        problems.append("evidenceHashes is missing; nothing says what was measured")
+        hashes = {}
+
+    def pointer_problems(where, ptr):
+        if not resolves(ptr, pkg):
+            return [where + " evidence pointer does not resolve inside the package: {}".format(ptr)]
+        if ptr not in hashes:
+            return [where + " evidence pointer has no recorded hash: {}".format(ptr)]
+        if sha256_of(pkg / ptr) != hashes[ptr]:
+            return [where + " evidence changed since it was measured: {}".format(ptr)]
+        return []
     if limits.get("sampleSize") != len(pages):
         problems.append("limits.sampleSize is {} but {} pages were measured".format(
             limits.get("sampleSize"), len(pages)))
@@ -606,9 +693,7 @@ def validate(register, pkg):
             problems.append("page {}: evidence is empty".format(p.get("slug")))
             continue
         for ptr in ev:
-            if not resolves(ptr, pkg):
-                problems.append("page {}: evidence pointer does not resolve inside the package: "
-                                "{}".format(p.get("slug"), ptr))
+            problems.extend(pointer_problems("page {}:".format(p.get("slug")), ptr))
     seen = set()
     for f in findings:
         fid = f.get("id") or "<no id>"
@@ -632,10 +717,8 @@ def validate(register, pkg):
         if not isinstance(ev, list) or not ev:
             problems.append(where + " evidence is empty; a claim with no pointer cannot stand")
         else:
-            for p in ev:
-                if not resolves(p, pkg):
-                    problems.append(where + " evidence pointer does not resolve inside the "
-                                            "package: {}".format(p))
+            for ptr in ev:
+                problems.extend(pointer_problems(where, ptr))
         mb = f.get("measuredBy") or {}
         for key in ("tool", "check", "ranAt"):
             if not isinstance(mb.get(key), str) or not mb[key].strip():
@@ -657,6 +740,19 @@ def validate(register, pkg):
                 problems.append(where + " severitySource is not the table's for `{}`".format(mb["check"]))
             if fid != "metadata/{}/{}".format(f.get("page"), mb["check"]):
                 problems.append(where + " id does not name its page and check")
+            # The pointers have to be the files the tool read for THIS page and check,
+            # not any file that happens to exist: the page's own directory, including
+            # page.html and every input the row needs.
+            prefix = "evidence/metadata-audit/{}/".format(f.get("page"))
+            if isinstance(ev, list) and ev:
+                for ptr in ev:
+                    if not isinstance(ptr, str) or not ptr.startswith(prefix):
+                        problems.append(where + " evidence pointer is not under {}: {}".format(
+                            prefix, ptr))
+                for need in ("page.html",) + tuple(rule["inputs"]):
+                    if prefix + need not in ev:
+                        problems.append(where + " evidence does not cite {}, which `{}` is "
+                                                "measured from".format(prefix + need, mb["check"]))
     return problems
 
 

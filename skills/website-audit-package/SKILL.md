@@ -72,7 +72,10 @@ a severity with the decision-tree line it comes from, the measured sentence with
 its number, the evidence files the tool actually read, why it matters, and how we
 would know we are wrong. **A finding whose evidence pointer does not resolve
 cannot be emitted**, and `scripts/register.py check <package>` refuses a register
-that has been edited into that state. Every claim that failed the research behind
+that has been edited into that state, or whose evidence files have changed since
+they were measured (it records their hashes; it does not re-measure, `build`
+does). A refused or failed `build` removes the register an earlier build left,
+so a stale one never stands beside changed evidence. Every claim that failed the research behind
 this (#69) was a claim with a citation that did not support it; the register is
 the layer that cannot do that.
 
@@ -80,7 +83,8 @@ Today the one constituent audit with a machine output is metadata-audit, so the
 register covers the metadata layer. For each page, save what `inventory.py`
 reads under `evidence/metadata-audit/<page>/`: `page.html`, plus `robots.txt`,
 `llms.txt`, `headers.txt`, `sitemap.xml`, a one-line `url` file and a one-line
-`captured` file holding the capture time in ISO 8601, where you have them. The
+`captured` file holding the capture time in ISO 8601 with a timezone, where you
+have them. The
 capture time becomes each finding's `asOf`; without it the register falls back
 to the `Date` header saved in `headers.txt`, then to the file's own timestamp,
 and `asOfSource` says which. A missing optional input is recorded as checks not
