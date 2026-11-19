@@ -131,7 +131,10 @@ the next `render` from that id, free, with no token needed when nothing else
 is pending. Google keeps a stored render 55 days on the paid tier, or less if
 the project's retention is set shorter in AI Studio. After that it can no longer
 be fetched: the error says it is gone and how to give it up and render it again,
-which bills again.
+which bills again. Edit such a shot instead and `check` prices it again, since
+the edit may be deliberate, but names the render already paid for and the
+`generate_video.py --fetch` command that keeps it; rendering the edit replaces
+its id.
 
 `out/` is created next to the plan and ignores itself (a `.gitignore` with `*`),
 the way `.gemini-motion/` does: billed clips and whole prompts do not belong in

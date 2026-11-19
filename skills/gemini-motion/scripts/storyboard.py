@@ -296,6 +296,9 @@ class Pending(NamedTuple):
     manifest: dict
     # Shots rendered and billed but never saved: collected by id, free.
     fetch: list[tuple[int, dict, str]] = []
+    # Shot id -> the id of a render billed but never saved, for a shot edited
+    # since: it is priced again, and rendering it replaces that id.
+    unsaved: dict[str, str] = {}
 
 
 def pending(plan: dict, base: Path, only: set[str]) -> Pending:
@@ -303,10 +306,11 @@ def pending(plan: dict, base: Path, only: set[str]) -> Pending:
 
     A shot whose entry matches but whose clip is missing, and which carries an
     interaction id, was billed and not saved -- the id goes on record before
-    the clip is collected -- so it is fetched, not priced again.
+    the clip is collected -- so it is fetched, not priced again. Edited since,
+    it is priced again, and the render already paid for is reported.
     """
     manifest = load_manifest(base)
-    todo, fetch = [], []
+    todo, fetch, unsaved = [], [], {}
     for i, shot in enumerate(plan["shots"], 1):
         if only and shot["id"] not in only:
             continue
@@ -318,11 +322,14 @@ def pending(plan: dict, base: Path, only: set[str]) -> Pending:
         h = spec_hash(plan, shot, base)
         entry = manifest["shots"].get(shot["id"], {})
         changed, missing = stale_fields(entry, plan, shot)
+        saved = clip_path(base, shot).is_file()
         if entry.get("spec") != h or changed or missing:
             todo.append((i, shot, h))
-        elif not clip_path(base, shot).is_file():
+            if entry.get("interaction_id") and not saved:
+                unsaved[shot["id"]] = entry["interaction_id"]
+        elif not saved:
             (fetch if entry.get("interaction_id") else todo).append((i, shot, h))
-    return Pending(todo, sum(s["duration"] for _, s, _ in todo), manifest, fetch)
+    return Pending(todo, sum(s["duration"] for _, s, _ in todo), manifest, fetch, unsaved)
 
 
 # --- commands ----------------------------------------------------------------
@@ -354,6 +361,16 @@ def report(plan: dict, pend: Pending, only: set[str], plan_path: Path) -> None:
         else:
             note = "  rendered"
         print(f"  {i:02d} {shot['id']:<20} {shot['duration']:>2}s{note}")
+        if shot["id"] in pend.unsaved:
+            # Rendering the edit replaces the id, so this is the last chance to
+            # keep a render that was already paid for.
+            fetch_cmd = [shlex.quote(sys.executable),
+                         shlex.quote(os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])),
+                                                  "generate_video.py")),
+                         "--fetch", shlex.quote(pend.unsaved[shot["id"]]),
+                         "--out", shlex.quote(f"{shot['id']}-before-edit.mp4")]
+            print(f"     edited since its last render was billed and not saved; to keep "
+                  f"that render, collect it first: {' '.join(fetch_cmd)}")
     if pend.fetch:
         n = len(pend.fetch)
         print(f"to fetch: {n} shot{'s' if n > 1 else ''} already billed, collected free by render")
