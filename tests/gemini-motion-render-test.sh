@@ -107,12 +107,26 @@ got="$(PYTHONPATH="$stub" python3 -c 'import os, google.genai; print(os.path.rea
 [[ "$got" == "$(cd "$stub" && pwd -P)/google/genai/__init__.py" ]] ||
   fail "google.genai resolves to $got, not the stub; these renders would reach the real SDK"
 
+# bounded <seconds> <cmd...>: run cmd, killing it and everything it started
+# once the time is up. The deadline cases (10, 14) wait on a URI that never
+# finishes processing, so a regression that dropped the deadline would hang
+# the suite, and the commit hook with it, instead of failing; under this bound
+# it fails their elapsed-time check. macOS has no timeout(1), hence perl, which
+# both platforms ship. The process group matters: killing bash alone leaves
+# python holding the pipe open.
+bounded() {
+  perl -e 'my $s = shift; my $pid = fork; if (!$pid) { setpgrp; exec @ARGV or exit 127 }
+    $SIG{ALRM} = sub { kill "TERM", -$pid }; alarm $s; waitpid $pid, 0;
+    exit($? & 127 ? 124 : $? >> 8)' "$@"
+}
+BOUND_S=30
+
 # render <case> <args...>: run one approved render in its own directory.
 render() {
   local dir="$tmp/$1"
   shift
   mkdir -p "$dir"
-  (cd "$dir" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$dir/calls" \
+  (cd "$dir" && bounded "$BOUND_S" env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$dir/calls" \
     PYTHONPATH="$stub" python3 "$GEN" "$@" --out clip.mp4 >"$dir/out" 2>&1) ||
     fail "$* exited non-zero: $(cat "$dir/out")"
 }
@@ -122,7 +136,7 @@ render_fails() {
   local dir="$tmp/$1"
   shift
   mkdir -p "$dir"
-  ! (cd "$dir" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$dir/calls" \
+  ! (cd "$dir" && bounded "$BOUND_S" env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$dir/calls" \
     PYTHONPATH="$stub" python3 "$GEN" "$@" --out clip.mp4 >"$dir/out" 2>&1) ||
     fail "$* exited 0, but should have failed: $(cat "$dir/out")"
 }
