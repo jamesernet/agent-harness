@@ -111,4 +111,16 @@ lint
 grep -q 'bundle "all" is computed by install-skills.sh' <<<"$out" || fail "the all definition line was not reported: $out"
 grep -q 'bundle "webapp" includes "+all", which is computed' <<<"$out" || fail "the +all inclusion was not reported: $out"
 
+# 10. A dollar sign before a digit in SKILL.md is not text: invoked with
+#     arguments, the skill loader replaces "$0" with the first argument word,
+#     which turned "~$0.023/s" into "~Animate.023/s". The line is reported by
+#     number; a dollar before anything else ("$HOME", "US $") passes.
+reset_bundles
+printf '%s\n' 'Costs ~$0.07/s at 720p.' 'Uses $HOME and $ARGUMENTS.' >>"$fixture/skills/owned/SKILL.md"
+lint
+[ "$rc" -ne 0 ] || fail "a dollar-digit in SKILL.md passed lint: $out"
+grep -q 'owned: line 6: "\$0"' <<<"$out" || fail "the dollar-digit was not reported with its line: $out"
+grep -q 'line 7' <<<"$out" && fail "\$HOME or \$ARGUMENTS was reported: $out"
+printf '%s\n' '---' 'name: owned' 'description: An owned skill.' '---' '# Owned' >"$fixture/skills/owned/SKILL.md"
+
 echo "lint-skills tests: passed"
