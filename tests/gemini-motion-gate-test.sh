@@ -687,4 +687,46 @@ sb check "$plan"
 grep -q 'to render: 3 shots, 18s at 720p' <<<"$out" ||
   fail "a clip rendered at 360p passed as current at 720p once its recorded resolution was edited: $out"
 
+# 38. --fetch renders nothing, so a render flag beside it is a mistake, not a
+#     setting: an --approve there approves a spend that never happens, and a
+#     prompt there reads as a new render. Each is refused by name before a
+#     client exists -- the missing key is never reached.
+for flags in "a cat" "--approve 6s@360p" "--no-store" "--resolution 4k" "--draft" \
+  "--duration 6" "--image x.png" "--previous-id v1_x" "--timeout 60"; do
+  read -ra argv <<<"$flags"
+  [[ "$flags" == "a cat" ]] && argv=("a cat")
+  out="$(gate --fetch v1_x "${argv[@]}")"
+  grep -q 'renders nothing' <<<"$out" || fail "--fetch accepted $flags: $out"
+  ! grep -qE 'GEMINI_API_KEY|google-genai' <<<"$out" ||
+    fail "--fetch with $flags reached the client before refusing: $out"
+done
+out="$(gate --fetch v1_x --approve 6s@360p)"
+grep -q -- '--approve' <<<"$out" || fail "--fetch did not name the refused flag: $out"
+
+# 39. A shot billed but not saved, then edited, is priced again -- rightly,
+#     since the edit may be deliberate -- but the render already paid for is
+#     named with the command that still collects it, before its id is replaced.
+reset_plan
+seed_rendered
+python3 - "$SB" "$plan" <<'PY'
+import json, sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]).parent))
+import storyboard as sb
+plan, plan_path = sb.load_plan(sys.argv[2])
+shot = plan["shots"][0]
+sb.clip_path(plan_path.parent, shot).unlink()
+m_path = plan_path.parent / "out" / "manifest.json"
+m = json.load(open(m_path))
+m["shots"][shot["id"]]["interaction_id"] = "v1_paid"
+json.dump(m, open(m_path, "w"))
+PY
+sb check "$plan"
+grep -q 'billed, not saved' <<<"$out" ||
+  fail "an unedited billed-not-saved shot was not listed for fetching: $out"
+set_shot 1 prompt '"An edited prompt."'
+sb check "$plan"
+grep -q 'edited since' <<<"$out" && grep -q -- '--fetch v1_paid' <<<"$out" ||
+  fail "an edited billed-not-saved shot did not name the paid render and how to collect it: $out"
+
 echo "gemini-motion gate tests: passed"
