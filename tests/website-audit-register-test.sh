@@ -23,7 +23,7 @@ command -v python3 >/dev/null || {
 }
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-register-test.XXXXXX")"
-trap 'rm -rf "$tmp"' EXIT
+trap 'chmod -R u+rwX "$tmp" 2>/dev/null; rm -rf "$tmp"' EXIT
 pkg="$tmp/2026-11-19-example.test"
 ev="$pkg/evidence/metadata-audit"
 mkdir -p "$ev/home" "$ev/about" "$ev/empty-dir"
@@ -421,6 +421,16 @@ grep -q 'Traceback' <<<"$out" && fail "undecodable input produced a traceback: $
 grep -q 'build failed' <<<"$out" || fail "the crash was not reported plainly: $out"
 [[ ! -e "$reg" && ! -e "$md" ]] || fail "a crashed build left the earlier register standing"
 printf '2026-11-18T12:00:00Z\n' >"$ev/about/captured"
+build >/dev/null 2>&1 || fail "rebuild before the unreadable-directory case failed"
+mkdir -p "$ev/locked" && cp "$ev/home/page.html" "$ev/locked/page.html" && chmod 000 "$ev/locked"
+rc=0
+out="$(build 2>&1)" || rc=$?
+chmod 755 "$ev/locked"
+[[ "$rc" == 2 ]] || fail "an unreadable page directory exited $rc, not 2: $out"
+grep -q 'Traceback' <<<"$out" && fail "an unreadable page directory produced a traceback: $out"
+grep -q 'locked' <<<"$out" || fail "the unreadable directory was not named: $out"
+[[ ! -e "$reg" && ! -e "$md" && ! -e "$reg.tmp" && ! -e "$pkg/register.md.tmp" ]] || fail "a build that could not read a page directory left a register or a temporary behind"
+rm -rf "$ev/locked"
 
 # 30. The * group binds the general crawler only when it has no group of its own.
 #     With a Googlebot group present, its own rules decide path by path.
@@ -436,6 +446,20 @@ rm -f "$ev/owngroup/url"
 build >/dev/null 2>&1 || fail "build with the own-group page and no url failed"
 [[ "$(q '[.findings[] | select(.page == "owngroup" and (.measuredBy.check | startswith("robots_blocks")))] | length')" == 0 ]] ||
   fail "a robots block fired with no url although the general crawler has its own group"
+grep -q 'robots_blocks_everything' <<<"$(q '.limits.checksNotRun.owngroup | join(",")')" ||
+  fail "whether the general crawler's own group blocks everything was not listed as not run"
+# The own group blocks everything too: the inventory cannot say so as a whole, so
+# without a url the question is not run, never silently passed, and with a url the
+# path is judged by that group.
+printf 'User-agent: *\nDisallow: /\n\nUser-agent: Googlebot\nDisallow: /\n' >"$ev/owngroup/robots.txt"
+build >/dev/null 2>&1 || fail "build with the own-group-blocks-all page failed"
+grep -q 'robots_blocks_everything' <<<"$(q '.limits.checksNotRun.owngroup | join(",")')" ||
+  fail "an own group that blocks everything was silently passed as not blocking everything"
+grep -q 'robots_blocks_everything' <<<"$(q '.pages[] | select(.slug == "owngroup") | .checksRun | join(",")')" &&
+  fail "robots_blocks_everything was listed as run for a general crawler with its own group"
+printf 'https://example.test/\n' >"$ev/owngroup/url"
+build >/dev/null 2>&1 || fail "build with the own-group-blocks-all page and a url failed"
+[[ "$(sev metadata/owngroup/robots_blocks_this_path)" == P0 ]] || fail "a path blocked by the general crawler's own group was not P0"
 rm -rf "$ev/owngroup"
 
 # 31. A sitemap that parses but is not a sitemap is sitemap_invalid, not a sitemap

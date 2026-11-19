@@ -418,11 +418,14 @@ def robots_facts(result):
     access = rb.get("path_access") or {}
     general = access.get("general_crawler") or {}
     # robots groups do not inherit: a crawler with a group of its own never reads
-    # the * group. So "* disallows everything" is a P0 for the general crawler only
-    # when it has no group of its own; when it has one, that group decides, path by
-    # path, through robots_blocks_this_path.
+    # the * group. The inventory says whether the * group blocks everything, and
+    # whether the general crawler may fetch the audited path, and nothing about
+    # what a named group blocks as a whole. So "blocks everything" is measured only
+    # when the general crawler has no group of its own; when it has one, that
+    # question is NOT RUN (None), and its own group decides the audited path
+    # through robots_blocks_this_path.
     has_own_group = any(a.lower() == "googlebot" for a in rb.get("named_agents") or [])
-    blocks_all = bool(rb.get("wildcard_blocks_all")) and not has_own_group
+    blocks_all = None if has_own_group else bool(rb.get("wildcard_blocks_all"))
     blocks_path = access.get("path") is not None and general.get("allowed") is False
     return {
         "robots_is_html": bool(rb.get("looks_like_html")),
@@ -490,6 +493,9 @@ def discard_previous(pkg):
     gone = [f for f in (pkg / "register.json", pkg / "register.md") if f.exists()]
     for f in gone:
         f.unlink()
+    for f in (pkg / "register.json.tmp", pkg / "register.md.tmp"):
+        if f.exists():
+            f.unlink()
     if gone:
         print("register: removed {} from an earlier build; it no longer described this "
               "evidence".format(" and ".join(f.name for f in gone)), file=sys.stderr)
@@ -523,6 +529,9 @@ def _build(pkg, evdir, tool):
     pages, findings, not_measured, checks_not_run, unknown, hashes = [], [], [], {}, {}, {}
     for page_dir in sorted(p for p in evdir.iterdir() if p.is_dir()):
         slug = page_dir.name
+        # is_file() answers False for a directory that cannot be read, which would
+        # make an unreadable page "not measured"; listing it raises instead.
+        os.listdir(page_dir)
         if not (page_dir / "page.html").is_file():
             not_measured.append(slug)
             continue
@@ -551,7 +560,9 @@ def _build(pkg, evdir, tool):
         # One fact, one finding: near-zero text is also thin text.
         if checks.get("likely_js_rendered"):
             checks["thin_raw_text"] = False
-        skipped = sorted({c for need, group in NEEDS.items() if need in absent for c in group})
+        skipped = {c for need, group in NEEDS.items() if need in absent for c in group}
+        skipped |= {c for c, v in checks.items() if v is None}
+        skipped = sorted(skipped)
         if skipped:
             checks_not_run[slug] = skipped
             for c in skipped:
@@ -632,7 +643,10 @@ def _build(pkg, evdir, tool):
                 "Severity is the row metadata-audit's decision tree gives each check, applied by "
                 "register.py; a severityNote marks where the tree is silent or depends on the "
                 "page type.",
-                "AI-crawler posture in robots.txt is a decision, not a defect, and is not emitted.",
+                "AI-crawler posture in robots.txt is a decision, not a defect, and is not emitted. "
+                "When the general crawler has a robots.txt group of its own, whether that group "
+                "blocks everything is not measurable from the inventory and is listed as not run; "
+                "its own group is judged for the audited path.",
                 "evidenceHashes were recorded by build and are compared by check, which does not "
                 "re-measure: a file edited together with its recorded hash is not detected. A "
                 "rebuild is how a register is brought back in line with its evidence.",
