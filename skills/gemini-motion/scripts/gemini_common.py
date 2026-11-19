@@ -561,6 +561,10 @@ def video_of(interaction):
 def fetch_clip(interaction_id: str, out: Path, *, timeout: float = DELIVERY_TIMEOUT_S):
     """Collect the clip of an interaction that already rendered. This does NOT bill.
 
+    Measured on 2026-11-19 (#132): one 3 s render fetched five times on a paid
+    project billed $0.07, the render alone; billed fetches would have made it
+    about $0.41. Each fetch returned the stored clip byte for byte, inline.
+
     It reads the stored interaction back, so it works only for a render that
     was stored (the default; not --no-store). Raises DeliveryFailed.
     """
