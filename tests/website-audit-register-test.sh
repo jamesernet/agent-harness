@@ -409,6 +409,62 @@ out="$(build 2>&1)" || rc=$?
 grep -q 'linked/page.html' <<<"$out" || fail "the escaping input was not named: $out"
 grep -q 'outside the package' <<<"$out" || fail "the escaping input was not explained: $out"
 rm -rf "$ev/linked"
+
+# 29. A build that dies on an unreadable input is an unusable package, exit 2, with
+#     no traceback, and it removes the earlier register like every other failure.
+build >/dev/null 2>&1 || fail "rebuild before the crash case failed"
+printf '\xff\n' >"$ev/about/captured"
+rc=0
+out="$(build 2>&1)" || rc=$?
+[[ "$rc" == 2 ]] || fail "a build that hit undecodable input exited $rc, not 2: $out"
+grep -q 'Traceback' <<<"$out" && fail "undecodable input produced a traceback: $out"
+grep -q 'build failed' <<<"$out" || fail "the crash was not reported plainly: $out"
+[[ ! -e "$reg" && ! -e "$md" ]] || fail "a crashed build left the earlier register standing"
+printf '2026-11-18T12:00:00Z\n' >"$ev/about/captured"
+
+# 30. The * group binds the general crawler only when it has no group of its own.
+#     With a Googlebot group present, its own rules decide path by path.
+mkdir -p "$ev/owngroup"
+cp "$ev/home/page.html" "$ev/owngroup/page.html"
+printf 'User-agent: *\nDisallow: /\n\nUser-agent: Googlebot\nDisallow: /private\n' >"$ev/owngroup/robots.txt"
+printf 'https://example.test/private/x\n' >"$ev/owngroup/url"
+build >/dev/null 2>&1 || fail "build with the own-group page failed"
+[[ "$(sev metadata/owngroup/robots_blocks_this_path)" == P0 ]] || fail "a path the general crawler's own group disallows was not robots_blocks_this_path"
+[[ "$(q '[.findings[] | select(.id == "metadata/owngroup/robots_blocks_everything")] | length')" == 0 ]] ||
+  fail "robots_blocks_everything fired although the general crawler has its own group"
+rm -f "$ev/owngroup/url"
+build >/dev/null 2>&1 || fail "build with the own-group page and no url failed"
+[[ "$(q '[.findings[] | select(.page == "owngroup" and (.measuredBy.check | startswith("robots_blocks")))] | length')" == 0 ]] ||
+  fail "a robots block fired with no url although the general crawler has its own group"
+rm -rf "$ev/owngroup"
+
+# 31. A sitemap that parses but is not a sitemap is sitemap_invalid, not a sitemap
+#     of zero URLs.
+mkdir -p "$ev/wrongroot"
+cp "$ev/home/page.html" "$ev/wrongroot/page.html"
+printf 'https://example.test/\n' >"$ev/wrongroot/url"
+printf '<html><body>hello</body></html>\n' >"$ev/wrongroot/sitemap.xml"
+build >/dev/null 2>&1 || fail "build with the wrong-root sitemap failed"
+[[ "$(sev metadata/wrongroot/sitemap_invalid)" == P1 ]] || fail "a well-formed non-sitemap was not sitemap_invalid"
+grep -q 'root is <html>' <<<"$(q '.findings[] | select(.id == "metadata/wrongroot/sitemap_invalid") | .measured')" ||
+  fail "the wrong root was not named in the measured sentence"
+[[ "$(q '[.findings[] | select(.id == "metadata/wrongroot/url_absent_from_sitemap")] | length')" == 0 ]] ||
+  fail "url_absent_from_sitemap fired against a file that is not a sitemap"
+rm -rf "$ev/wrongroot"
+
+# 32. A finding may cite only files the tool read for its page: a stray file in the
+#     page directory, even one with a recorded hash, is refused.
+build >/dev/null 2>&1 || fail "rebuild before the stray-file case failed"
+printf 'analyst note\n' >"$ev/home/notes.txt"
+cp "$reg" "$tmp/reg.bak"
+sha="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$ev/home/notes.txt")"
+jq --arg s "$sha" '.evidenceHashes["evidence/metadata-audit/home/notes.txt"] = $s | (.findings[] | select(.id == "metadata/home/h1_missing") | .evidence) += ["evidence/metadata-audit/home/notes.txt"]' "$tmp/reg.bak" >"$reg"
+if out="$(check 2>&1)"; then fail "check passed a finding citing a file the tool never read"; fi
+grep -q 'not a file the tool read for this page' <<<"$out" || fail "the stray pointer was not explained: $out"
+rm -f "$ev/home/notes.txt"
+cp "$tmp/reg.bak" "$reg"
+check >/dev/null 2>&1 || fail "check did not pass the restored register after the stray-file case"
+grep -q 'does not re-measure' "$md" || fail "register.md does not state the hash limitation"
 build >/dev/null 2>&1 || fail "final rebuild failed"
 check >/dev/null 2>&1 || fail "final check failed"
 

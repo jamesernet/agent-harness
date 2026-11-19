@@ -185,10 +185,13 @@ RULES = {
         inputs=("sitemap.xml",)),
     "sitemap_invalid": dict(
         gate=1, severity="P1", source=f"{TREE}:73-75",
-        measured=lambda r: "The saved sitemap.xml is not well-formed XML: {}".format(
-            (r.get("sitemap") or {}).get("error") or "no root element"),
-        why="A parse failure discards the whole sitemap; an HTML page served at the sitemap "
-            "URL is the usual cause.",
+        measured=lambda r: (
+            "The saved sitemap.xml is not well-formed XML: {}".format((r.get("sitemap") or {}).get("error"))
+            if (r.get("sitemap") or {}).get("valid") is False else
+            "The saved sitemap.xml parses but its root is <{}>, not <urlset> or <sitemapindex>".format(
+                (r.get("sitemap") or {}).get("root"))),
+        why="A file that is not a sitemap is discarded whole; an HTML page served at the "
+            "sitemap URL is the usual cause.",
         inputs=("sitemap.xml",)),
     # Gate 4: head identity
     "lang_missing": dict(
@@ -414,10 +417,12 @@ def robots_facts(result):
         return {}
     access = rb.get("path_access") or {}
     general = access.get("general_crawler") or {}
-    # A named group for the general crawler outranks the * group (robots groups do
-    # not inherit), so "* disallows everything" is a P0 only when the general
-    # crawler is not allowed through by its own group.
-    blocks_all = bool(rb.get("wildcard_blocks_all")) and general.get("allowed") is not True
+    # robots groups do not inherit: a crawler with a group of its own never reads
+    # the * group. So "* disallows everything" is a P0 for the general crawler only
+    # when it has no group of its own; when it has one, that group decides, path by
+    # path, through robots_blocks_this_path.
+    has_own_group = any(a.lower() == "googlebot" for a in rb.get("named_agents") or [])
+    blocks_all = bool(rb.get("wildcard_blocks_all")) and not has_own_group
     blocks_path = access.get("path") is not None and general.get("allowed") is False
     return {
         "robots_is_html": bool(rb.get("looks_like_html")),
@@ -432,7 +437,7 @@ def sitemap_facts(result):
     sm = result.get("sitemap")
     if sm is None:
         return {}
-    invalid = sm.get("valid") is False
+    invalid = sm.get("valid") is False or sm.get("root") not in ("urlset", "sitemapindex")
     return {"sitemap_invalid": invalid, **({"url_absent_from_sitemap": False} if invalid else {})}
 
 
@@ -503,6 +508,10 @@ def build(pkg, tool):
         if e.code not in (0, None):
             discard_previous(pkg)
         raise
+    except Exception as e:  # noqa: BLE001  an unreadable input, a bad encoding: unusable, not refused
+        print("register: build failed on {}: {}".format(type(e).__name__, e), file=sys.stderr)
+        discard_previous(pkg)
+        raise SystemExit(2)
 
 
 def _build(pkg, evdir, tool):
@@ -624,6 +633,9 @@ def _build(pkg, evdir, tool):
                 "register.py; a severityNote marks where the tree is silent or depends on the "
                 "page type.",
                 "AI-crawler posture in robots.txt is a decision, not a defect, and is not emitted.",
+                "evidenceHashes were recorded by build and are compared by check, which does not "
+                "re-measure: a file edited together with its recorded hash is not detected. A "
+                "rebuild is how a register is brought back in line with its evidence.",
             ],
         },
     }
@@ -634,10 +646,11 @@ def _build(pkg, evdir, tool):
             print("  " + p, file=sys.stderr)
         raise SystemExit(1)
     reg_path, md_path = pkg / "register.json", pkg / "register.md"
-    tmp = reg_path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(register, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    os.replace(tmp, reg_path)
-    md_path.write_text(render(register), encoding="utf-8")
+    md_tmp, reg_tmp = md_path.with_suffix(".md.tmp"), reg_path.with_suffix(".json.tmp")
+    md_tmp.write_text(render(register), encoding="utf-8")
+    reg_tmp.write_text(json.dumps(register, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    os.replace(md_tmp, md_path)
+    os.replace(reg_tmp, reg_path)
     print("register: {} findings over {} pages -> {}, {}".format(
         len(findings), len(pages), reg_path, md_path))
 
@@ -744,11 +757,15 @@ def validate(register, pkg):
             # not any file that happens to exist: the page's own directory, including
             # page.html and every input the row needs.
             prefix = "evidence/metadata-audit/{}/".format(f.get("page"))
+            page_ev = next((p.get("evidence") or [] for p in pages if p.get("slug") == f.get("page")), [])
             if isinstance(ev, list) and ev:
                 for ptr in ev:
                     if not isinstance(ptr, str) or not ptr.startswith(prefix):
                         problems.append(where + " evidence pointer is not under {}: {}".format(
                             prefix, ptr))
+                    elif ptr not in page_ev:
+                        problems.append(where + " evidence pointer is not a file the tool read for "
+                                                "this page: {}".format(ptr))
                 for need in ("page.html",) + tuple(rule["inputs"]):
                     if prefix + need not in ev:
                         problems.append(where + " evidence does not cite {}, which `{}` is "
