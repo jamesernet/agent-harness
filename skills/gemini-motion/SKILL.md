@@ -191,7 +191,8 @@ every turn.
   the SDK's retries off, so a lost response cannot be charged twice.
 - **A clip that rendered but failed to save is not lost.** Its interaction id
   is logged before the download starts, and the error prints a `--fetch` command
-  that collects it without billing again (not after `--no-store`). Run that, not
+  that collects it without billing again (not after `--no-store`, and not once
+  Google has dropped the stored render, after 55 days at most). Run that, not
   the render. `--timeout` bounds the render; `--delivery-timeout` bounds the
   wait and download after it.
 - **Don't promise what Omni can't do:** >15 s in one shot (`--duration` pins
