@@ -76,6 +76,40 @@ want "bare ~ is expanded" \
 want "~ inside an assigned value is expanded" \
   "$HOME/sub" 'W=~/sub; cd "$W" && git commit -m x'
 
+# --- $HOME and ${HOME} are expanded the way ~/ is ------------------------
+# #136: a path spelled $HOME/... escaped both guards where the same path
+# spelled absolute or ~/... was denied. The hook runs with the session's HOME,
+# which is exactly what ~ expands from, so $HOME is resolvable here.
+want '$HOME/ is expanded in a cd' \
+  "$HOME/sub" 'cd $HOME/sub && git commit -m x'
+want '${HOME}/ is expanded in a cd' \
+  "$HOME/sub" 'cd ${HOME}/sub && git commit -m x'
+want '$HOME/ is expanded in git -C' \
+  "$HOME/sub" 'git -C $HOME/sub status'
+want '$HOME/ is expanded in --git-dir' \
+  "$HOME/r" 'git --git-dir=$HOME/r/.git commit'
+want '$HOME inside an assigned value is expanded' \
+  "$HOME/sub" 'W=$HOME/sub; cd "$W" && git commit -m x'
+
+# A general $VAR keeps a subpath: the variable NAME alone is looked up and the
+# trailing /sub is re-appended. Slashes must never reach the sed regex that
+# reads an assignment (the old code fed "W/sub" in as the name).
+want 'an assigned $VAR keeps its subpath' \
+  "$tmp/a/sub" "W=$tmp/a; cd \"\$W/sub\" && git commit -m x"
+want 'an unresolvable $VAR with a subpath yields nothing' \
+  "" 'cd "$NOT_ASSIGNED/sub" && git commit -m x'
+
+# The old code interpolated the whole word into a substitute command, so the
+# slashes in a subpath ended it early and sed wrote an error to stderr.
+stderr="$(llmctx_target_from_command 'cd "$NOT_ASSIGNED/sub" && git commit -m x' 2>&1 >/dev/null)"
+[[ -z "$stderr" ]] || fail "a \$VAR/subpath emitted stderr: $stderr"
+
+# Known case from #136: a quote in the middle of the word means the cd capture
+# does not yield the path at all. Same outcome, different cause - pin it here
+# rather than widen the resolver to a shell tokenizer.
+want 'a quoted $HOME segment mid-word is not captured' \
+  "" 'cd "$HOME"/sub && git commit -m x'
+
 # --- cannot tell --------------------------------------------------------
 want "no cd and no -C yields nothing" \
   "" "git commit -m x"

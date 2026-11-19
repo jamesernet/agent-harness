@@ -62,6 +62,15 @@ denied "$(run "$(bash_payload "git -C $HOME/repos/acme/app commit -am x" "$HOME/
   fail "git -C into a routed tree was not denied"
 denied "$(run "$(bash_payload "W=$HOME/repos/acme/app; cd \"\$W\" && make" "$HOME/repos/personal")")" ||
   fail "cd through a variable assigned in the same command was not followed"
+# #136: the same routed path spelled $HOME/... or ${HOME}/... must be denied
+# just like the absolute and ~/... spellings above. Before the fix these fell
+# back to the personal session cwd (and sed wrote an error for the bare form).
+denied "$(run "$(bash_payload 'cd $HOME/repos/acme/app && echo hi > y.py' "$HOME/repos/personal")")" ||
+  fail "cd \$HOME/... into a routed tree was not denied"
+denied "$(run "$(bash_payload 'cd ${HOME}/repos/acme/app && echo hi > y.py' "$HOME/repos/personal")")" ||
+  fail "cd \${HOME}/... into a routed tree was not denied"
+denied "$(run "$(bash_payload 'git -C $HOME/repos/acme/app commit -am x' "$HOME/repos/personal")")" ||
+  fail "git -C \$HOME/... into a routed tree was not denied"
 [[ -z "$(run "$(bash_payload "cd $HOME/repos/personal && ls" "$HOME/repos/acme/app")")" ]] ||
   fail "cd out of a routed tree was still denied"
 # The remediation the denial prints must itself be allowed.

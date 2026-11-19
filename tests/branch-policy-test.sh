@@ -255,6 +255,25 @@ bash_payload() { jq -nc --arg c "$1" --arg cmd "$2" \
 [[ "$(decision "$(bash_payload "$feature_repo" "cd $repo && $GC")")" == deny ]] ||
   fail "allowed a commit in a protected checkout reached by a leading cd"
 
+# #136: a protected checkout spelled $HOME/... must be denied just like the
+# absolute and ~/... spellings. The hook expands $HOME with its own environment,
+# so export a fake HOME for the hook process while the payload keeps the literal
+# $HOME text in its command.
+fake_home="$tmp/home"
+protected="$fake_home/protected"
+mkdir -p "$protected"
+git -C "$protected" init -q -b main
+printf '%s\n' '{"schemaVersion":1,"profile":"client"}' >"$protected/.llmctx.json"
+(
+  export HOME="$fake_home"
+  d1="$(decision "$(bash_payload "$feature_repo" "cd \$HOME/protected && $GC")")"
+  [[ "$d1" == deny ]] ||
+    fail "allowed a commit in a protected checkout reached by cd \$HOME/..."
+  d2="$(decision "$(bash_payload "$feature_repo" "git -C \$HOME/protected commit -m x")")"
+  [[ "$d2" == deny ]] ||
+    fail "allowed a commit in a protected checkout reached by git -C \$HOME/..."
+)
+
 # A cd that BEGINS A STATEMENT is followed wherever it sits, and the LAST one
 # wins -- which is what the shell does for sequential statements.
 #

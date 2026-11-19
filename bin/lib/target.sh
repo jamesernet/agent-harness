@@ -85,10 +85,17 @@ LLMCTX_CMD_PREFIX_RE='((sudo|doas|command|exec|nohup|nice|ionice|time)[[:space:]
 # shellcheck disable=SC2034  # consumed by the hooks that source this file
 LLMCTX_GIT_GLOBAL_OPTS_RE='(-C[[:space:]]+[^[:space:]]+[[:space:]]+|-c[[:space:]]+[^[:space:]]+[[:space:]]+|-[pP][[:space:]]+|--[a-z][a-z-]*(=[^[:space:]]*)?[[:space:]]+([^-[:space:]][^[:space:]]*[[:space:]]+)?)*'
 
+# The shell expands $HOME and ${HOME} to the same directory as ~, and the hook
+# runs with the session's HOME (#136). A path spelled $HOME/... must resolve
+# exactly like ~/... or the two spellings get judged against different roots.
 llmctx_target_expand_home() {
   case "$1" in
     "$llmctx_target_tilde") printf '%s\n' "$HOME" ;;
     "$llmctx_target_tilde"/*) printf '%s\n' "$HOME/${1#"$llmctx_target_tilde"/}" ;;
+    '$HOME') printf '%s\n' "$HOME" ;;
+    '$HOME'/*) printf '%s\n' "$HOME/${1#'$HOME'/}" ;;
+    '${HOME}') printf '%s\n' "$HOME" ;;
+    '${HOME}'/*) printf '%s\n' "$HOME/${1#'${HOME}'/}" ;;
     *) printf '%s\n' "$1" ;;
   esac
 }
@@ -395,12 +402,23 @@ llmctx_target_from_command() {
   # branch-policy.sh's effective behaviour unchanged.
   case "$dir" in
     '$'*)
-      var="${dir#'$'}"
-      var="${var#\{}"
-      var="${var%\}}"
+      # Only the variable NAME is a lookup key, and it is a bare identifier
+      # (#136). A trailing /sub stays a subpath and is re-appended after the
+      # value is resolved. Interpolating the whole word into the assignment
+      # lookup's sed expression let a slash end the substitute command early:
+      # sed errored, trap 'exit 0' swallowed it, and the guard failed open.
+      if [[ "$dir" =~ ^\$\{([A-Za-z_][A-Za-z0-9_]*)\}(.*)$ ]]; then
+        var="${BASH_REMATCH[1]}"
+        subpath="${BASH_REMATCH[2]}"
+      elif [[ "$dir" =~ ^\$([A-Za-z_][A-Za-z0-9_]*)(.*)$ ]]; then
+        var="${BASH_REMATCH[1]}"
+        subpath="${BASH_REMATCH[2]}"
+      else
+        return 0
+      fi
       assigned="$(llmctx_target_assigned_value "$cmd" "$var")"
       [[ -n "$assigned" ]] || return 0
-      dir="$(llmctx_target_expand_home "$assigned")"
+      dir="$(llmctx_target_expand_home "$assigned")$subpath"
       ;;
   esac
 
