@@ -125,6 +125,9 @@ grep -q 'headers.txt' <<<"$(q '.pages[] | select(.slug == "about") | .inputsAbse
   fail "about's absent headers.txt was not recorded"
 grep -q 'header_noindex' <<<"$(q '.limits.checksNotRun | tostring')" ||
   fail "limits.checksNotRun does not name the header checks skipped on about"
+[[ "$(q '.limits.checksNotRun.about.header_noindex')" == "headers.txt was not saved" ]] ||
+  fail "a skipped header check does not carry its reason: $(q '.limits.checksNotRun.about.header_noindex')"
+grep -q '`header_noindex`.*because headers.txt was not saved' "$md" || fail "register.md does not say why the header checks were skipped"
 
 # 8. The one page renders the sample size, the not-measured directory and every
 #    finding by id.
@@ -211,7 +214,7 @@ cp "$ev/home/page.html" "$ev/nourl/page.html"
 cp "$ev/home/robots.txt" "$ev/nourl/robots.txt"
 cp "$ev/home/sitemap.xml" "$ev/nourl/sitemap.xml"
 build >/dev/null 2>&1 || fail "build with the nourl page failed"
-nr="$(q '.limits.checksNotRun.nourl | join(",")')"
+nr="$(q '.limits.checksNotRun.nourl | keys | join(",")')"
 grep -q 'url_absent_from_sitemap' <<<"$nr" || fail "url_absent_from_sitemap was not recorded as not run without a url: $nr"
 grep -q 'robots_blocks_this_path' <<<"$nr" || fail "robots_blocks_this_path was not recorded as not run without a url: $nr"
 grep -q 'url_absent_from_sitemap\|robots_blocks_this_path' <<<"$(q '.pages[] | select(.slug == "nourl") | .checksRun | join(",")')" &&
@@ -300,7 +303,7 @@ printf '\n' >"$ev/blankurl/url"
 build >/dev/null 2>&1 || fail "build with the blank url page failed"
 grep -q 'url' <<<"$(q '.pages[] | select(.slug == "blankurl") | .inputsAbsent | join(",")')" ||
   fail "a blank url file was not recorded as an absent input"
-nr="$(q '.limits.checksNotRun.blankurl | join(",")')"
+nr="$(q '.limits.checksNotRun.blankurl | keys | join(",")')"
 grep -q 'url_absent_from_sitemap' <<<"$nr" || fail "url_absent_from_sitemap ran against a blank url: $nr"
 grep -q 'robots_blocks_this_path' <<<"$nr" || fail "robots_blocks_this_path ran against a blank url: $nr"
 grep -q 'url_absent_from_sitemap\|robots_blocks_this_path' <<<"$(q '.pages[] | select(.slug == "blankurl") | .checksRun | join(",")')" &&
@@ -361,6 +364,15 @@ if out="$(check 2>&1)"; then fail "check passed two findings with one id"; fi
 grep -q 'duplicate id' <<<"$out" || fail "the duplicate id was not named: $out"
 jq '.limits.sampleSize = 99' "$tmp/reg.bak" >"$reg"
 if check >/dev/null 2>&1; then fail "check passed a sampleSize that disagrees with pages"; fi
+# A finding for a check the same register says was not run is a contradiction,
+# and so is a finding whose check the page does not list as run.
+jq '.limits.checksNotRun.home.images_missing_alt = "hand-added"' "$tmp/reg.bak" >"$reg"
+if out="$(check 2>&1)"; then fail "check passed a finding for a check listed as not run"; fi
+grep -q 'was not run on this page, yet here is a finding' <<<"$out" || fail "the contradiction was not named: $out"
+jq '(.pages[] | select(.slug == "home") | .checksRun) -= ["images_missing_alt"]' "$tmp/reg.bak" >"$reg"
+if check >/dev/null 2>&1; then fail "check passed a finding whose check the page does not list as run"; fi
+jq '(.pages[] | select(.slug == "about") | .checksRun) += ["header_noindex"]' "$tmp/reg.bak" >"$reg"
+if check >/dev/null 2>&1; then fail "check passed a check listed both as run and as not run"; fi
 cp "$tmp/reg.bak" "$reg"
 check >/dev/null 2>&1 || fail "check did not pass the restored register after the provenance cases"
 
@@ -446,17 +458,23 @@ rm -f "$ev/owngroup/url"
 build >/dev/null 2>&1 || fail "build with the own-group page and no url failed"
 [[ "$(q '[.findings[] | select(.page == "owngroup" and (.measuredBy.check | startswith("robots_blocks")))] | length')" == 0 ]] ||
   fail "a robots block fired with no url although the general crawler has its own group"
-grep -q 'robots_blocks_everything' <<<"$(q '.limits.checksNotRun.owngroup | join(",")')" ||
+grep -q 'robots_blocks_everything' <<<"$(q '.limits.checksNotRun.owngroup | keys | join(",")')" ||
   fail "whether the general crawler's own group blocks everything was not listed as not run"
 # The own group blocks everything too: the inventory cannot say so as a whole, so
 # without a url the question is not run, never silently passed, and with a url the
 # path is judged by that group.
 printf 'User-agent: *\nDisallow: /\n\nUser-agent: Googlebot\nDisallow: /\n' >"$ev/owngroup/robots.txt"
 build >/dev/null 2>&1 || fail "build with the own-group-blocks-all page failed"
-grep -q 'robots_blocks_everything' <<<"$(q '.limits.checksNotRun.owngroup | join(",")')" ||
+grep -q 'robots_blocks_everything' <<<"$(q '.limits.checksNotRun.owngroup | keys | join(",")')" ||
   fail "an own group that blocks everything was silently passed as not blocking everything"
 grep -q 'robots_blocks_everything' <<<"$(q '.pages[] | select(.slug == "owngroup") | .checksRun | join(",")')" &&
   fail "robots_blocks_everything was listed as run for a general crawler with its own group"
+grep -q 'group of its own' <<<"$(q '.limits.checksNotRun.owngroup.robots_blocks_everything')" ||
+  fail "the own-group skip does not carry its reason: $(q '.limits.checksNotRun.owngroup')"
+grep -q 'robots_blocks_everything` because the general crawler has a robots.txt group of its own' "$md" ||
+  fail "register.md does not give the own-group reason beside the skipped check"
+grep -q 'robots_blocks_everything.*were not saved\|were not saved.*robots_blocks_everything' "$md" &&
+  fail "register.md files the own-group skip under an input that was not saved"
 printf 'https://example.test/\n' >"$ev/owngroup/url"
 build >/dev/null 2>&1 || fail "build with the own-group-blocks-all page and a url failed"
 [[ "$(sev metadata/owngroup/robots_blocks_this_path)" == P0 ]] || fail "a path blocked by the general crawler's own group was not P0"

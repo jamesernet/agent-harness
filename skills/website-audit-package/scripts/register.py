@@ -64,6 +64,12 @@ NEEDS = {
     "url": ("url_absent_from_sitemap", "robots_blocks_this_path"),
 }
 
+# Why a check that needs no missing input can still be unanswerable (None).
+NOT_MEASURABLE = {
+    "robots_blocks_everything": "the general crawler has a robots.txt group of its own, and the "
+                                "inventory does not say what a named group blocks as a whole",
+}
+
 
 def _resp(r):
     return r.get("response") or {}
@@ -560,11 +566,18 @@ def _build(pkg, evdir, tool):
         # One fact, one finding: near-zero text is also thin text.
         if checks.get("likely_js_rendered"):
             checks["thin_raw_text"] = False
-        skipped = {c for need, group in NEEDS.items() if need in absent for c in group}
-        skipped |= {c for c, v in checks.items() if v is None}
-        skipped = sorted(skipped)
+        # Every skipped check carries its reason, so the page can say why rather
+        # than filing an unanswerable question under "input not saved".
+        skipped = {}
+        for need, group in NEEDS.items():
+            if need in absent:
+                for c in group:
+                    skipped[c] = "{} was not saved".format(need)
+        for c, v in checks.items():
+            if v is None and c not in skipped:
+                skipped[c] = NOT_MEASURABLE.get(c, "not measurable from the inventory output")
         if skipped:
-            checks_not_run[slug] = skipped
+            checks_not_run[slug] = dict(sorted(skipped.items()))
             for c in skipped:
                 checks.pop(c, None)
         for check in sorted(checks):
@@ -698,6 +711,13 @@ def validate(register, pkg):
     if not isinstance(hashes, dict):
         problems.append("evidenceHashes is missing; nothing says what was measured")
         hashes = {}
+    not_run = limits.get("checksNotRun") if isinstance(limits.get("checksNotRun"), dict) else {}
+    run_by_page = {p.get("slug"): set(p.get("checksRun") or []) for p in pages}
+    for slug, skipped in not_run.items():
+        both = set(skipped or {}) & run_by_page.get(slug, set())
+        if both:
+            problems.append("page {}: {} listed both as run and as not run".format(
+                slug, ", ".join(sorted(both))))
 
     def pointer_problems(where, ptr):
         if not resolves(ptr, pkg):
@@ -767,6 +787,11 @@ def validate(register, pkg):
                 problems.append(where + " severitySource is not the table's for `{}`".format(mb["check"]))
             if fid != "metadata/{}/{}".format(f.get("page"), mb["check"]):
                 problems.append(where + " id does not name its page and check")
+            if mb["check"] in (not_run.get(f.get("page")) or {}):
+                problems.append(where + " the register says `{}` was not run on this page, yet "
+                                        "here is a finding from it".format(mb["check"]))
+            if mb["check"] not in run_by_page.get(f.get("page"), set()):
+                problems.append(where + " `{}` is not in the page's checksRun".format(mb["check"]))
             # The pointers have to be the files the tool read for THIS page and check,
             # not any file that happens to exist: the page's own directory, including
             # page.html and every input the row needs.
@@ -845,11 +870,13 @@ def render(register):
     if lim["pagesNotMeasured"]:
         out.append("- Not measured, no page.html saved: {}.".format(", ".join(lim["pagesNotMeasured"])))
     if lim["checksNotRun"]:
-        for slug, checks in sorted(lim["checksNotRun"].items()):
-            absent = [p["inputsAbsent"] for p in pages if p["slug"] == slug]
-            out.append("- Checks not run on {} because {} were not saved: {}.".format(
-                slug, ", ".join(n for n in (absent[0] if absent else []) if n in NEEDS),
-                ", ".join(checks)))
+        for slug, skipped in sorted(lim["checksNotRun"].items()):
+            by_reason = {}
+            for c, reason in skipped.items():
+                by_reason.setdefault(reason, []).append(c)
+            out.append("- Checks not run on {}: {}.".format(slug, "; ".join(
+                "{} because {}".format(", ".join("`{}`".format(c) for c in sorted(cs)), reason)
+                for reason, cs in sorted(by_reason.items()))))
     for note in lim["notes"]:
         out.append("- {}".format(note))
     out.append("")
