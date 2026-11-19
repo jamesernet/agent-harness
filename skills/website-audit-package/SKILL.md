@@ -52,12 +52,38 @@ fix has not published.
   internal/              analyst notes, case-study drafts — NOT client-facing
   index.html             contact sheet          <- written by the capture tool
   manifest.json          machine-readable index <- written by the capture tool
+  register.json          findings register      <- written by scripts/register.py
+  register.md            the register, one page <- written by scripts/register.py
   <set>/                 screenshots by set     <- written by the capture tool
   raw/                   per-set capture records<- written by the capture tool
 ```
 
 The split matters more than the filenames: **the evidence layer is machine-written
 and never hand-edited; the report layer sits on top and can be rewritten freely.**
+
+## The register
+
+Between the two layers sits one more machine-written artifact: the findings
+register. `scripts/register.py build <package>` runs the measuring tools on the
+files saved under `evidence/` and writes `register.json` and a one-page
+`register.md` at the package root. Every finding carries the three-state label,
+a severity with the decision-tree line it comes from, the measured sentence with
+its number, the evidence files the tool actually read, why it matters, and how we
+would know we are wrong. **A finding whose evidence pointer does not resolve
+cannot be emitted**, and `scripts/register.py check <package>` refuses a register
+that has been edited into that state. Every claim that failed the research behind
+this (#69) was a claim with a citation that did not support it; the register is
+the layer that cannot do that.
+
+Today the one constituent audit with a machine output is metadata-audit, so the
+register covers the metadata layer. For each page, save what `inventory.py`
+reads under `evidence/metadata-audit/<page>/`: `page.html`, plus `robots.txt`,
+`llms.txt`, `headers.txt`, `sitemap.xml` and a one-line `url` file where you
+have them. A missing optional input is recorded as checks not run, never as a
+pass. Experience, performance and the capture join the register when they emit
+something machine-readable; until then its limits section says so. `state` is
+`Live` as of the evidence timestamp, and re-labelling against the tracker is the
+human step the generator cannot take.
 
 `internal/` exists so the wrong register cannot be handed over by accident. Notes
 written peer-to-peer, and any prospect-facing case-study draft, live there and stay
@@ -76,7 +102,8 @@ document that argues for findings instead of reporting them.
 3. **Performance** — [web-perf](../web-perf/). Capture desktop *and* mobile; the
    gap between them is frequently the headline.
 4. **Machine readability** — [metadata-audit](../metadata-audit/). Structured data,
-   crawler files, `llms.txt`.
+   crawler files, `llms.txt`. Save what its `inventory.py` reads under
+   `evidence/metadata-audit/<page>/`, so the register can measure from it.
 5. **Analytics** — the client's own export. Usually arrives last; see Slots.
 6. **Compile** into the shape above.
 
