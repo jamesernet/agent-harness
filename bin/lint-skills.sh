@@ -65,6 +65,12 @@ for dir in "$SRC"/skills/*/; do
   if grep -qi 'STUB' "$f" && ! printf '%s\n' "$fm" | grep -q 'disable-model-invocation: true'; then
     err "$name" "marked STUB but model invocation is enabled"
   fi
+
+  # "$0", "$1"... are argument slots to the skill loader: invoked with
+  # arguments, "~$0.023/s" reached the model as "~Animate.023/s".
+  while IFS=: read -r line hit; do
+    err "$name" "line $line: \"$hit\" is replaced by a skill argument when the skill is invoked with arguments; write the amount without a digit after the dollar sign"
+  done < <(grep -noE '\$[0-9]' "$f" || true)
 done
 
 # vendor/ is third-party: presence-only, no house conventions enforced.

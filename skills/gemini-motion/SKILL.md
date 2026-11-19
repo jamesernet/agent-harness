@@ -10,7 +10,7 @@ and reviewer; Gemini does the rendering or writes the keyframes.
 
 | Path | Produces | Model | Cost | Reach for it when |
 |---|---|---|---|---|
-| **A. Rendered video** | .mp4, 3–10 s (one uncut take: 15 s unpinned, 30 s by extends), native audio | `gemini-omni-1.2-flash` | **paid only**, ~$0.023/s draft, ~$0.07/s at 720p | photoreal or cinematic, live-action feel, sound, "a video of …", social clips, something a browser can't draw |
+| **A. Rendered video** | .mp4, 3–10 s (one uncut take: 15 s unpinned, 30 s by extends), native audio | `gemini-omni-1.2-flash` | **paid only**, ~2.3¢/s draft, ~7¢/s at 720p | photoreal or cinematic, live-action feel, sound, "a video of …", social clips, something a browser can't draw |
 | **B. Code animation** | one self-contained .html / .svg / Lottie .json | `gemini-3.8-flash` | free tier | UI motion, logos, loaders, hero backgrounds, diagrams that animate, anything that ships inside a web page or app |
 | **C. Storyboard** | one stitched .mp4 from several 3–10 s shots | `gemini-omni-1.2-flash` | **paid only**, A's rates, priced for the whole plan before anything renders | anything over 10 s unless it is one uncut take, several scenes, explainers, trailers, promos, B-roll |
 | (all) **Assets / keyframes** | .png | `gemini-nano-banana-2.1` | cents | a first/last frame for a video, a sprite or illustration for an animation |
@@ -62,7 +62,7 @@ recipe and limits there are what separate a usable clip from a generic one.
    follows a length the prompt names, up to 15 s).
    ```bash
    python <skill>/scripts/generate_video.py --prompt-file motion/x-prompt.txt --draft --aspect 9:16 --duration 6 --out motion/x-draft.mp4
-   # -> this render bills 6s at 360p, about $0.14 / approve with: --approve 6s@360p
+   # -> this render bills 6s at 360p, about 14 cents / approve with: --approve 6s@360p
    python <skill>/scripts/generate_video.py --prompt-file motion/x-prompt.txt --draft --aspect 9:16 --duration 6 --approve 6s@360p --out motion/x-draft.mp4
    ```
    Watch it (Read the file or send it to the user). Judge: subject right,
@@ -155,7 +155,7 @@ every turn.
    real yes.
    ```bash
    python <skill>/scripts/storyboard.py check motion/launch/plan.json
-   # -> to render: 3 shots, 18s at 360p, about $0.41 / approve with: … render … --approve 18s@360p
+   # -> to render: 3 shots, 18s at 360p, about 41 cents / approve with: … render … --approve 18s@360p
    ```
 3. **Render** with the printed command, in the background: it takes minutes.
    Only shots that are missing or changed are billed. An untouched shot is
