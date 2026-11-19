@@ -101,7 +101,18 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.fetch:
+        # A fetch renders nothing, so a render flag beside it is a mistake, not
+        # a setting: an --approve there approves a spend that never happens.
+        given = [("a prompt" if dest == "prompt" else "--" + dest.replace("_", "-"))
+                 for dest, value in vars(args).items()
+                 if dest not in ("fetch", "out", "delivery_timeout", "json")
+                 and value != ap.get_default(dest)]
+        if given:
+            die(f"--fetch renders nothing, so {', '.join(given)} would do nothing; "
+                "pass only --out, --delivery-timeout or --json with it")
         out = Path(args.out) if args.out else default_out(args.fetch)
+        if out.suffix.lower() != ".mp4":
+            out = out.with_suffix(".mp4")
         try:
             fetch_clip(args.fetch, out, timeout=args.delivery_timeout)
         except DeliveryFailed as e:

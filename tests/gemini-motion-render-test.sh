@@ -253,6 +253,11 @@ render dlfail --fetch v1_stub
   fail "--fetch billed a render: $(cat "$tmp/dlfail/calls")"
 [[ "$(field dlfail get 'e["id"]')" == v1_stub ]] ||
   fail "--fetch did not get the interaction by id: $(cat "$tmp/dlfail/calls")"
+# A fetched clip gets the suffix a rendered one would.
+(cd "$tmp/dlfail" && env -u GOOGLE_API_KEY GEMINI_API_KEY=stub STUB_LOG="$tmp/dlfail/calls" \
+  PYTHONPATH="$stub" python3 "$GEN" --fetch v1_stub --out noext >/dev/null 2>&1) ||
+  fail "--fetch --out noext exited non-zero"
+[[ -f "$tmp/dlfail/noext.mp4" ]] || fail "--fetch --out noext did not save noext.mp4: $(ls "$tmp/dlfail")"
 
 # 10. --delivery-timeout bounds the wait for a URI clip. --timeout bounds the
 #     billed call only, and the wait after it used to be a fixed 900 s.

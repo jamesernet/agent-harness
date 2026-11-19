@@ -687,4 +687,20 @@ sb check "$plan"
 grep -q 'to render: 3 shots, 18s at 720p' <<<"$out" ||
   fail "a clip rendered at 360p passed as current at 720p once its recorded resolution was edited: $out"
 
+# 38. --fetch renders nothing, so a render flag beside it is a mistake, not a
+#     setting: an --approve there approves a spend that never happens, and a
+#     prompt there reads as a new render. Each is refused by name before a
+#     client exists -- the missing key is never reached.
+for flags in "a cat" "--approve 6s@360p" "--no-store" "--resolution 4k" "--draft" \
+  "--duration 6" "--image x.png" "--previous-id v1_x" "--timeout 60"; do
+  read -ra argv <<<"$flags"
+  [[ "$flags" == "a cat" ]] && argv=("a cat")
+  out="$(gate --fetch v1_x "${argv[@]}")"
+  grep -q 'renders nothing' <<<"$out" || fail "--fetch accepted $flags: $out"
+  ! grep -qE 'GEMINI_API_KEY|google-genai' <<<"$out" ||
+    fail "--fetch with $flags reached the client before refusing: $out"
+done
+out="$(gate --fetch v1_x --approve 6s@360p)"
+grep -q -- '--approve' <<<"$out" || fail "--fetch did not name the refused flag: $out"
+
 echo "gemini-motion gate tests: passed"
