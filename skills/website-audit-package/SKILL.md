@@ -48,7 +48,8 @@ fix has not published.
     05-analytics.md              the visitor baseline
     99-method-and-gaps.md        method, limits, corrections
   overview/              published pages (see Deliverables)
-  evidence/              how to read the captures; raw analytics exports
+  evidence/              how to read the captures; raw analytics exports;
+                         metadata-audit/<page>/ holds what the register measures
   internal/              analyst notes, case-study drafts — NOT client-facing
   index.html             contact sheet          <- written by the capture tool
   manifest.json          machine-readable index <- written by the capture tool
@@ -78,11 +79,14 @@ the layer that cannot do that.
 Today the one constituent audit with a machine output is metadata-audit, so the
 register covers the metadata layer. For each page, save what `inventory.py`
 reads under `evidence/metadata-audit/<page>/`: `page.html`, plus `robots.txt`,
-`llms.txt`, `headers.txt`, `sitemap.xml` and a one-line `url` file where you
-have them. A missing optional input is recorded as checks not run, never as a
-pass. Experience, performance and the capture join the register when they emit
+`llms.txt`, `headers.txt`, `sitemap.xml`, a one-line `url` file and a one-line
+`captured` file holding the capture time in ISO 8601, where you have them. The
+capture time becomes each finding's `asOf`; without it the register falls back
+to the `Date` header saved in `headers.txt`, then to the file's own timestamp,
+and `asOfSource` says which. A missing optional input is recorded as checks not
+run, never as a pass. Experience, performance and the capture join the register when they emit
 something machine-readable; until then its limits section says so. `state` is
-`Live` as of the evidence timestamp, and re-labelling against the tracker is the
+`Live` as of the capture time, and re-labelling against the tracker is the
 human step the generator cannot take.
 
 `internal/` exists so the wrong register cannot be handed over by accident. Notes

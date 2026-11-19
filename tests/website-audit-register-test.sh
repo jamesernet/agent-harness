@@ -21,10 +21,6 @@ command -v python3 >/dev/null || {
   echo "website-audit-register tests: skipped (no python3)"
   exit 0
 }
-command -v jq >/dev/null || {
-  echo "website-audit-register tests: skipped (no jq)"
-  exit 0
-}
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-register-test.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
@@ -41,7 +37,7 @@ cat >"$ev/home/page.html" <<'HTML'
 <body><h2>Welcome</h2><img src="a.png"><img src="b.png"><p>short text</p></body></html>
 HTML
 printf 'https://example.test/\n' >"$ev/home/url"
-printf 'HTTP/2 200\r\ncontent-type: text/html\r\nx-robots-tag: noindex\r\n\r\n' >"$ev/home/headers.txt"
+printf 'HTTP/2 200\r\ndate: Wed, 19 Nov 2026 05:00:00 GMT\r\ncontent-type: text/html\r\nx-robots-tag: noindex\r\n\r\n' >"$ev/home/headers.txt"
 printf 'User-agent: *\nDisallow: /\n' >"$ev/home/robots.txt"
 printf '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://example.test/about</loc></url></urlset>\n' >"$ev/home/sitemap.xml"
 
@@ -61,6 +57,7 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Abo
 open(sys.argv[1], "w", encoding="utf-8").write(html)
 PY
 printf 'https://example.test/about\n' >"$ev/about/url"
+printf '2026-11-18T12:00:00Z\n' >"$ev/about/captured"
 
 build() { python3 "$REG" build "$pkg" "$@"; }
 check() { python3 "$REG" check "$pkg"; }
@@ -134,6 +131,7 @@ while IFS= read -r id; do
   grep -qF "$id" "$md" || fail "register.md is missing finding $id"
 done < <(q '.findings[].id')
 grep -qi 'how we would know we are wrong\|wrong if' "$md" || fail "register.md carries no falsifiers"
+grep -q 'from the headers.txt Date header' "$md" || fail "register.md does not say where a date came from"
 
 # 9. check passes on what build wrote, and a rebuild is stable except for
 #    its timestamps, so ids survive to be re-labelled later.
@@ -183,9 +181,111 @@ if out="$(build --inventory "$tmp/does-not-exist.py" 2>&1)"; then fail "build su
 grep -q 'does-not-exist.py' <<<"$out" || fail "build did not name the missing tool: $out"
 [[ ! -e "$reg" ]] || fail "build without a tool wrote a register"
 
-# 14. No evidence at all is not a register of zero findings about nothing.
+# 14. No evidence at all is not a register of zero findings about nothing, and an
+#     unusable package is exit 2, distinct from a refused register's 1.
 mkdir -p "$tmp/bare/evidence"
-if out="$(python3 "$REG" build "$tmp/bare" 2>&1)"; then fail "build succeeded on a package with no metadata evidence"; fi
+rc=0
+out="$(python3 "$REG" build "$tmp/bare" 2>&1)" || rc=$?
+[[ "$rc" == 2 ]] || fail "a package with no metadata evidence exited $rc, not 2: $out"
 grep -q 'evidence/metadata-audit' <<<"$out" || fail "build did not say where it looked: $out"
+mkdir -p "$tmp/hollow/evidence/metadata-audit/p1"
+rc=0
+out="$(python3 "$REG" build "$tmp/hollow" 2>&1)" || rc=$?
+[[ "$rc" == 2 ]] || fail "a package with no page.html anywhere exited $rc, not 2: $out"
+grep -q 'p1' <<<"$out" || fail "build did not name the directory it saw: $out"
+rc=0
+out="$(build --inventory "$tmp/does-not-exist.py" 2>&1)" || rc=$?
+[[ "$rc" == 2 ]] || fail "a missing tool exited $rc, not 2"
+rc=0
+out="$(build --inventory "$tmp/fake-inventory.py" 2>&1)" || rc=$?
+[[ "$rc" == 1 ]] || fail "an unknown check exited $rc, not 1"
+
+# 15. A check that needs the page URL is recorded as not run when no url file was
+#     saved, never as a pass: the inventory reports both as False without a URL.
+mkdir -p "$ev/nourl"
+cp "$ev/home/page.html" "$ev/nourl/page.html"
+cp "$ev/home/robots.txt" "$ev/nourl/robots.txt"
+cp "$ev/home/sitemap.xml" "$ev/nourl/sitemap.xml"
+build >/dev/null 2>&1 || fail "build with the nourl page failed"
+nr="$(q '.limits.checksNotRun.nourl | join(",")')"
+grep -q 'url_absent_from_sitemap' <<<"$nr" || fail "url_absent_from_sitemap was not recorded as not run without a url: $nr"
+grep -q 'robots_blocks_this_path' <<<"$nr" || fail "robots_blocks_this_path was not recorded as not run without a url: $nr"
+grep -q 'url_absent_from_sitemap\|robots_blocks_this_path' <<<"$(q '.pages[] | select(.slug == "nourl") | .checksRun | join(",")')" &&
+  fail "a url-dependent check was listed as run on a page with no url"
+[[ "$(q '[.findings[] | select(.page == "nourl" and (.measuredBy.check == "url_absent_from_sitemap" or .measuredBy.check == "robots_blocks_this_path"))] | length')" == 0 ]] ||
+  fail "a url-dependent finding was emitted without a url"
+[[ "$(sev metadata/nourl/robots_blocks_everything)" == P0 ]] || fail "robots blocking everything still fires without a url"
+rm -rf "$ev/nourl"
+
+# 16. asOf is the capture time, not whatever last touched the file: the captured
+#     file first, then the Date header, then the mtime, and each says which.
+build >/dev/null 2>&1 || fail "rebuild after nourl failed"
+[[ "$(q '.pages[] | select(.slug == "about") | .asOf')" == "2026-11-18T12:00:00Z" ]] ||
+  fail "about's asOf did not come from its captured file: $(q '.pages[] | select(.slug == "about") | .asOf')"
+grep -q 'captured' <<<"$(q '.pages[] | select(.slug == "about") | .asOfSource')" || fail "about's asOfSource does not name the captured file"
+[[ "$(q '.findings[] | select(.id == "metadata/home/title_missing") | .asOf')" == "2026-11-19T05:00:00Z" ]] ||
+  fail "home's asOf did not come from the Date header: $(q '.findings[] | select(.id == "metadata/home/title_missing") | .asOf')"
+grep -q 'headers.txt' <<<"$(q '.findings[] | select(.id == "metadata/home/title_missing") | .evidence | join(",")')" ||
+  fail "a finding dated from headers.txt does not cite headers.txt"
+mkdir -p "$ev/mtime" && cp "$ev/home/page.html" "$ev/mtime/page.html"
+build >/dev/null 2>&1 || fail "build with the mtime page failed"
+grep -q 'mtime' <<<"$(q '.pages[] | select(.slug == "mtime") | .asOfSource')" || fail "a page with no capture record did not say its asOf is an mtime"
+rm -rf "$ev/mtime"
+printf 'yesterday\n' >"$ev/about/captured"
+rc=0
+out="$(build 2>&1)" || rc=$?
+[[ "$rc" == 2 ]] || fail "a malformed captured file exited $rc, not 2: $out"
+grep -q 'captured' <<<"$out" || fail "the malformed captured file was not named: $out"
+printf '2026-11-18T12:00:00Z\n' >"$ev/about/captured"
+
+# 17. check verifies provenance against the table, not just that the fields are
+#     filled: a severity, gate or id that is not what the check's row gives is refused.
+build >/dev/null 2>&1 || fail "rebuild before the provenance cases failed"
+cp "$reg" "$tmp/reg.bak"
+jq '(.findings[] | select(.id == "metadata/home/images_missing_alt") | .severity) = "P0"' "$tmp/reg.bak" >"$reg"
+if out="$(check 2>&1)"; then fail "check passed a severity the table does not give"; fi
+grep -q 'metadata/home/images_missing_alt' <<<"$out" || fail "the inflated finding was not named: $out"
+jq '(.findings[] | select(.id == "metadata/home/images_missing_alt") | .measuredBy.check) = "none"' "$tmp/reg.bak" >"$reg"
+if check >/dev/null 2>&1; then fail "check passed a measuredBy.check the table does not know"; fi
+jq '(.findings[] | select(.id == "metadata/home/images_missing_alt") | .id) = "metadata/home/renamed"' "$tmp/reg.bak" >"$reg"
+if check >/dev/null 2>&1; then fail "check passed an id that does not name its check"; fi
+jq '.limits.pagesMeasured = ["home"]' "$tmp/reg.bak" >"$reg"
+if check >/dev/null 2>&1; then fail "check passed limits.pagesMeasured that disagrees with pages"; fi
+jq '.pages[0].evidence = ["evidence/metadata-audit/home/gone.html"]' "$tmp/reg.bak" >"$reg"
+if check >/dev/null 2>&1; then fail "check passed a page evidence pointer that does not resolve"; fi
+cp "$tmp/reg.bak" "$reg"
+check >/dev/null 2>&1 || fail "check did not pass the restored register after the provenance cases"
+
+# 18. A measuring tool that fails is reported plainly, exit 2, with no traceback
+#     and no register left behind.
+cat >"$tmp/failing-inventory.py" <<'PY2'
+import sys
+sys.stderr.write("inventory: cannot parse the header dump\n")
+sys.exit(3)
+PY2
+rm -f "$reg" "$md"
+rc=0
+out="$(build --inventory "$tmp/failing-inventory.py" 2>&1)" || rc=$?
+[[ "$rc" == 2 ]] || fail "a failing tool exited $rc, not 2: $out"
+grep -q 'Traceback' <<<"$out" && fail "a failing tool produced a traceback: $out"
+grep -q 'failing-inventory.py' <<<"$out" || fail "the failing tool was not named: $out"
+grep -q 'cannot parse the header dump' <<<"$out" || fail "the tool's own error was not relayed: $out"
+[[ ! -e "$reg" && ! -e "$md" ]] || fail "a failed tool run left a register behind"
+
+# 19. Near-zero text in a large HTML shell is one finding, not two: the thin-text
+#     check is a superset of the JS-rendered one and is suppressed when it fires.
+mkdir -p "$ev/shell"
+python3 - "$ev/shell/page.html" <<'PY3'
+import sys
+html = "<!doctype html><html lang=\"en\"><head><title>Shell</title></head><body><main><h1>Hi</h1>" + "<div class=\"c\"></div>" * 1200 + "</main></body></html>"
+open(sys.argv[1], "w", encoding="utf-8").write(html)
+PY3
+build >/dev/null 2>&1 || fail "build with the shell page failed"
+[[ "$(sev metadata/shell/likely_js_rendered)" == P1 ]] || fail "the JS shell page did not fire likely_js_rendered"
+[[ "$(q '[.findings[] | select(.id == "metadata/shell/thin_raw_text")] | length')" == 0 ]] ||
+  fail "thin_raw_text fired beside likely_js_rendered for the same fact"
+rm -rf "$ev/shell"
+build >/dev/null 2>&1 || fail "final rebuild failed"
+check >/dev/null 2>&1 || fail "final check failed"
 
 echo "website-audit-register tests: passed"

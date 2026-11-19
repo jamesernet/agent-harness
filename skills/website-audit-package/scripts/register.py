@@ -9,7 +9,8 @@ actually read, and a claim that cannot be backed is refused rather than emitted.
 Today the one constituent audit with a machine output is metadata-audit, whose
 inventory.py reports facts and boolean checks and leaves severity to its skill.
 This script runs it on each page saved under evidence/metadata-audit/<page>/
-(page.html, and robots.txt, llms.txt, headers.txt, sitemap.xml, url where saved),
+(page.html, and robots.txt, llms.txt, headers.txt, sitemap.xml, url and captured
+where saved),
 turns each true check into a finding with the severity metadata-audit's decision
 tree gives that case, and writes register.json and a one-page register.md at the
 package root, beside the capture tool's manifest.json.
@@ -20,13 +21,19 @@ Usage:
 
 `build` validates its own output before writing anything, and `check` validates an
 existing register.json against the package: every evidence pointer must resolve
-to a file inside the package, and no finding may lack a measured sentence, a
-falsifier, a state or a truthful measuredBy. Exit 0 on success, 1 when the
-register is refused, 2 on a usage error or a missing tool.
+to a file inside the package, no finding may lack a measured sentence, a
+falsifier, a state or a measuredBy, and each finding's id, gate, severity and
+source must be what the severity table gives its check. A finding's asOf is the
+capture time: the one-line `captured` file (ISO 8601) if saved, else the Date
+header in headers.txt, else the page file's own timestamp, and asOfSource says
+which. Exit 0 on success, 1 when the register is refused, 2 when the package or
+the tool is not usable: no evidence directory, nothing measured, the tool
+missing or failing.
 """
 
 import argparse
 import datetime as dt
+import email.utils
 import hashlib
 import json
 import os
@@ -38,7 +45,7 @@ SCHEMA = "website-audit-package/register@1"
 STATES = ("Live", "Fixed in source, awaiting publish", "Open")
 SEVERITIES = ("P0", "P1", "P2", "P3")
 TREE = "metadata-audit/references/decision-tree.md"
-OPTIONAL_INPUTS = ("robots.txt", "llms.txt", "headers.txt", "sitemap.xml", "url")
+OPTIONAL_INPUTS = ("robots.txt", "llms.txt", "headers.txt", "sitemap.xml", "url", "captured")
 
 # Which saved inputs each group of checks needs. A page that lacks one has those
 # checks recorded as not run, never as passed.
@@ -46,6 +53,9 @@ NEEDS = {
     "headers.txt": ("header_noindex", "header_nosnippet", "status_not_200", "redirect_chain"),
     "robots.txt": ("robots_is_html", "robots_blocks_everything", "robots_blocks_this_path"),
     "sitemap.xml": ("url_absent_from_sitemap",),
+    # Without the page's URL the inventory cannot say whether the sitemap lists it
+    # or robots.txt allows its path; it reports both as False, which is not a pass.
+    "url": ("url_absent_from_sitemap", "robots_blocks_this_path"),
 }
 
 
@@ -327,9 +337,42 @@ RULES = {
 def utc_iso(ts=None):
     if ts is None:
         t = dt.datetime.now(dt.timezone.utc)
+    elif isinstance(ts, dt.datetime):
+        t = ts if ts.tzinfo else ts.replace(tzinfo=dt.timezone.utc)
+        t = t.astimezone(dt.timezone.utc)
     else:
         t = dt.datetime.fromtimestamp(ts, dt.timezone.utc)
     return t.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def as_of_for(page_dir, inputs):
+    """When the evidence was captured: (iso, the file it came from, how to say so).
+
+    A file's mtime is set by whatever last copied it, not by the capture, so it is
+    the last resort and is labelled as such.
+    """
+    if "captured" in inputs:
+        lines = (page_dir / "captured").read_text(encoding="utf-8").strip().splitlines()
+        text = lines[0].strip() if lines else ""
+        try:
+            t = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            print("register: {} is not an ISO 8601 timestamp: {!r}".format(
+                page_dir / "captured", text), file=sys.stderr)
+            raise SystemExit(2)
+        return utc_iso(t), "captured", "captured file"
+    if "headers.txt" in inputs:
+        found = None
+        for line in (page_dir / "headers.txt").read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.lower().startswith("date:"):
+                try:
+                    found = email.utils.parsedate_to_datetime(line.split(":", 1)[1].strip())
+                except (TypeError, ValueError):
+                    found = None
+        if found is not None:
+            return utc_iso(found), "headers.txt", "headers.txt Date header"
+    return (utc_iso((page_dir / "page.html").stat().st_mtime), "page.html",
+            "page.html mtime; no captured file or Date header was saved")
 
 
 def sha256_of(path):
@@ -394,8 +437,9 @@ def build(pkg, tool):
     pkg = Path(pkg).resolve()
     evdir = pkg / "evidence" / "metadata-audit"
     if not evdir.is_dir():
-        raise SystemExit("register: no {} directory under {}; nothing to measure, "
-                         "so nothing to register".format("evidence/metadata-audit", pkg))
+        print("register: no {} directory under {}; nothing to measure, so nothing to "
+              "register".format("evidence/metadata-audit", pkg), file=sys.stderr)
+        raise SystemExit(2)
     tool = Path(tool).resolve()
     if not tool.is_file():
         print("register: measuring tool not found: {}".format(tool), file=sys.stderr)
@@ -412,14 +456,24 @@ def build(pkg, tool):
         absent = [n for n in OPTIONAL_INPUTS if n not in inputs]
         rel = lambda name: os.path.relpath(page_dir / name, pkg)  # noqa: E731
         ran_at = utc_iso()
-        result = run_inventory(tool, page_dir, inputs)
-        as_of = utc_iso((page_dir / "page.html").stat().st_mtime)
+        try:
+            result = run_inventory(tool, page_dir, inputs)
+        except RuntimeError as e:
+            print("register: the measuring tool failed, so nothing is written. {}".format(e),
+                  file=sys.stderr)
+            raise SystemExit(2)
+        as_of, as_of_file, as_of_source = as_of_for(page_dir, inputs)
         url = result.get("url")
         checks = dict(result.get("checks") or {})
         checks.update(robots_facts(result))
-        skipped = [c for need, group in NEEDS.items() if need in absent for c in group]
+        # One fact, one finding: near-zero text is also thin text.
+        if checks.get("likely_js_rendered"):
+            checks["thin_raw_text"] = False
+        skipped = sorted({c for need, group in NEEDS.items() if need in absent for c in group})
         if skipped:
             checks_not_run[slug] = skipped
+            for c in skipped:
+                checks.pop(c, None)
         for check in sorted(checks):
             if check not in RULES:
                 unknown.setdefault(check, []).append(slug)
@@ -428,8 +482,9 @@ def build(pkg, tool):
                 continue
             rule = RULES[check]
             evidence = [rel("page.html")] + [rel(n) for n in rule["inputs"] if n in inputs]
-            if "url" in inputs:
-                evidence.append(rel("url"))
+            for extra in ("url", as_of_file):
+                if extra in inputs and rel(extra) not in evidence:
+                    evidence.append(rel(extra))
             finding = {
                 "id": "metadata/{}/{}".format(slug, check),
                 "page": slug,
@@ -439,6 +494,7 @@ def build(pkg, tool):
                 "severitySource": rule["source"],
                 "state": "Live",
                 "asOf": as_of,
+                "asOfSource": as_of_source,
                 "measured": rule["measured"](result),
                 "evidence": evidence,
                 "whyItMatters": rule["why"],
@@ -449,7 +505,8 @@ def build(pkg, tool):
             if rule.get("note"):
                 finding["severityNote"] = rule["note"]
             findings.append(finding)
-        pages.append({"slug": slug, "url": url, "asOf": as_of, "ranAt": ran_at,
+        pages.append({"slug": slug, "url": url, "asOf": as_of, "asOfSource": as_of_source,
+                      "ranAt": ran_at,
                       "evidence": [rel(n) for n in inputs], "inputsAbsent": absent,
                       "checksRun": sorted(c for c in checks if c in RULES),
                       "findings": sum(1 for f in findings if f["page"] == slug)})
@@ -463,9 +520,10 @@ def build(pkg, tool):
               file=sys.stderr)
         raise SystemExit(1)
     if not pages:
-        raise SystemExit("register: no page under {} has a page.html; nothing was measured, so "
-                         "nothing is registered (directories seen: {})".format(
-                             evdir, ", ".join(not_measured) or "none"))
+        print("register: no page under {} has a page.html; nothing was measured, so nothing is "
+              "registered (directories seen: {})".format(evdir, ", ".join(not_measured) or "none"),
+              file=sys.stderr)
+        raise SystemExit(2)
 
     findings.sort(key=lambda f: (f["gate"], f["severity"], f["id"]))
     register = {
@@ -485,8 +543,9 @@ def build(pkg, tool):
             "notes": [
                 "Source: the metadata layer only. product-ux-review, web-perf and the capture "
                 "emit no machine-readable findings yet, so nothing from them is in this register.",
-                "State is Live as of each page's evidence timestamp. Re-labelling against the "
-                "tracker and the source branch is a human step this generator cannot take.",
+                "State is Live as of each page's capture time (asOf, with asOfSource saying "
+                "where it came from). Re-labelling against the tracker and the source branch is "
+                "a human step this generator cannot take.",
                 "Severity is the row metadata-audit's decision tree gives each check, applied by "
                 "register.py; a severityNote marks where the tree is silent or depends on the "
                 "page type.",
@@ -537,6 +596,19 @@ def validate(register, pkg):
     if limits.get("sampleSize") != len(pages):
         problems.append("limits.sampleSize is {} but {} pages were measured".format(
             limits.get("sampleSize"), len(pages)))
+    if limits.get("pagesMeasured") != [p.get("slug") for p in pages]:
+        problems.append("limits.pagesMeasured does not list the measured pages")
+    if set(limits.get("pagesNotMeasured") or []) & slugs:
+        problems.append("limits.pagesNotMeasured names a measured page")
+    for p in pages:
+        ev = p.get("evidence")
+        if not isinstance(ev, list) or not ev:
+            problems.append("page {}: evidence is empty".format(p.get("slug")))
+            continue
+        for ptr in ev:
+            if not resolves(ptr, pkg):
+                problems.append("page {}: evidence pointer does not resolve inside the package: "
+                                "{}".format(p.get("slug"), ptr))
     seen = set()
     for f in findings:
         fid = f.get("id") or "<no id>"
@@ -553,7 +625,7 @@ def validate(register, pkg):
                 f.get("severity"), "/".join(SEVERITIES)))
         if f.get("state") not in STATES:
             problems.append(where + " state {!r} is not one of the three states".format(f.get("state")))
-        for key in ("asOf", "measured", "whyItMatters", "howWeWouldKnowWeAreWrong"):
+        for key in ("asOf", "asOfSource", "measured", "whyItMatters", "howWeWouldKnowWeAreWrong"):
             if not isinstance(f.get(key), str) or not f[key].strip():
                 problems.append(where + " {} is empty".format(key))
         ev = f.get("evidence")
@@ -568,6 +640,23 @@ def validate(register, pkg):
         for key in ("tool", "check", "ranAt"):
             if not isinstance(mb.get(key), str) or not mb[key].strip():
                 problems.append(where + " measuredBy.{} is empty".format(key))
+        # Provenance is checked against the table, not just for presence: a finding
+        # claims the severity its check's row gives, and nothing else.
+        rule = RULES.get(mb.get("check"))
+        if rule is None:
+            problems.append(where + " measuredBy.check {!r} is not a check register.py knows".format(
+                mb.get("check")))
+        else:
+            if f.get("severity") != rule["severity"]:
+                problems.append(where + " severity {!r} is not the {} the table gives `{}`".format(
+                    f.get("severity"), rule["severity"], mb["check"]))
+            if f.get("gate") != rule["gate"]:
+                problems.append(where + " gate {!r} is not the {} the table gives `{}`".format(
+                    f.get("gate"), rule["gate"], mb["check"]))
+            if f.get("severitySource") != rule["source"]:
+                problems.append(where + " severitySource is not the table's for `{}`".format(mb["check"]))
+            if fid != "metadata/{}/{}".format(f.get("page"), mb["check"]):
+                problems.append(where + " id does not name its page and check")
     return problems
 
 
@@ -612,7 +701,8 @@ def render(register):
     for f in findings:
         head = "**{} · Gate {} · {}** `{}`".format(f["severity"], f["gate"], f["state"], f["id"])
         out.append("- {}".format(head))
-        out.append("  - Measured: {} (as of {})".format(f["measured"], f["asOf"]))
+        out.append("  - Measured: {} (as of {}, from the {})".format(
+            f["measured"], f["asOf"], f["asOfSource"]))
         out.append("  - Why it matters: {}".format(f["whyItMatters"]))
         out.append("  - Evidence: {}".format(", ".join("`{}`".format(e) for e in f["evidence"])))
         out.append("  - How we would know we are wrong: {}".format(f["howWeWouldKnowWeAreWrong"]))
