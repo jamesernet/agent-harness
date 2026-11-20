@@ -220,10 +220,18 @@ die() {
   exit 1
 }
 
+preflight_git_workflow() {
+  local reference="$GLOBAL_DIR/git-workflow.md"
+  [[ -f "$reference" ]] || die "missing Git workflow reference: $reference"
+  [[ -s "$reference" ]] || die "empty Git workflow reference: $reference"
+  [[ -r "$reference" ]] || die "unreadable Git workflow reference: $reference"
+}
+
 # Fail before touching anything if an input is missing or empty. Cheaper to
 # catch here than to discover a half-rendered adapter later.
 preflight_sources() {
   local f lib
+  preflight_git_workflow
   for f in "${SHARED[@]}"; do
     [[ -f "$GLOBAL_DIR/$f" ]] || die "missing source: $GLOBAL_DIR/$f"
     [[ -s "$GLOBAL_DIR/$f" ]] || die "empty source: $GLOBAL_DIR/$f"
@@ -292,6 +300,12 @@ shared_bytes() {
   echo "$total"
 }
 
+render_git_workflow() {
+  echo "## Git workflow"
+  echo
+  printf 'Before changing Git state or cleaning up worktrees, read the required [Git workflow](<%s/git-workflow.md>). If it cannot be read, stop and report the missing reference.\n\n' "$GLOBAL_DIR"
+}
+
 render_claude() {
   echo "# CLAUDE.md — Global Defaults"
   echo
@@ -299,6 +313,7 @@ render_claude() {
   echo
   for f in "${SHARED[@]}"; do echo "@$GLOBAL_DIR/$f"; done
   echo
+  render_git_workflow
   # WHICH ACCOUNT THIS IS. Claude Code loads ~/.claude/CLAUDE.md in addition to the
   # one for the active CLAUDE_CONFIG_DIR, so in a non-default account's session TWO
   # of these files sit in context at once. They come from one template and differ
@@ -345,6 +360,7 @@ render_codex() {
     echo "---"
     echo
   done
+  render_git_workflow
   echo "## Codex specifics"
   echo
   echo "There is no \`PreToolUse\` hook in Codex. The \"branch before you build\" rule is prose-only here — rely on remote branch protection or a repo pre-commit hook as the backstop."
@@ -438,6 +454,7 @@ fi
 [[ "$check_only" -eq 1 ]] || refuse_worktree_install
 
 if [[ "$check_only" -eq 1 ]]; then
+  preflight_git_workflow
   drift=0
   unresolved=0
   while IFS=$'\t' read -r account_name account_dir; do

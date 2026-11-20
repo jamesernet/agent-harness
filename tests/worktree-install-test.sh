@@ -43,6 +43,9 @@ cp "$SRC/bin/build-adapters.sh" "$wt/bin/build-adapters.sh"
 mkdir -p "$clone/bin/lib" "$wt/bin/lib"
 cp "$SRC"/bin/lib/*.sh "$clone/bin/lib/"
 cp "$SRC"/bin/lib/*.sh "$wt/bin/lib/"
+# The same source snapshot supplies the required procedures the adapters link.
+cp "$SRC"/global/*.md "$clone/global/"
+cp "$SRC"/global/*.md "$wt/global/"
 
 run_wt() { "$wt/bin/build-adapters.sh" "$@" >/dev/null 2>"$tmp/err"; }
 

@@ -56,6 +56,11 @@ raises the cap; `/review-merge-queue 113` reviews exactly that PR.
 
 ### 3. One fresh reviewer per PR
 
+Resolve branch updates before dispatching the reviewer, then record the exact
+head being reviewed. If that head changes at any later step, including during a
+merge-forward, invalidate the old verdict and obtain a fresh independent review
+and required CI for the new head. A green build does not renew an old verdict.
+
 The brief is the PR's own claims, not its diff summary. Write it per
 [BRIEF](BRIEF.md), which is the part that decides whether a verdict is worth
 anything, and size it per [the agents README](../../agents/README.md): about
@@ -74,8 +79,8 @@ reviewer did not reach. Then resolve `mergePolicy` once
 `hold`) and act on it, exactly as [grab](../grab/) does:
 
 - **`hold`** — stop. Say which PRs are ready and which have findings.
-- **`review-and-merge`** — for a `CLEAN` verdict: update the branch, wait for
-  CI on the merge result, merge, then clean up by the global guidelines' §5
+- **`review-and-merge`** — for a `CLEAN` verdict: confirm it names the current
+  head, wait for required CI on that same head, merge, then clean up by the global guidelines' §5
   rules. A finding goes back to its author through fix → re-review, never a
   quiet patch. If `gh pr merge` is refused by a permission rule, say so and
   fall back to `hold` out loud; a refusal is not a verdict on the work.
@@ -90,6 +95,9 @@ A `DO-NOT-MERGE` verdict is never merged under any policy.
 - Keyed on the head SHA: an unchanged head is not re-reviewed.
 - The reviewer reports; it never edits, pushes, merges or comments itself.
 - Never merge a `DO-NOT-MERGE`, and never merge on your own verification.
+- If an independent reviewer is unavailable, report insufficient coverage and
+  hold the PR. Do not substitute the authoring session or install a tool merely
+  to satisfy the named workflow.
 
 ## Related
 
