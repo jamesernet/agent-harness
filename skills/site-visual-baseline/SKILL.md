@@ -44,6 +44,23 @@ Where that is unavailable, drive Playwright directly and implement the same
 settle sequence — the traps below are properties of the web, not of any one
 tool, and a hand-rolled capture hits every one of them.
 
+## Measuring brand assets
+
+For measured colors, downloadable font metadata and logo candidates, run
+`node <skill-dir>/scripts/runtime.mjs --install` to prepare the locked runtime
+in the user cache. Dependencies and browser binaries stay outside the skill. Run
+`node <skill-dir>/scripts/brand-tokens.mjs <url> --out <new-directory>`; it writes
+JSON plus four viewport screenshots. Read its coverage and warnings, compare
+sampled visible background layers with rendered pixels, and check font glyph coverage before
+reusing a subset. Text attribution uses conservative native element visibility and intersection
+bounds; unconfirmed styles, including text ranges without an element box, are
+retained separately. Element visibility does
+not prove each glyph or selected font file was painted. Accent is deliberately unassigned: rankings are measurements,
+not brand judgment. Confirm the accent against the rendered site and the brief.
+Theme detection covers media queries and common HTML class/data-theme switches;
+disagreeing computed layers and pixels produce an unknown result for review.
+A negative result does not prove the site has no other theme mechanism.
+
 ## The settle sequence
 
 Naive `goto` then `screenshot` is wrong on most real sites. In order:

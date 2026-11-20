@@ -9,6 +9,14 @@ while IFS= read -r variable; do
   unset "$variable"
 done < <(git rev-parse --local-env-vars)
 
+# Preserve only the dependency-cache path before tests isolate HOME and XDG.
+# Skill sources stay free of node_modules, so installation never copies a
+# browser runtime into managed accounts.
+brand_runtime="$SCRIPT_DIR/../skills/site-visual-baseline/scripts/runtime.mjs"
+if [[ -f "$brand_runtime" ]] && command -v node >/dev/null 2>&1; then
+  export BRAND_TOKENS_RUNTIME="${BRAND_TOKENS_RUNTIME:-$(node "$brand_runtime" --path)}"
+fi
+
 # A configured workstation can install templates or resolve registered provider
 # homes even when a test changes HOME. Keep the suite independent of caller Git
 # and XDG configuration; individual tests still create their own fixtures.
