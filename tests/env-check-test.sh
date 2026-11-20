@@ -20,6 +20,8 @@ fail() {
 repo() {
   local dir="$tmp/$1"
   mkdir -p "$dir"
+  GIT_CONFIG_GLOBAL=/dev/null git -C "$dir" init -q
+  GIT_CONFIG_GLOBAL=/dev/null git -C "$dir" config llmctx.contextProfile "$tmp/context.toml"
   printf '%s\n' "$2" >"$dir/.llmctx.json"
   printf '%s' "$dir"
 }
@@ -33,6 +35,16 @@ run() { # dir [mode] -> output on stdout, exit status in $status
 }
 
 mkdir -p "$tmp/home"
+cat >"$tmp/context.toml" <<'TOML'
+[context]
+id = "fixture"
+[cloud]
+aws_profile = "acme"
+aws_write_profile = "acme-admin"
+[ai]
+allow_code_egress = true
+agents_allowed = true
+TOML
 
 # --- no declaration is not a failure ---------------------------------------
 d="$(repo none '{"schemaVersion":1}')"
@@ -222,7 +234,7 @@ run "$d"
 d="$(repo tracked '{"schemaVersion":1,"environment":{"target":"other","secrets":["SOME_TOKEN"]}}')"
 git -C "$d" init -q 2>/dev/null || true
 printf 'export SOME_TOKEN=x\n' >"$d/.envrc.local"
-git -C "$d" add .envrc.local >/dev/null 2>&1
+git -C "$d" add -f .envrc.local >/dev/null 2>&1
 run "$d"
 # Assert the STATUS, not just the message. Matching "tracked by git" alone
 # passed with CONFLICT flipped to OK, which is the whole of what the assertion
@@ -258,5 +270,71 @@ for conf in "$SRC"/targets/*.conf; do
     [[ "$line" =~ ^[a-z_]+= ]] || fail "$name: not key=value: $line"
   done <<<"$body"
 done
+
+# A private policy is required even if a profile resolves or CI would exempt
+# local AWS configuration. Profile names are compared to the attested ambient
+# name, never guessed from suffixes such as "admin" or "readonly".
+d="$(repo policy-missing '{"schemaVersion":1,"environment":{"target":"other","cloud":{"awsProfile":"acme"}}}')"
+git -C "$d" config --unset llmctx.contextProfile
+run "$d"
+[[ "$status" -eq 1 && "$output" == *"MISSING  context:policy"* ]] || fail "missing policy passed: $output"
+set +e
+output="$(CI=true HOME="$tmp/home" "$CHECK" check "$d" 2>&1)"
+status=$?
+set -e
+[[ "$status" -eq 1 && "$output" == *"context:policy"* ]] || fail "CI bypassed policy: $output"
+for name in acme-admin unrelated-readonly; do
+  d="$(repo "policy-$name" "{\"schemaVersion\":1,\"environment\":{\"target\":\"other\",\"cloud\":{\"awsProfile\":\"$name\"}}}")"
+  run "$d"
+  [[ "$status" -eq 1 && "$output" == *"CONFLICT aws:ambient-policy"* ]] || fail "non-ambient AWS profile passed: $output"
+done
+
+d="$(repo policy-egress '{"schemaVersion":1,"environment":{"target":"other","mcp":["cloudflare"]}}')"
+for policy in false true; do
+  cat >"$tmp/restricted.toml" <<TOML
+[ai]
+allow_code_egress = $policy
+agents_allowed = false
+TOML
+  git -C "$d" config llmctx.contextProfile "$tmp/restricted.toml"
+  run "$d"
+  [[ "$status" -eq 1 && "$output" == *"CONFLICT mcp:policy"* ]] || fail "no-agent policy approved MCP: $output"
+done
+printf '[ai]\nallow_code_egress = false\nagents_allowed = true\n' >"$tmp/restricted.toml"
+run "$d"
+[[ "$status" -eq 1 && "$output" == *"CONFLICT mcp:policy"* ]] || fail "no-egress policy approved MCP: $output"
+printf '[ai]\nagents_allowed = true\n' >"$tmp/restricted.toml"
+run "$d"
+[[ "$status" -eq 1 && "$output" == *"MISSING  mcp:policy"* ]] || fail "unknown egress approved MCP: $output"
+
+# Strict TOML and type checks never print private values or execute contents.
+for bad in '[ai]\nallow_code_egress="forbidden-private-value"' '[cloud]\naws_profile=["acme"]' '[ai]\nallow_code_egress=true\nallow_code_egress=false' '[cloud]\naws_profile="acme"\naws_write_profile="acme"'; do
+  printf '%b\n' "$bad" >"$tmp/restricted.toml"
+  run "$d"
+  [[ "$status" -eq 1 && "$output" == *"CONFLICT context:policy"* ]] || fail "invalid context passed: $output"
+  [[ "$output" != *"forbidden-private-value"* ]] || fail "private TOML leaked"
+done
+printf '[aws]\ndefault_profile="acme"\nwrite_profile="step-up"\n[ai]\nallow_code_egress=true\n' >"$tmp/restricted.toml"
+run "$d"
+[[ "$status" -eq 0 ]] || fail "legacy policy failed: $output"
+printf '\n[cloud]\naws_profile="different"\n' >>"$tmp/restricted.toml"
+run "$d"
+[[ "$status" -eq 1 ]] || fail "contradictory legacy and canonical policy passed"
+git -C "$d" config llmctx.contextProfile relative.toml
+run "$d"
+[[ "$status" -eq 1 && "$output" == *"existing absolute TOML path"* ]] || fail "relative policy binding passed: $output"
+
+# An explicit target must not borrow another repository's context binding
+# from Git variables inherited by a hook or shell.
+d="$(repo explicit-context '{"schemaVersion":1,"environment":{"target":"other","cloud":{"awsProfile":"acme-admin"}}}')"
+other="$(repo foreign-context '{"schemaVersion":1,"environment":{"target":"other"}}')"
+printf '[cloud]\naws_profile="acme-admin"\n' >"$tmp/foreign.toml"
+git -C "$other" config llmctx.contextProfile "$tmp/foreign.toml"
+printf '[profile acme-admin]\n' >>"$tmp/home/.aws/config"
+set +e
+output="$(CI='' HOME="$tmp/home" GIT_DIR="$other/.git" GIT_WORK_TREE="$other" "$CHECK" check "$d" 2>&1)"
+status=$?
+set -e
+[[ "$status" -eq 1 && "$output" == *"CONFLICT aws:ambient-policy"* ]] || fail "inherited Git pointers changed explicit-target context: $output"
 
 echo "env-check tests: passed"
