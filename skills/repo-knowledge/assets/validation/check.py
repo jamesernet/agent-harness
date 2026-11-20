@@ -18,7 +18,6 @@ import re
 
 sys.dont_write_bytecode = True
 KIT = Path(__file__).resolve().parent
-DEFINITION = re.compile(r"^\s{0,3}\[\^([^\]\s]+)\]:")
 SOURCE_ID = re.compile(r"[^\[\]\s]+")
 
 
@@ -38,6 +37,10 @@ def upstream_module():
 
 
 def profile(checker, upstream, pin):
+    from markdown_it import MarkdownIt
+    from mdit_py_plugins.footnote import footnote_plugin
+
+    markdown = MarkdownIt("commonmark").use(footnote_plugin, inline=False, move_to_end=False, always_match_refs=True)
     bundle = checker.bundle
     documents = []
     seen_paths = {}
@@ -83,12 +86,13 @@ def profile(checker, upstream, pin):
         if meta.get("status") not in upstream.STATUSES:
             checker.error(path, 1, "R006", "library profile requires explicit status: draft, stable, or deprecated")
         sources = upstream.as_list(meta.get("sources"))
+        tokens = markdown.parse(body)
         if not sources:
-            headings = {match.group(2).strip().casefold() for _, line in upstream.prose_lines(body) if (match := upstream.HEADING_RE.match(line))}
+            headings = {tokens[index + 1].content.strip().casefold() for index, token in enumerate(tokens) if token.type == "heading_open"}
             if not (meta.get("status") == "draft" and meta.get("x-repo-knowledge-gap") is True and {"questions", "evidence needed"} <= headings):
                 checker.error(path, 1, "R007", "sources are required; a source-free gap needs draft status, x-repo-knowledge-gap: true, and Questions / Evidence needed headings")
         source_ids = check_sources(checker, path, sources)
-        check_citations(checker, upstream, path, body, first_line, source_ids, bool(sources))
+        check_citations(checker, path, tokens, first_line, source_ids, bool(sources))
 
     reachable = set()
     pending = [bundle / "index.md"]
@@ -150,24 +154,38 @@ def check_sources(checker, path, sources):
     return source_ids
 
 
-def check_citations(checker, upstream, path, body, first_line, source_ids, requires_citation):
+def check_citations(checker, path, tokens, first_line, source_ids, requires_citation):
+    # Replace only the upstream regex footnote warning with parsed R011/R012
+    # checks. Literal examples and hidden markup are not source references.
+    relative = path.relative_to(checker.bundle).as_posix()
+    checker.findings[:] = [item for item in checker.findings if not (item.path == relative and item.code == "W108")]
     definitions = set()
     references = set()
-    for offset, line in upstream.prose_lines(body):
-        definition = DEFINITION.match(line)
-        if definition:
-            label = definition.group(1)
+    claim_references = set()
+    definition_depth = 0
+    for token in tokens:
+        if token.type == "footnote_reference_open":
+            label = token.meta["label"]
+            line = first_line + token.map[0] if token.map else None
             if label in definitions:
-                checker.error(path, first_line + offset, "R010", f"duplicate footnote definition: {label}")
+                checker.error(path, line, "R010", f"duplicate footnote definition: {label}")
             definitions.add(label)
             if label not in source_ids:
-                checker.error(path, first_line + offset, "R011", f"footnote definition has no matching sources id: {label}")
+                checker.error(path, line, "R011", f"footnote definition has no matching sources id: {label}")
+            definition_depth += 1
+        elif token.type == "footnote_reference_close":
+            definition_depth -= 1
         else:
-            references.update(upstream.FOOTNOTE_RE.findall(line))
+            for child in token.children or ():
+                if child.type == "footnote_ref":
+                    label = child.meta["label"]
+                    references.add(label)
+                    if not definition_depth:
+                        claim_references.add(label)
     for label in sorted(references - definitions):
         checker.error(path, None, "R012", f"citation has no Markdown footnote definition: {label}")
-    if requires_citation and not references & source_ids:
-        checker.error(path, None, "R016", "a concept with sources must cite at least one source in its prose; metadata and footnote definitions alone are not claim attribution")
+    if requires_citation and not claim_references & source_ids:
+        checker.error(path, None, "R016", "a concept with sources must cite at least one source in rendered prose; metadata and footnote definitions alone are not claim attribution")
 
 
 def main():

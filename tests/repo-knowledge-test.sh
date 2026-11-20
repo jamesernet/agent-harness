@@ -6,7 +6,7 @@ KIT="$SRC/skills/repo-knowledge/assets/validation"
 
 # Prefer the pinned dependency in an existing environment, otherwise let uv
 # create an isolated one. CI installs uv; no global Python install is changed.
-if python3 -c 'from importlib.metadata import version; assert version("PyYAML") == "6.0.3"; assert version("markdown-it-py") == "3.0.0"; assert version("mdurl") == "0.1.2"' >/dev/null 2>&1; then
+if python3 -c 'from importlib.metadata import version; assert version("PyYAML") == "6.0.3"; assert version("markdown-it-py") == "3.0.0"; assert version("mdurl") == "0.1.2"; assert version("mdit-py-plugins") == "0.4.2"' >/dev/null 2>&1; then
   PYTHON=(python3)
 elif command -v uv >/dev/null 2>&1; then
   PYTHON=(uv run --no-project --with-requirements "$KIT/requirements.txt" python3)
@@ -126,6 +126,59 @@ class KnowledgeChecks(unittest.TestCase):
             with self.subTest(body=body):
                 self.write(body=body)
                 self.assertIn("R016", self.codes())
+
+    def test_non_rendered_markup_cannot_supply_claim_citations(self):
+        examples = (
+            "<!-- [^contract] -->",
+            "<!--\n[^contract]\n-->",
+            r"\[^contract]",
+            "![^contract](https://example.com/image.png)",
+            '[Policy](https://example.com "[^contract]")',
+            "````\n```\n[^contract]\n```\n````",
+            "<pre>\n[^contract]\n</pre>",
+        )
+        for example in examples:
+            with self.subTest(example=example):
+                self.write(body="# Request\n\nUnsupported assertion.\n\n" + example + "\n\n[^contract]: Request contract.\n")
+                self.assertIn("R016", self.codes())
+
+    def test_hidden_definitions_do_not_resolve_rendered_citations(self):
+        for definition in ("<!--\n[^contract]: Contract.\n-->", "<pre>\n[^contract]: Contract.\n</pre>", "```md\n[^contract]: Contract.\n```", r"\[^contract]: Contract."):
+            with self.subTest(definition=definition):
+                self.write(body="# Request\n\nA request records intent.[^contract]\n\n" + definition + "\n")
+                self.assertIn("R012", self.codes())
+
+    def test_rendered_citations_allow_blocks_and_literal_examples(self):
+        bodies = (
+            "> Claim.[^contract]\n>\n> [^contract]: Contract.\n",
+            "- Claim.[^contract]\n\n  [^contract]: Contract.\n",
+        )
+        literals = (
+            "<!-- [^unlisted] -->",
+            r"\[^unlisted]",
+            "![^unlisted](https://example.com/image.png)",
+            '[Policy](https://example.com "[^unlisted]")',
+            "````\n```\n[^unlisted]\n```\n````",
+        )
+        for body in bodies + tuple(BODY + "\n" + literal + "\n" for literal in literals):
+            with self.subTest(body=body):
+                self.write(body=body)
+                self.run_check()
+
+    def test_unknown_rendered_footnotes_still_fail(self):
+        self.write(body=BODY + "\nAnother claim.[^unknown]\n\n[^unknown]: Unknown source.\n")
+        self.assertIn("R011", self.codes())
+        self.write(body=BODY + "\nAnother claim.[^unknown]\n")
+        self.assertIn("R012", self.codes())
+
+    def test_gap_headings_must_be_rendered(self):
+        meta = copy.deepcopy(META)
+        del meta["sources"]
+        meta["x-repo-knowledge-gap"] = True
+        for hidden in ("<!--\n## Questions\n## Evidence needed\n-->", "<pre>\n## Questions\n## Evidence needed\n</pre>", "````\n```\n## Questions\n## Evidence needed\n```\n````"):
+            with self.subTest(hidden=hidden):
+                self.write(meta, "# Gap\n\n" + hidden + "\n")
+                self.assertIn("R007", self.codes())
 
     def test_one_cited_source_can_coexist_with_additional_background_sources(self):
         meta = copy.deepcopy(META)

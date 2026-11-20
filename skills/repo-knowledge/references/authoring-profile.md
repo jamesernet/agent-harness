@@ -16,8 +16,10 @@ OKF does not define a closed type taxonomy. Copy and fill the
 Every source entry needs a non-blank string `resource` (not `uri`) and a stable
 string `id` without whitespace or brackets. Attribute claims with Markdown
 footnotes keyed to those IDs, including the definitions needed for ordinary
-Markdown rendering. A concept with sources must cite at least one in its prose;
-metadata or footnote definitions alone do not meet this profile. Additional
+Markdown rendering. A concept with sources must cite at least one in rendered
+prose; metadata or footnote definitions alone do not meet this profile. Citations
+inside comments, escaped text, image alt text, link titles and code examples do
+not count. Gap section headings must also be actual Markdown headings. Additional
 background sources may remain uncited. The checker cannot establish that every
 claim is supported. Related-concept links convey relationships through their
 surrounding prose. Never copy long passages or standards text into the library.
@@ -72,7 +74,9 @@ its meaning. Supported draft knowledge still cites its evidence normally.
 
 The checker runs the pinned upstream checks in strict mode and adds this
 profile, index target-path/coverage checks, source-entry and citation checks, and
-case-insensitive path-collision checks. Staleness is informational. It does not contact source
+case-insensitive path-collision checks. Local footnote checks use parsed Markdown
+instead of the upstream regex-based W108 warning; other upstream warnings remain
+fatal. Staleness is informational. It does not contact source
 websites, prove factual correctness, check deployed systems, grant access, or
 create human review. URL fragments are not checked against heading anchors.
 Review source availability, anchor targets and applicability separately.
