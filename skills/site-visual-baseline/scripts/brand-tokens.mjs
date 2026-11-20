@@ -195,7 +195,14 @@ async function inspectDOM(page) {
     const sheets = [...document.querySelectorAll('link[rel~="stylesheet"]')].map(s => s.href);
     let cssBytesInBrowser = 0, corsBlockedSheets = 0;
     for (const sheet of document.styleSheets) { try { cssBytesInBrowser += new TextEncoder().encode([...sheet.cssRules].map(r => r.cssText).join('\n')).length; } catch { corsBlockedSheets++; } }
-    const unconfirmedTextStyles = targets.filter(el => intersecting(el) && !visible(el)).map(el => {
+    // Boxless elements (for example display:contents) can still lay out
+    // direct text. Preserve those CSS facts without asserting paint exposure.
+    const hasViewportTextRange = el => [...el.childNodes].some(node => {
+      if (node.nodeType !== Node.TEXT_NODE || !node.textContent.trim()) return false;
+      const range = document.createRange(); range.selectNodeContents(node);
+      return [...range.getClientRects()].some(r => r.width > 0 && r.height > 0 && r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight);
+    });
+    const unconfirmedTextStyles = targets.filter(el => !visible(el) && paintVisible(el) && style(el).visibility === 'visible' && (intersecting(el) || hasViewportTextRange(el))).map(el => {
       const s = style(el), text = [...el.childNodes].filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join('').trim();
       return { cssFamily: s.fontFamily, color: s.color, weight: Number(s.fontWeight), textChars: text.length, visibility: 'unconfirmed' };
     }).filter(sample => sample.textChars);

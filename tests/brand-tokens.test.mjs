@@ -41,6 +41,8 @@ before(async () => {
       '/pointer-text': '<style>@font-face{font-family:ProbeBrand;src:url(/font.ttf)}body{background:white;min-height:100vh}p{font-family:ProbeBrand;color:#ff00ff;font-size:32px;pointer-events:none}</style><p>Visible identity</p>',
       '/fixed-escapes': '<style>@font-face{font-family:ProbeBrand;src:url(/font.ttf)}body{margin:0;background:white;min-height:100vh}p{font-family:ProbeBrand;color:#ff00ff;font-size:32px;position:fixed;left:0;top:0}</style><div style="width:0;height:0;overflow:hidden"><p>Visible fixed identity</p></div>',
       '/hidden-pseudo': '<style>@font-face{font-family:ProbeBrand;src:url(/font.ttf)}body{background:white;min-height:100vh}p{font-family:ProbeBrand;color:#ff00ff;font-size:32px}p::before{content:"";position:fixed;inset:0;background:white;visibility:hidden}</style><p>Visible identity</p>',
+      '/boxless-copy': '<style>@font-face{font-family:ProbeBrand;src:url(/font.ttf)}body{background:white}p{font-family:ProbeBrand;color:#ff00ff;font-size:32px;display:contents}</style><p>Visible brand identity</p>',
+      '/zero-box-copy': '<style>@font-face{font-family:ProbeBrand;src:url(/font.ttf)}body{background:white}p{font-family:ProbeBrand;color:#ff00ff;font-size:32px;width:0;height:0;overflow:visible;white-space:nowrap}</style><p>Visible brand identity</p>',
       '/uncertain-opacity': '<style>@font-face{font-family:ProbeBrand;src:url(/font.ttf)}body{background:white;min-height:100vh}p{font-family:ProbeBrand;color:#ff00ff;font-size:32px;opacity:.8}</style><p>Unconfirmed identity</p>',
       '/pseudo-covered-copy': '<style>@font-face{font-family:HiddenBrand;src:url(/font.ttf)}body{margin:0;background:white;min-height:100vh}main{position:fixed;inset:0;color:#ff00ff;font-family:HiddenBrand}main::before{content:"";position:fixed;inset:0;background:white}</style><main>Opaque pseudo-element hides this identity</main>',
       '/covered-theme': '<style>html,body{margin:0;background:white;color:black;min-height:100vh}main{position:fixed;inset:0;background:white}:root.dark main{background:black}main::before{content:"";position:fixed;inset:0;background:white}</style><main>Background changes behind an opaque pseudo-element</main>',
@@ -223,4 +225,14 @@ test('conservative native visibility retains unconfirmed styles without confiden
   assert.ok(!r.typography.some(t => t.cssFamily === 'ProbeBrand'));
   assert.ok(r.warnings.some(w => w.includes('unconfirmed native visibility')));
   assert.equal(r.source.coverage.visibilityTracking.supported, true);
+});
+
+test('viewport text ranges without native element boxes retain unconfirmed styles', async () => {
+  for (const path of ['/boxless-copy', '/zero-box-copy']) {
+    const r = await extract(`${base}${path}`, { browser });
+    assert.ok(r.colors.some(c => c.hex === '#FF00FF' && c.evidence.paintedArea > 0), path);
+    assert.ok(r.unconfirmedTextStyles.some(t => t.cssFamily.includes('ProbeBrand') && t.textChars > 0), path);
+    assert.ok(!r.typography.some(t => t.cssFamily === 'ProbeBrand'), path);
+    assert.ok(r.warnings.some(w => w.includes('unconfirmed native visibility')), path);
+  }
 });

@@ -53,7 +53,8 @@ in the user cache. Dependencies and browser binaries stay outside the skill. Run
 JSON plus four viewport screenshots. Read its coverage and warnings, compare
 sampled visible background layers with rendered pixels, and check font glyph coverage before
 reusing a subset. Text attribution uses conservative native element visibility and intersection
-bounds; unconfirmed styles are retained separately. Element visibility does
+bounds; unconfirmed styles, including text ranges without an element box, are
+retained separately. Element visibility does
 not prove each glyph or selected font file was painted. Accent is deliberately unassigned: rankings are measurements,
 not brand judgment. Confirm the accent against the rendered site and the brief.
 Theme detection covers media queries and common HTML class/data-theme switches;
