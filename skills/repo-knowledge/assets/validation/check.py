@@ -87,6 +87,7 @@ def profile(checker, upstream, pin):
             checker.error(path, 1, "R006", "library profile requires explicit status: draft, stable, or deprecated")
         sources = upstream.as_list(meta.get("sources"))
         tokens = markdown.parse(body)
+        check_raw_html(checker, path, tokens, first_line)
         if not sources:
             headings = {tokens[index + 1].content.strip().casefold() for index, token in enumerate(tokens) if token.type == "heading_open"}
             if not (meta.get("status") == "draft" and meta.get("x-repo-knowledge-gap") is True and {"questions", "evidence needed"} <= headings):
@@ -110,11 +111,22 @@ def profile(checker, upstream, pin):
             checker.error(path, None, "R013", f"not listed in its immediate parent index: {parent_index.relative_to(bundle).as_posix()}")
 
 
+def check_raw_html(checker, path, tokens, first_line):
+    for block in tokens:
+        for token in (block, *(block.children or ())):
+            if token.type in ("html_block", "html_inline") and re.sub(r"<!--.*?-->", "", token.content, flags=re.DOTALL).strip():
+                line = first_line + block.map[0] if block.map else None
+                checker.error(path, line, "R017", "raw HTML is unsupported by this profile except complete comments; use Markdown or fenced code examples")
+                return
+
+
 def index_targets(checker, path, body, first_line):
     from markdown_it import MarkdownIt
 
+    tokens = MarkdownIt("commonmark").parse(body)
+    check_raw_html(checker, path, tokens, first_line)
     targets = set()
-    for block in MarkdownIt("commonmark").parse(body):
+    for block in tokens:
         for token in block.children or ():
             if token.type != "link_open":
                 continue

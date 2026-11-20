@@ -180,6 +180,33 @@ class KnowledgeChecks(unittest.TestCase):
                 self.write(meta, "# Gap\n\n" + hidden + "\n")
                 self.assertIn("R007", self.codes())
 
+    def test_raw_html_cannot_supply_claim_citations(self):
+        for opening, closing in (("<script>", "</script>"), ("<style>", "</style>"), ("<template>", "</template>"), ("<span hidden>", "</span>"), ('<span style="display:none">', "</span>")):
+            with self.subTest(opening=opening):
+                self.write(body="# Request\n\nUnsupported. " + opening + "[^contract]" + closing + "\n\n[^contract]: Contract.\n")
+                self.assertIn("R017", self.codes())
+        self.write(body=BODY + "\n<br>\n")
+        self.assertIn("R017", self.codes())
+
+    def test_raw_html_cannot_supply_index_navigation(self):
+        for opening, closing in (("<script>", "</script>"), ("<span hidden>", "</span>"), ('<span style="display:none">', "</span>")):
+            with self.subTest(opening=opening):
+                (self.bundle / "terms/index.md").write_text("# Terms\n\nSee " + opening + "[Request](request.md)" + closing + "\n")
+                self.assertIn("R017", self.codes())
+
+    def test_raw_html_cannot_wrap_gap_headings(self):
+        meta = copy.deepcopy(META)
+        del meta["sources"]
+        meta["x-repo-knowledge-gap"] = True
+        self.write(meta, "# Gap\n\n<span hidden>\n\n## Questions\n\n- What is unknown?\n\n## Evidence needed\n\n- A policy.\n\n</span>\n")
+        self.assertIn("R017", self.codes())
+
+    def test_html_examples_comments_and_autolinks_remain_valid_markdown(self):
+        for example in ('`<span hidden>[^unlisted]</span>`', '```html\n<span hidden>[^unlisted]</span>\n```', '<!-- <script>[^unlisted]</script> -->', '<https://example.com/policy>'):
+            with self.subTest(example=example):
+                self.write(body=BODY + "\n" + example + "\n")
+                self.run_check()
+
     def test_one_cited_source_can_coexist_with_additional_background_sources(self):
         meta = copy.deepcopy(META)
         meta["sources"].append({"id": "background", "resource": "https://example.com/background"})

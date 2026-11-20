@@ -13,6 +13,12 @@ this profile. Use descriptive types such as Concept, Reference or Playbook;
 OKF does not define a closed type taxonomy. Copy and fill the
 [concept template](../assets/concept-template.md).
 
+Concepts and indexes use Markdown content. Raw HTML elements are unsupported by
+this portable profile because visibility depends on the renderer; this includes
+styling containers, scripts and formatting tags such as `<br>`. HTML examples
+belong in fenced code blocks or inline code. Complete HTML comments are allowed,
+but cannot supply citations, gap headings or index navigation.
+
 Every source entry needs a non-blank string `resource` (not `uri`) and a stable
 string `id` without whitespace or brackets. Attribute claims with Markdown
 footnotes keyed to those IDs, including the definitions needed for ordinary
