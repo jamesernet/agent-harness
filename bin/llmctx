@@ -21,6 +21,7 @@ usage:
   llmctx repo diff [repo] [--json]
   llmctx env check [repo]
   llmctx env explain [repo]
+  llmctx env session [directory]
   llmctx publish sync [--check]
 
 `profile` is a REPOSITORY policy (personal|client). A work `context` is an
@@ -97,7 +98,7 @@ case "$command_name" in
     ;;
   env)
     case "${2:-}" in
-      check | explain) ;;
+      check | explain | session) ;;
       *)
         usage >&2
         exit 2
@@ -105,6 +106,7 @@ case "$command_name" in
     esac
     sub="$2"
     shift 2
+    if [[ "$sub" == session ]]; then exec "$SCRIPT_DIR/env-session-check.sh" "$@"; fi
     exec "$SCRIPT_DIR/env-check.sh" "$sub" "$@"
     ;;
   repo)
