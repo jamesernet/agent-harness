@@ -55,12 +55,21 @@ session per worktree.
    not a claim that it is met. Where a criterion cannot be verified as stated,
    say so rather than reinterpreting it into something that passes. Unmet or
    unverifiable criteria go on the ticket, not into the commit message. Then
-   use `/code-review` to review the work, and commit to the branch. On
+   use `/code-review`, or an available equivalent, to review the work, and commit
+   to the branch. If no review facility is available, record the coverage gap;
+   do not install one or claim a clean review. Complete the permitted local work
+   and, when publication was requested and the repository permits unreviewed
+   PRs, publish a draft or clearly blocked PR with the gap stated. A missing
+   reviewer prevents automatic merge, not preparation of a reviewable result.
+   On
    completion or when stopping mid-flight, write a handoff per
    [handoff](../handoff/) so any agent — or a human — can resume.
 
 6. **When you are asked to publish the work** — and not before, because
-   nothing pushes or opens a pull request without being asked — what happens
+   nothing pushes or opens a pull request without being asked — honor approval
+   already given in this session; do not ask again for the same actions and
+   targets. Activation and deployment remain separate unless also requested.
+   What happens
    next is the repository's call, not yours. Resolve it:
    `bin/llmctx explain mergePolicy` (agent-harness; elsewhere read
    `mergePolicy` in `.llmctx.json`, defaulting to `hold`).
@@ -70,9 +79,11 @@ session per worktree.
    - **`review-and-merge`** — dispatch a **fresh** reviewer, never this
      session's own context, briefed to falsify the claims the PR body makes
      (see [the agents README](../../agents/README.md) on sizing that brief).
-     Merge only on a clean verdict, and only after CI is green on the merge
-     result: branch protection usually requires the branch to be up to date,
-     so update it first. A finding goes back through fix and re-review, never
+     Update a behind branch before dispatching that reviewer. Merge only on a
+     clean verdict and green required CI for the same current head. If any
+     commit or merge-forward changes that head afterwards, the verdict is
+     stale: obtain a fresh independent review and CI for the new head before
+     merging. A finding goes back through fix and re-review, never
      a quiet patch. Then clean up the worktree and branch by the global
      guidelines' §5 rules. If `gh pr merge` is refused by a permission rule,
      say so and fall back to `hold` out loud — do not treat the refusal as a
