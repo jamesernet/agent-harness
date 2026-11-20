@@ -199,7 +199,8 @@
       "push",
       "write_handoff",
       "report_status",
-      "report_untracked_work"
+      "report_untracked_work",
+      "request_handoff_context"
     ],
     "expected_claims": {
       "commit": "verified",
