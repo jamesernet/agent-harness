@@ -65,9 +65,12 @@ concept and nested index must be reachable from the root through index links;
 Each concept is listed by its immediate directory index, and each nested index
 is listed by its parent directory index. Ordinary concept cross-links do not
 substitute for discoverable index coverage.
-Prefer ordinary inline Markdown links in indexes. Navigation checks use a pinned
-CommonMark parser: quoted and multiline titles and reference-style links work;
-code examples, images and HTML comments do not provide navigation.
+Prefer ordinary inline Markdown links in indexes. Each needs a nonblank printable
+text label; comment-only, whitespace-only and image-only labels do not provide
+navigation. Emphasis and inline code are supported in text labels. Navigation
+checks use a pinned CommonMark parser: quoted and multiline titles and
+reference-style links work; code examples, standalone images and HTML comments
+do not provide navigation.
 
 A source-free placeholder is allowed only with `status: draft`,
 `x-repo-knowledge-gap: true`, and Questions / Evidence needed headings. Use the

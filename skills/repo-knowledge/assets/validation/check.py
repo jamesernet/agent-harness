@@ -127,11 +127,20 @@ def index_targets(checker, path, body, first_line):
     check_raw_html(checker, path, tokens, first_line)
     targets = set()
     for block in tokens:
-        for token in block.children or ():
+        for position, token in enumerate(block.children or ()):
             if token.type != "link_open":
                 continue
             target = token.attrGet("href")
             line = first_line + block.map[0] if block.map else None
+            label = []
+            for part in block.children[position + 1:]:
+                if part.type == "link_close":
+                    break
+                if part.type in ("text", "code_inline"):
+                    label.append(part.content)
+            if not any(character.isprintable() and not character.isspace() for character in "".join(label)):
+                checker.error(path, line, "R018", "index links need a nonblank printable text label; comments and image-only labels do not provide navigation")
+                continue
             if target.startswith("#"):
                 continue
             kind, resolved = checker.resolve_path(path, target, field=False)

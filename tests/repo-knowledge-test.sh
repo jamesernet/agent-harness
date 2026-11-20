@@ -227,6 +227,28 @@ class KnowledgeChecks(unittest.TestCase):
                 (self.bundle / "terms/index.md").write_text("# Terms\n\n- " + link + "\n")
                 self.run_check()
 
+    def test_index_links_need_nonblank_text_labels(self):
+        for link in ('[](request.md)', '[ ](request.md)', '[<!-- Request -->](request.md)', '[&nbsp;](request.md)', '[\u200b](request.md)', '[` `](request.md)', '[![Request](https://example.com/icon.png)](request.md)'):
+            with self.subTest(link=link):
+                (self.bundle / "terms/index.md").write_text("# Terms\n\n- " + link + "\n")
+                codes = self.codes()
+                self.assertIn("R018", codes)
+                self.assertIn("R008", codes)
+                self.assertIn("R013", codes)
+
+    def test_index_text_labels_allow_markdown_formatting(self):
+        for link in ('[**Request**](request.md)', '[`Request`](request.md)', '[<!-- note -->Request](request.md)', '[![Icon](https://example.com/icon.png) Request](request.md)', '[R&#101;quest](request.md)'):
+            with self.subTest(link=link):
+                (self.bundle / "terms/index.md").write_text("# Terms\n\n- " + link + "\n")
+                self.run_check()
+
+    def test_empty_root_labels_leave_areas_uncovered(self):
+        (self.bundle / "index.md").write_text('---\nokf_version: "0.3"\n---\n# Library\n\n- [<!-- Terms -->](terms/)\n')
+        codes = self.codes()
+        self.assertIn("R018", codes)
+        self.assertIn("R008", codes)
+        self.assertIn("R013", codes)
+
     def test_index_code_comments_and_images_do_not_supply_navigation(self):
         for example in ('`[Request](request.md)`', '```md\n[Request](request.md)\n```', '    [Request](request.md)', '<!-- [Request](request.md) -->', '![Request](request.md)'):
             with self.subTest(example=example):
