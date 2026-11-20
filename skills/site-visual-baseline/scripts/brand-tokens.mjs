@@ -126,7 +126,7 @@ async function pixels(png) {
 }
 
 async function inspectDOM(page) {
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
     const styleCache = new WeakMap();
     const style = el => {
       if (!styleCache.has(el)) styleCache.set(el, getComputedStyle(el));
@@ -139,45 +139,53 @@ async function inspectDOM(page) {
       }
       return true;
     };
+    const targets = [...document.querySelectorAll('html, body, body *')];
+    const visibility = new Map();
+    const visibilitySupported = 'isVisible' in IntersectionObserverEntry.prototype;
+    let visibilityTimedOut = false;
+    await new Promise(resolve => {
+      const finish = () => { observer.disconnect(); clearTimeout(timer); resolve(); };
+      const observer = new IntersectionObserver(entries => {
+        for (const entry of entries) visibility.set(entry.target, entry);
+        if (visibility.size === targets.length) finish();
+      }, { trackVisibility: visibilitySupported, delay: 100 });
+      const timer = setTimeout(() => { visibilityTimedOut = true; finish(); }, 2000);
+      for (const target of targets) observer.observe(target);
+      if (!targets.length) finish();
+    });
+    // Native intersections implement containing-block clipping, including
+    // fixed descendants which escape an ordinary overflow ancestor.
     const clipRect = (el, rect) => {
-      let left = Math.max(0, rect.left), top = Math.max(0, rect.top);
-      let right = Math.min(innerWidth, rect.right), bottom = Math.min(innerHeight, rect.bottom);
-      for (let parent = el.parentElement; parent; parent = parent.parentElement) {
-        const s = style(parent), r = parent.getBoundingClientRect();
-        if (s.overflowX !== 'visible') { left = Math.max(left, r.left + parent.clientLeft); right = Math.min(right, r.left + parent.clientLeft + parent.clientWidth); }
-        if (s.overflowY !== 'visible') { top = Math.max(top, r.top + parent.clientTop); bottom = Math.min(bottom, r.top + parent.clientTop + parent.clientHeight); }
-      }
-      return { left, top, right, bottom, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+      const intersection = visibility.get(el)?.intersectionRect;
+      if (!intersection) return { left: 0, top: 0, width: 0, height: 0 };
+      const left = Math.max(rect.left, intersection.left), top = Math.max(rect.top, intersection.top);
+      return { left, top, width: Math.max(0, Math.min(rect.right, intersection.right) - left), height: Math.max(0, Math.min(rect.bottom, intersection.bottom) - top) };
     };
     const transparent = value => /^(?:rgba\([^)]*,\s*0\)|[^()]+\([^)]*\/\s*0\)|transparent)$/.test(value);
-    const visible = el => { const s = style(el), r = clipRect(el, el.getBoundingClientRect()); return paintVisible(el) && s.visibility === 'visible' && r.width > 0 && r.height > 0; };
+    const intersecting = el => {
+      const r = visibility.get(el)?.intersectionRect;
+      return paintVisible(el) && style(el).visibility === 'visible' && r?.width > 0 && r?.height > 0;
+    };
+    const visible = el => intersecting(el) && visibility.get(el)?.isVisible === true;
     const pseudoCache = new WeakMap();
     const fixedPseudoCovers = (el, x, y) => {
       if (!pseudoCache.has(el)) pseudoCache.set(el, ['::before', '::after'].map(name => getComputedStyle(el, name)));
       return pseudoCache.get(el).some(s => {
-        if (s.content === 'none' || s.content === 'normal' || s.position !== 'fixed' || Number(s.opacity) === 0 || Number(s.zIndex) < 0) return false;
+        if (s.content === 'none' || s.content === 'normal' || s.display === 'none' || s.visibility !== 'visible' || s.position !== 'fixed' || Number(s.opacity) === 0 || Number(s.zIndex) < 0) return false;
         if (transparent(s.backgroundColor) && s.backgroundImage === 'none') return false;
         const left = parseFloat(s.left), top = parseFloat(s.top), width = parseFloat(s.width), height = parseFloat(s.height);
         return [left, top, width, height].every(Number.isFinite) && x >= left && x < left + width && y >= top && y < top + height;
       });
     };
     const exposedText = (el, node) => {
-      // A hit-tested text range is an exposure estimate, not per-glyph proof.
       const range = document.createRange(); range.selectNodeContents(node);
       for (const raw of range.getClientRects()) {
         const r = clipRect(el, raw);
         if (!r.width || !r.height) continue;
+        // Visibility tracking concerns the element as a whole. A fixed
+        // pseudo-element belonging to that element can still cover its text.
         for (const x of [.2, .5, .8]) for (const y of [.3, .7]) {
-          const px = r.left + x * r.width, py = r.top + y * r.height;
-          if (fixedPseudoCovers(el, px, py)) continue;
-          const stack = document.elementsFromPoint(px, py);
-          const index = stack.indexOf(el);
-          if (index < 0) continue;
-          const blocked = stack.slice(0, index).some(above => {
-            const s = style(above);
-            return paintVisible(above) && s.visibility === 'visible' && (fixedPseudoCovers(above, px, py) || !transparent(s.backgroundColor) || s.backgroundImage !== 'none' || /^(IMG|SVG|CANVAS|VIDEO)$/.test(above.tagName));
-          });
-          if (!blocked) return true;
+          if (!fixedPseudoCovers(el, r.left + x * r.width, r.top + y * r.height)) return true;
         }
       }
       return false;
@@ -187,7 +195,11 @@ async function inspectDOM(page) {
     const sheets = [...document.querySelectorAll('link[rel~="stylesheet"]')].map(s => s.href);
     let cssBytesInBrowser = 0, corsBlockedSheets = 0;
     for (const sheet of document.styleSheets) { try { cssBytesInBrowser += new TextEncoder().encode([...sheet.cssRules].map(r => r.cssText).join('\n')).length; } catch { corsBlockedSheets++; } }
-    const samples = [...document.querySelectorAll('html, body, body *')].filter(visible).map(el => {
+    const unconfirmedTextStyles = targets.filter(el => intersecting(el) && !visible(el)).map(el => {
+      const s = style(el), text = [...el.childNodes].filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join('').trim();
+      return { cssFamily: s.fontFamily, color: s.color, weight: Number(s.fontWeight), textChars: text.length, visibility: 'unconfirmed' };
+    }).filter(sample => sample.textChars);
+    const samples = targets.filter(visible).map(el => {
       const s = getComputedStyle(el), r = clipRect(el, el.getBoundingClientRect());
       const text = [...el.childNodes].filter(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim() && exposedText(el, n)).map(n => n.textContent).join('').trim();
       const w = Math.max(0, Math.min(innerWidth, r.right) - Math.max(0, r.left));
@@ -222,7 +234,7 @@ async function inspectDOM(page) {
           markupLength: el.outerHTML.length, foundVia: 'largest-node-in-header-home-link' });
       }
     }
-    return { styles, styleAttributes, visibleBackgrounds, sheets, samples, icons, manifests, candidates, cssBytesInBrowser, corsBlockedSheets, declaredColorScheme: getComputedStyle(document.documentElement).colorScheme };
+    return { visibilitySupported, visibilityTimedOut, visibilityObserved: visibility.size, visibilityTargets: targets.length, unconfirmedTextStyles, styles, styleAttributes, visibleBackgrounds, sheets, samples, icons, manifests, candidates, cssBytesInBrowser, corsBlockedSheets, declaredColorScheme: getComputedStyle(document.documentElement).colorScheme };
   });
 }
 
@@ -325,11 +337,11 @@ export async function extract(url, { out, browser: suppliedBrowser } = {}) {
     }
     const sorted = [...colors.values()].sort((a, b) => b.evidence.paintedArea - a.evidence.paintedArea);
     const background = dom.visibleBackgrounds[0] ? entry(dom.visibleBackgrounds[0].value) : null;
-    if (background) { background.role = 'background'; background.roleConfidence = 'measured'; }
+    if (background) { background.role = 'background'; background.roleConfidence = 'computed'; }
     for (const c of sorted) {
       c.provenance = [...new Set(c.provenance)];
-      if (!c.role && c.evidence.textChars) { c.role = 'foreground'; c.roleConfidence = 'measured'; }
-      else if (!c.role && c.evidence.boxArea) { c.role = 'surface'; c.roleConfidence = 'measured'; }
+      if (!c.role && c.evidence.textChars) { c.role = 'foreground'; c.roleConfidence = 'computed'; }
+      else if (!c.role && c.evidence.boxArea) { c.role = 'surface'; c.roleConfidence = 'computed'; }
     }
     for (const d of declaredColors) { const c = entry(d.normalized); c.evidence.cssOccurrences = (c.evidence.cssOccurrences || 0) + 1; c.provenance.push('declared-css'); }
     for (const c of colors.values()) c.provenance = [...new Set(c.provenance)];
@@ -355,7 +367,9 @@ export async function extract(url, { out, browser: suppliedBrowser } = {}) {
       if (files.some(f => f.subsetted)) warnings.push(`font ${face.cssFamily} has limited glyph coverage; check intended copy before reuse`);
       const record = { cssFamily: face.cssFamily, declaredWeightInCss: face.declaredWeightInCss, unicodeRange: face.unicodeRange,
         family: font?.family || null, familyRaw: font?.familyRaw || null, variable: font?.variable ?? null, weightAxis: font?.weightAxis || null,
-        usedWeights: [...new Set(samples.map(s => s.weight))], stack, files,
+        usedWeights: [...new Set([...samples.map(s => s.weight), ...dom.unconfirmedTextStyles.filter(s => families(s.cssFamily).includes(face.cssFamily)).map(s => s.weight)])],
+        confirmedWeights: [...new Set(samples.map(s => s.weight))],
+        unconfirmedWeights: [...new Set(dom.unconfirmedTextStyles.filter(s => families(s.cssFamily).includes(face.cssFamily)).map(s => s.weight))], stack, files,
         specimen: { fontSize: specimen.fontSize, lineHeight: specimen.lineHeight, letterSpacing: specimen.letterSpacing, weight: specimen.weight, sampleText: specimen.sampleText },
         provenance: ['computed-styles', 'declared-font-face', ...(font ? ['font-binary'] : [])] };
       if (!fontGroups.has(face.cssFamily)) fontGroups.set(face.cssFamily, record);
@@ -368,7 +382,8 @@ export async function extract(url, { out, browser: suppliedBrowser } = {}) {
     for (const group of typography) {
       group.familyCandidates = [...new Set(group.files.map(f => f.family))];
       if (group.familyCandidates.length > 1) group.family = null;
-      group.usageLimit = 'weights describe computed CSS family usage with layout/hit-test exposure estimates; glyph painting, font matching and selected subset per glyph are not proven';
+      group.visibility = 'native-element-confirmed';
+      group.usageLimit = 'native visibility confirms an element, not each text node or glyph; usedWeights is the union of confirmedWeights and unconfirmedWeights from computed CSS; glyph painting, font matching and selected subsets are not proven';
     }
     if (!typography.length) warnings.push('no used downloadable font faces resolved; system fonts or unreadable CSS may be in use');
     const excluded = new Set();
@@ -398,6 +413,8 @@ export async function extract(url, { out, browser: suppliedBrowser } = {}) {
         Object.assign(logo, metadata, { verified: true, bytes: data.bytes.length, final: data.final || null, originRecovered: logo.url !== logo.urlAsRendered });
       } catch (e) { logo.verified = false; warnings.push(`logo: ${e.message}`); }
     } else warnings.push('no non-icon logo found inside a header home link');
+    if (!dom.visibilitySupported || dom.visibilityTimedOut) warnings.push('native visibility tracking was unavailable or incomplete; text style confirmation is limited');
+    if (dom.unconfirmedTextStyles.length) warnings.push(`${dom.unconfirmedTextStyles.length} text styles have unconfirmed native visibility; retained separately without foreground/font attribution`);
     const computedKnown = Object.values(computedMeasurements).every(Boolean);
     const computedChanged = computedKnown && new Set(Object.values(computedMeasurements)).size > 1;
     const pixelsChanged = new Set(Object.values(measurements).map(values => values[0].value)).size > 1;
@@ -408,12 +425,14 @@ export async function extract(url, { out, browser: suppliedBrowser } = {}) {
       source: { requested: url, final, capturedAt: new Date().toISOString(), viewport: [VIEWPORT.width, VIEWPORT.height], coverage: {
         cssBytesStatic: allCSS.reduce((n, c) => n + c.bytes, 0), cssBytesInBrowser: dom.cssBytesInBrowser, corsBlockedSheets: dom.corsBlockedSheets,
         inlineStyleBlocks: dom.styles.length, inlineStyleAttributes: dom.styleAttributes.length, cssSources: allCSS.map(c => c.url), cssReadsAttempted: seenCSS.size, fontFilesParsed: fontCache.size,
-        textExposure: 'viewport bounds, ancestor clipping and sampled hit tests; partial text counts and complex masks/pseudo-element occlusion are not per-glyph paint proof',
+        visibilityTracking: { supported: dom.visibilitySupported, timedOut: dom.visibilityTimedOut, observedElements: dom.visibilityObserved, targetElements: dom.visibilityTargets, unconfirmedTextStyles: dom.unconfirmedTextStyles.length },
+        textExposure: 'conservative native element visibility and intersection bounds; unconfirmed styles retained separately; element visibility is not per-text-node/glyph paint proof',
         scope: 'top-level document; viewport pixels and computed text exposure estimates; readable static CSS including imports/attributes; no shadow DOM, frames or authenticated browser state' } },
       colors: [...colors.values()].sort((a, b) => b.evidence.paintedArea - a.evidence.paintedArea), declaredTokens: declared, declaredColors,
       background: { computed: background || null, renderedDominant: measurements.schemeLight[0], limitation: 'computed background uses a 32x20 visible-layer grid; rendered pixels can include alpha, gradients and images' },
       accent: { value: null, status: 'unassigned', candidates: [...colors.values()].map(c => ({ value: c.value, evidence: c.evidence })),
         rankings: Object.fromEntries(['paintedArea', 'cssOccurrences', 'textChars'].map(key => [key, [...colors.values()].filter(c => c.evidence[key]).sort((a, b) => b.evidence[key] - a.evidence[key]).slice(0, 12).map(c => c.value)])) },
+      unconfirmedTextStyles: dom.unconfirmedTextStyles,
       computedTypography: dom.samples.filter(s => s.textChars).map(s => ({ cssFamily: s.family, weight: s.weight, fontSize: s.fontSize, textChars: s.textChars })),
       typography, logo: { ...logo, excludedIconUrls: [...excluded], candidates: logos },
       themes: { variantDetected,
