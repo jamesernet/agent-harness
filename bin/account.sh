@@ -145,7 +145,7 @@ cmd_remove() {
     echo "error: '$LLMCTX_ACCOUNT_DEFAULT_NAME' cannot be unregistered" >&2
     exit 1
   }
-  git config --global --get-regexp "^${key}$" "^$name=" >/dev/null 2>&1 || {
+  git config --global --includes --get-regexp "^${key}$" "^$name=" >/dev/null 2>&1 || {
     echo "error: no account named '$name'" >&2
     exit 1
   }

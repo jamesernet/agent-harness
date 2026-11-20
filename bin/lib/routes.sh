@@ -65,8 +65,8 @@ LLMCTX_ROUTE_ACCOUNTS=""
 LLMCTX_ROUTES_LOADED=0
 
 llmctx_routes_load() {
-  LLMCTX_ROUTES="$(git config --global --get-all llmctx.accountRoute 2>/dev/null || true)"
-  LLMCTX_ROUTE_ACCOUNTS="$(git config --global --get-all llmctx.claudeAccount 2>/dev/null || true)"
+  LLMCTX_ROUTES="$(git config --global --includes --get-all llmctx.accountRoute 2>/dev/null || true)"
+  LLMCTX_ROUTE_ACCOUNTS="$(git config --global --includes --get-all llmctx.claudeAccount 2>/dev/null || true)"
   LLMCTX_ROUTES_LOADED=1
 }
 

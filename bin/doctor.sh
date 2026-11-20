@@ -302,10 +302,10 @@ skill_link_is_managed() {
 doctor_bundle_for_account() {
   local acct="$1" value=""
   if [[ -n "$acct" ]]; then
-    value="$(git config --global --get "llmctx.skillBundle.$acct" 2>/dev/null || true)"
+    value="$(git config --global --includes --get "llmctx.skillBundle.$acct" 2>/dev/null || true)"
   fi
   [[ -n "$value" ]] ||
-    value="$(git config --global --get llmctx.skillBundle 2>/dev/null || true)"
+    value="$(git config --global --includes --get llmctx.skillBundle 2>/dev/null || true)"
   [[ -n "$value" ]] || value=all
   printf '%s\n' "$value"
 }
@@ -399,7 +399,7 @@ if [[ "$hash_available" -eq 1 ]] && [[ -n "$accounts" ]] && build_skill_catalog;
   # narrowed one does, because the whole point of narrowing is that some skills
   # are deliberately absent — and "absent on purpose" must be distinguishable
   # from "install went wrong" without reading two files to find out.
-  active_bundle="$(git config --global --get llmctx.skillBundle 2>/dev/null || true)"
+  active_bundle="$(git config --global --includes --get llmctx.skillBundle 2>/dev/null || true)"
   [[ -n "$active_bundle" ]] || active_bundle=all
   # Per-account overrides belong in this line too, or an account narrowed on
   # purpose looks like the global one and its absences look like a bad install.
@@ -407,7 +407,7 @@ if [[ "$hash_available" -eq 1 ]] && [[ -n "$accounts" ]] && build_skill_catalog;
   unknown=""
   while IFS=$'\t' read -r account_name _; do
     [[ -n "$account_name" ]] || continue
-    account_bundle="$(git config --global --get "llmctx.skillBundle.$account_name" 2>/dev/null || true)"
+    account_bundle="$(git config --global --includes --get "llmctx.skillBundle.$account_name" 2>/dev/null || true)"
     [[ -n "$account_bundle" ]] || continue
     overrides="$overrides, $account_name='$account_bundle'"
     llmctx_bundle_is_known "$SRC/skills/bundles.conf" "$account_bundle" ||
@@ -517,8 +517,8 @@ check_account_hooks() { # <hooks dir> <check id> <settings file> <account name>
   # own, which the global key alone would couple), and a machine-wide script
   # should not have to be repeated per account.
   declared="$(
-    git config --global --get-all llmctx.accountHook 2>/dev/null || true
-    git config --global --get-all "llmctx.accountHook.$account" 2>/dev/null || true
+    git config --global --includes --get-all llmctx.accountHook 2>/dev/null || true
+    git config --global --includes --get-all "llmctx.accountHook.$account" 2>/dev/null || true
   )"
 
   is_managed_hook() { # <basename>
@@ -642,7 +642,7 @@ fi
 # Account routes feed hooks/account-guard.sh. A route naming an account that is
 # not registered makes the guard silent — it cannot judge what it cannot name —
 # so that is the state to report, not an empty route list.
-routes="$(git config --global --get-all llmctx.accountRoute 2>/dev/null || true)"
+routes="$(git config --global --includes --get-all llmctx.accountRoute 2>/dev/null || true)"
 if [[ -z "$routes" ]]; then
   add_check account-routes PASS "no account routes configured" ""
 elif [[ -n "$accounts_error" ]]; then

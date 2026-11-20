@@ -94,7 +94,7 @@ while IFS= read -r registered; do
     fi
   done
   if [ "$dup" -eq 0 ]; then REPOS+=("$registered"); fi
-done < <(git config --global --get-all llmctx.repo 2>/dev/null || true)
+done < <(git config --global --includes --get-all llmctx.repo 2>/dev/null || true)
 
 # An explicit list is exactly that: neither the built-ins nor the registry.
 if [ "$#" -gt 0 ]; then REPOS=("$@"); fi

@@ -187,7 +187,7 @@ llmctx_policy_resolve_irreversible() {
   elif [[ -f "$file" ]] && value="$(jq -r '.irreversiblePolicy // empty' "$file" 2>/dev/null)" && [[ -n "$value" ]]; then
     LLMCTX_IRREVERSIBLE_POLICY="$value"
     LLMCTX_IRREVERSIBLE_POLICY_SOURCE="repo-policy"
-  elif value="$(git config --global --get llmctx.irreversiblePolicy 2>/dev/null)"; then
+  elif value="$(git config --global --includes --get llmctx.irreversiblePolicy 2>/dev/null)"; then
     LLMCTX_IRREVERSIBLE_POLICY="$value"
     LLMCTX_IRREVERSIBLE_POLICY_SOURCE="git-global"
   else
@@ -225,7 +225,7 @@ llmctx_policy_resolve_merge() {
   elif [[ -f "$file" ]] && value="$(jq -r '.mergePolicy // empty' "$file" 2>/dev/null)" && [[ -n "$value" ]]; then
     LLMCTX_MERGE_POLICY="$value"
     LLMCTX_MERGE_POLICY_SOURCE="repo-policy"
-  elif value="$(git config --global --get llmctx.mergePolicy 2>/dev/null)"; then
+  elif value="$(git config --global --includes --get llmctx.mergePolicy 2>/dev/null)"; then
     LLMCTX_MERGE_POLICY="$value"
     LLMCTX_MERGE_POLICY_SOURCE="git-global"
   else
@@ -265,7 +265,7 @@ llmctx_policy_resolve() {
   elif [[ -f "$file" ]] && value="$(jq -r '.branchPolicy // empty' "$file")" && [[ -n "$value" ]]; then
     LLMCTX_BRANCH_POLICY="$value"
     LLMCTX_BRANCH_POLICY_SOURCE="repo-policy"
-  elif value="$(git config --global --get llmctx.branchPolicy 2>/dev/null)"; then
+  elif value="$(git config --global --includes --get llmctx.branchPolicy 2>/dev/null)"; then
     LLMCTX_BRANCH_POLICY="$value"
     LLMCTX_BRANCH_POLICY_SOURCE="git-global"
   else
@@ -286,7 +286,7 @@ llmctx_policy_resolve() {
   elif [[ -f "$file" ]] && value="$(jq -r '.protectedBranches // [] | join(" ")' "$file")" && [[ -n "$value" ]]; then
     LLMCTX_PROTECTED_BRANCHES="$value"
     LLMCTX_PROTECTED_BRANCHES_SOURCE="repo-policy"
-  elif value="$(git config --global --get llmctx.protectedBranches 2>/dev/null)"; then
+  elif value="$(git config --global --includes --get llmctx.protectedBranches 2>/dev/null)"; then
     LLMCTX_PROTECTED_BRANCHES="$value"
     LLMCTX_PROTECTED_BRANCHES_SOURCE="git-global"
   else
