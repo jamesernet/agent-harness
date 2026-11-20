@@ -152,6 +152,14 @@ Default homes and every registered provider home are covered by a normal install
 
 Generated global adapters and portable managed settings are never edited as their source. Change files here, rebuild with `llmctx install`, and verify with `llmctx doctor`. Settings that identify private tools or grant personal permissions belong in a private machine configuration; the merge preserves keys this repository does not declare.
 
+The essential branch/worktree rules remain always loaded. Detailed Git
+procedures live in [global/git-workflow.md](global/git-workflow.md); each adapter
+names its path in the same source/release tree and requires reading it before
+Git state changes or cleanup. The reference is not imported or concatenated
+into every session. Adapter installation and drift checks refuse a missing,
+empty, or unreadable reference. It is source content, with no additional file
+installed over a user-owned destination.
+
 Those `@import` lines are paths, not content, and Claude Code says nothing when one does not resolve — the session simply runs without those rules. `llmctx doctor` checks that every direct import exists and names the one that does not.
 
 ## Environments
