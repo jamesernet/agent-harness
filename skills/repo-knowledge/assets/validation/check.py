@@ -19,6 +19,7 @@ import re
 sys.dont_write_bytecode = True
 KIT = Path(__file__).resolve().parent
 DEFINITION = re.compile(r"^\s{0,3}\[\^([^\]\s]+)\]:")
+SOURCE_ID = re.compile(r"[^\[\]\s]+")
 
 
 def upstream_module():
@@ -65,7 +66,7 @@ def profile(checker, upstream, pin):
             continue
         if path.name == "index.md":
             indexes.add(path)
-            edges[path] = index_targets(checker, upstream, path, body if state == "ok" else text)
+            edges[path] = index_targets(checker, path, body if state == "ok" else text, first_line if state == "ok" else 1)
             continue
         concepts.add(path)
         if state != "ok":
@@ -86,7 +87,8 @@ def profile(checker, upstream, pin):
             headings = {match.group(2).strip().casefold() for _, line in upstream.prose_lines(body) if (match := upstream.HEADING_RE.match(line))}
             if not (meta.get("status") == "draft" and meta.get("x-repo-knowledge-gap") is True and {"questions", "evidence needed"} <= headings):
                 checker.error(path, 1, "R007", "sources are required; a source-free gap needs draft status, x-repo-knowledge-gap: true, and Questions / Evidence needed headings")
-        check_citations(checker, upstream, path, body, first_line, sources)
+        source_ids = check_sources(checker, path, sources)
+        check_citations(checker, upstream, path, body, first_line, source_ids, bool(sources))
 
     reachable = set()
     pending = [bundle / "index.md"]
@@ -104,29 +106,51 @@ def profile(checker, upstream, pin):
             checker.error(path, None, "R013", f"not listed in its immediate parent index: {parent_index.relative_to(bundle).as_posix()}")
 
 
-def index_targets(checker, upstream, path, body):
+def index_targets(checker, path, body, first_line):
+    from markdown_it import MarkdownIt
+
     targets = set()
-    for offset, line in upstream.prose_lines(body):
-        for target in upstream.LINK_RE.findall(line):
+    for block in MarkdownIt("commonmark").parse(body):
+        for token in block.children or ():
+            if token.type != "link_open":
+                continue
+            target = token.attrGet("href")
+            line = first_line + block.map[0] if block.map else None
             if target.startswith("#"):
                 continue
             kind, resolved = checker.resolve_path(path, target, field=False)
             if kind == "external":
                 continue
             if kind == "missing" or resolved is None:
-                checker.error(path, offset + 1, "R009", f"index link target does not exist: {target}")
+                checker.error(path, line, "R009", f"index link target does not exist: {target}")
                 continue
             if resolved.is_dir():
                 resolved = resolved / "index.md"
             if not resolved.is_file() or not checker.inside(resolved.resolve()):
-                checker.error(path, offset + 1, "R009", f"index link must resolve to a file inside the bundle: {target}")
+                checker.error(path, line, "R009", f"index link must resolve to a file inside the bundle: {target}")
                 continue
             targets.add(resolved)
     return targets
 
 
-def check_citations(checker, upstream, path, body, first_line, sources):
-    source_ids = {str(entry["id"]) for entry in sources if isinstance(entry, dict) and entry.get("id") is not None}
+def check_sources(checker, path, sources):
+    source_ids = set()
+    for index, entry in enumerate(sources):
+        if not isinstance(entry, dict):
+            checker.error(path, 1, "R014", f"sources[{index}] must be a mapping with a non-blank string resource")
+            continue
+        resource = entry.get("resource")
+        if not isinstance(resource, str) or not resource.strip():
+            checker.error(path, 1, "R014", f"sources[{index}].resource must be a non-blank string")
+        source_id = entry.get("id")
+        if not isinstance(source_id, str) or not SOURCE_ID.fullmatch(source_id):
+            checker.error(path, 1, "R015", f"sources[{index}].id must be a non-empty string without whitespace or brackets")
+        else:
+            source_ids.add(source_id)
+    return source_ids
+
+
+def check_citations(checker, upstream, path, body, first_line, source_ids, requires_citation):
     definitions = set()
     references = set()
     for offset, line in upstream.prose_lines(body):
@@ -142,6 +166,8 @@ def check_citations(checker, upstream, path, body, first_line, sources):
             references.update(upstream.FOOTNOTE_RE.findall(line))
     for label in sorted(references - definitions):
         checker.error(path, None, "R012", f"citation has no Markdown footnote definition: {label}")
+    if requires_citation and not references & source_ids:
+        checker.error(path, None, "R016", "a concept with sources must cite at least one source in its prose; metadata and footnote definitions alone are not claim attribution")
 
 
 def main():

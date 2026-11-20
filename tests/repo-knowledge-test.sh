@@ -6,20 +6,21 @@ KIT="$SRC/skills/repo-knowledge/assets/validation"
 
 # Prefer the pinned dependency in an existing environment, otherwise let uv
 # create an isolated one. CI installs uv; no global Python install is changed.
-if python3 -c 'import yaml; assert yaml.__version__ == "6.0.3"' >/dev/null 2>&1; then
+if python3 -c 'from importlib.metadata import version; assert version("PyYAML") == "6.0.3"; assert version("markdown-it-py") == "3.0.0"; assert version("mdurl") == "0.1.2"' >/dev/null 2>&1; then
   PYTHON=(python3)
 elif command -v uv >/dev/null 2>&1; then
   PYTHON=(uv run --no-project --with-requirements "$KIT/requirements.txt" python3)
 else
-  echo "repo-knowledge tests: skipped (need uv or Python with pinned PyYAML)"
+  echo "repo-knowledge tests: skipped (need uv or Python with pinned validation dependencies)"
   exit 0
 fi
 
-"${PYTHON[@]}" - "$KIT" <<'PYTEST'
+"${PYTHON[@]}" - "$KIT" "$SRC/skills/repo-knowledge/references/glossary-example.md" <<'PYTEST'
 import copy
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -28,7 +29,9 @@ import unittest
 
 import yaml
 
-SOURCE_KIT = Path(sys.argv.pop()).resolve()
+SOURCE_KIT = Path(sys.argv[1]).resolve()
+GLOSSARY_EXAMPLE = Path(sys.argv[2]).read_text()
+del sys.argv[1:]
 META = {
     "type": "Concept", "title": "Request", "description": "A synthetic request definition.",
     "tags": ["request"], "generated": {"by": "process:fixture", "at": "2026-11-20T12:00:00Z"},
@@ -97,6 +100,76 @@ class KnowledgeChecks(unittest.TestCase):
                 text = body.replace("## Evidence needed", "## Notes")
             self.write(candidate, text)
             self.assertIn("R007", self.codes())
+
+    def test_source_resource_must_be_a_nonblank_string(self):
+        for resource in (None, "", "   ", 42, True, {}, []):
+            with self.subTest(resource=resource):
+                meta = copy.deepcopy(META)
+                meta["sources"][0]["resource"] = resource
+                self.write(meta)
+                self.assertIn("R014", self.codes())
+
+    def test_each_source_needs_a_usable_footnote_id(self):
+        for source_id in (None, "", "   ", 42, True, {}, [], "bad id", "bad]id", "bad[id"):
+            with self.subTest(source_id=source_id):
+                meta = copy.deepcopy(META)
+                meta["sources"][0]["id"] = source_id
+                self.write(meta)
+                self.assertIn("R015", self.codes())
+        meta = copy.deepcopy(META)
+        del meta["sources"][0]["id"]
+        self.write(meta)
+        self.assertIn("R015", self.codes())
+
+    def test_sources_need_a_claim_citation_not_only_metadata_or_definitions(self):
+        for body in ("# Request\n\nA request records intent.\n", "# Request\n\n[^contract]: Contract.\n", "# Request\n\n`[^contract]`\n", "# Request\n\n```md\n[^contract]\n```\n"):
+            with self.subTest(body=body):
+                self.write(body=body)
+                self.assertIn("R016", self.codes())
+
+    def test_one_cited_source_can_coexist_with_additional_background_sources(self):
+        meta = copy.deepcopy(META)
+        meta["sources"].append({"id": "background", "resource": "https://example.com/background"})
+        self.write(meta)
+        self.run_check()
+
+    def test_rendered_index_links_support_commonmark_titles_and_references(self):
+        links = (
+            '[Request](request.md "Definition")',
+            "[Request](request.md 'Definition')",
+            '[Request](request.md (Definition))',
+            '[Request](request.md\n  "Definition")',
+            "[Request](request.md 'A multiline\n  definition')",
+            '[Request][request]\n\n[request]: request.md',
+        )
+        for link in links:
+            with self.subTest(link=link):
+                (self.bundle / "terms/index.md").write_text("# Terms\n\n- " + link + "\n")
+                self.run_check()
+
+    def test_index_code_comments_and_images_do_not_supply_navigation(self):
+        for example in ('`[Request](request.md)`', '```md\n[Request](request.md)\n```', '    [Request](request.md)', '<!-- [Request](request.md) -->', '![Request](request.md)'):
+            with self.subTest(example=example):
+                (self.bundle / "terms/index.md").write_text("# Terms\n\n" + example + "\n")
+                self.assertIn("R008", self.codes())
+
+    def test_missing_titled_index_target_still_fails(self):
+        with (self.bundle / "terms/index.md").open("a") as stream:
+            stream.write("\n- [Missing](missing.md 'Definition')\n")
+        self.assertIn("R009", self.codes())
+
+    def test_worked_glossary_documents_validate_with_their_navigation(self):
+        examples = re.findall(r"```markdown\n(.*?)\n```", GLOSSARY_EXAMPLE, re.S)
+        self.assertEqual(len(examples), 3)
+        for area, slug, document in zip(("business", "platform", "metrics"), ("customer", "user", "active-customer-count"), examples):
+            directory = self.bundle / area
+            directory.mkdir()
+            (directory / (slug + ".md")).write_text(document + "\n")
+            (directory / "index.md").write_text(f"# {area}\n\n- [{slug}]({slug}.md): Example concept.\n")
+        with (self.bundle / "index.md").open("a") as stream:
+            for area in ("business", "metrics", "platform"):
+                stream.write(f"\n- [{area}]({area}/): Example area.\n")
+        self.run_check()
 
     def test_generated_requires_timestamp_not_only_actor(self):
         meta = copy.deepcopy(META)

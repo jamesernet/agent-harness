@@ -13,11 +13,20 @@ this profile. Use descriptive types such as Concept, Reference or Playbook;
 OKF does not define a closed type taxonomy. Copy and fill the
 [concept template](../assets/concept-template.md).
 
-Use stable `sources[].id` values and `sources[].resource`, not `uri`. Attribute
-claims with Markdown footnotes keyed to those IDs, including the footnote
-definitions needed for ordinary Markdown rendering. Related-concept links convey
-relationships through their surrounding prose. Never copy long passages or
-standards text into the library.
+Every source entry needs a non-blank string `resource` (not `uri`) and a stable
+string `id` without whitespace or brackets. Attribute claims with Markdown
+footnotes keyed to those IDs, including the definitions needed for ordinary
+Markdown rendering. A concept with sources must cite at least one in its prose;
+metadata or footnote definitions alone do not meet this profile. Additional
+background sources may remain uncited. The checker cannot establish that every
+claim is supported. Related-concept links convey relationships through their
+surrounding prose. Never copy long passages or standards text into the library.
+
+For business/org glossaries, use the [worked example](glossary-example.md) to
+separate canonical terms, evidenced aliases, context-specific meanings and
+related concepts. Metric terms can lead with an equation and links to its operands;
+state units, population and time basis where they change the meaning. Preserve
+existing runtime definitions and policies as authority.
 
 For code-backed claims, cite an immutable repository URL at the inspected commit
 and name the readable local path in the body. Preserve code/schema as authority;
@@ -48,7 +57,9 @@ concept and nested index must be reachable from the root through index links;
 Each concept is listed by its immediate directory index, and each nested index
 is listed by its parent directory index. Ordinary concept cross-links do not
 substitute for discoverable index coverage.
-Use ordinary inline Markdown links in indexes so readers and validation agree.
+Prefer ordinary inline Markdown links in indexes. Navigation checks use a pinned
+CommonMark parser: quoted and multiline titles and reference-style links work;
+code examples, images and HTML comments do not provide navigation.
 
 A source-free placeholder is allowed only with `status: draft`,
 `x-repo-knowledge-gap: true`, and Questions / Evidence needed headings. Use the
@@ -60,8 +71,8 @@ its meaning. Supported draft knowledge still cites its evidence normally.
 ## Validation boundaries
 
 The checker runs the pinned upstream checks in strict mode and adds this
-profile, index target-path/coverage checks, citation-definition checks and case-insensitive
-path-collision checks. Staleness is informational. It does not contact source
+profile, index target-path/coverage checks, source-entry and citation checks, and
+case-insensitive path-collision checks. Staleness is informational. It does not contact source
 websites, prove factual correctness, check deployed systems, grant access, or
 create human review. URL fragments are not checked against heading anchors.
 Review source availability, anchor targets and applicability separately.

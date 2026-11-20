@@ -24,7 +24,7 @@ Look at the current repo to understand its starting state. Read whatever exists;
 - `git remote -v` and `.git/config` — is this a GitHub repo? Which one?
 - `AGENTS.md` and `CLAUDE.md` at the repo root — does either exist? Is there already an `## Agent skills` section in either?
 - `CONTEXT.md` and `CONTEXT-MAP.md` at the repo root
-- `docs/knowledge/` (especially an `index.md` with `okf_version` frontmatter) and `docs/architecture/domain-model.md` — signs of an OKF layout
+- Existing knowledge roots named by project instructions (often `docs/knowledge/`), especially an `index.md` with `okf_version` frontmatter — signs of an OKF layout; an existing entity map is optional
 - `docs/adr/` and any `src/*/docs/adr/` directories
 - `docs/agents/` — does this skill's prior output already exist?
 - `.scratch/` — sign that a local-markdown issue tracker convention is already in use
@@ -90,7 +90,7 @@ Confirm the layout:
 
 - **Single-context** — one `CONTEXT.md` glossary + `docs/adr/` at the repo root. Most repos are this.
 - **Multi-context** — `CONTEXT-MAP.md` at the root pointing to per-context `CONTEXT.md` files (typically a monorepo).
-- **OKF** — no `CONTEXT.md`; domain language lives in per-concept docs under `docs/knowledge/` (frontmatter carries `okf_version`) and is indexed by `docs/architecture/domain-model.md`. Also wires in `docs/architecture/principles.md` (enforced principles are treated like ADRs) and `docs/testing/scenario-matrix.md` (test coverage). Propose this if the exploration found those files.
+- **OKF** — domain language lives in per-concept docs under the repo's chosen knowledge root, reached through the root and area indexes. Propose this when exploration finds an OKF bundle, even without an entity map. Preserve its declared version/profile and actual root; `docs/knowledge/` is only the default. Record existing entity maps, principles and scenario matrices as optional supporting docs. Follow the repo's ADR convention, including tracker-based ADRs; setup does not require new architecture documents or another glossary.
 
 **Section D — Work artifacts and worktrees.**
 

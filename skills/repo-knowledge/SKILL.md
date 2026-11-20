@@ -48,7 +48,10 @@ source conventions. Domain terminology work can use [domain-modeling](../domain-
 - Write a concept per useful idea, with contextual links to related concepts.
   Each directory index provides short descriptions and links into its children;
   the root index supplies starting paths for common tasks. Avoid a giant glossary
-  dump or one document per source page.
+  dump or one document per source page. For business/org glossaries, read the
+  [worked glossary example](references/glossary-example.md): make canonical terms,
+  evidenced aliases, context boundaries and related concepts explicit; use
+  equations for metric definitions when useful.
 - Record genuine unknowns as explicit draft gaps with concrete questions and
   evidence needed. Ask only about gaps that affect the requested outcome; the
   rest become a useful owner intake list. Never fill them with plausible facts.
@@ -63,8 +66,8 @@ Copy [assets/validation](assets/validation/) into an appropriate repository-loca
 scripts directory when the library needs independent CI. The kit contains a
 verbatim upstream OKF v0.3 validator, Apache license, immutable commit/checksum
 manifest and a thin local profile checker. Its [requirements](assets/validation/requirements.txt)
-pin PyYAML; install them in the repository's chosen Python environment, never by
-silently changing a global environment.
+pin PyYAML and the Markdown parser; install them in the repository's chosen
+Python environment, never by silently changing a global environment.
 
 ```sh
 python3 -m pip install -r scripts/okf/requirements.txt
