@@ -4,11 +4,14 @@
 # library reads only an explicit file; it never scans workstation or sources it.
 
 llmctx_context_policy_load() {
-  local root="$1" file
+  local root="$1" file variable
   LLMCTX_CONTEXT_POLICY_STATE=absent
   LLMCTX_CONTEXT_POLICY_ERROR=""
   LLMCTX_CONTEXT_POLICY_JSON='{}'
-  file="$(git -C "$root" config --path --get llmctx.contextProfile 2>/dev/null)" || return 0
+  file="$(
+    while IFS= read -r variable; do unset "$variable"; done < <(git rev-parse --local-env-vars)
+    git -C "$root" config --path --get llmctx.contextProfile 2>/dev/null
+  )" || return 0
   LLMCTX_CONTEXT_POLICY_STATE=invalid
   if [[ "$file" != /* || ! -f "$file" ]]; then
     LLMCTX_CONTEXT_POLICY_ERROR="llmctx.contextProfile must name an existing absolute TOML path"
