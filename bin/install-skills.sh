@@ -57,10 +57,10 @@ bundle_for_account() {
     return
   fi
   if [[ -n "$acct" ]]; then
-    value="$(git config --global --get "llmctx.skillBundle.$acct" 2>/dev/null || true)"
+    value="$(git config --global --includes --get "llmctx.skillBundle.$acct" 2>/dev/null || true)"
   fi
   [[ -n "$value" ]] ||
-    value="$(git config --global --get llmctx.skillBundle 2>/dev/null || true)"
+    value="$(git config --global --includes --get llmctx.skillBundle 2>/dev/null || true)"
   [[ -n "$value" ]] || value=all
   printf '%s\n' "$value"
 }

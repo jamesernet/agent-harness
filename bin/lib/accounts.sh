@@ -159,7 +159,7 @@ llmctx_accounts() {
     seen_names="$seen_names$name "
     seen_dirs="$seen_dirs$dir	"
     printf '%s\t%s\n' "$name" "$dir"
-  done < <(git config --global --get-all "$key" 2>/dev/null || true)
+  done < <(git config --global --includes --get-all "$key" 2>/dev/null || true)
 }
 
 # The single account named, or every account when no name is given.
