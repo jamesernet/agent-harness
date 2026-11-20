@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/open-knowledge-format/open-knowledge-format",
+  "commit": "527e81aff55992be21507e97004286789126f88c",
+  "okf_version": "0.3",
+  "spec": "https://github.com/open-knowledge-format/open-knowledge-format/blob/527e81aff55992be21507e97004286789126f88c/SPEC.md",
+  "spec_sha256": "a1fcc51be23fce5c1e4e198f0a71af6046a5286503959caa4009311f74fac3f1",
+  "files": [
+    {
+      "source": "skills/okf-generate/scripts/validate.py",
+      "file": "upstream/validate.py",
+      "sha256": "7f92df7d6a2118a5b7e5c388aa97de48f6ad31b942abc9e2fc7d344830661f49"
+    },
+    {
+      "source": "LICENSE.md",
+      "file": "upstream/LICENSE.md",
+      "sha256": "8c6db340475136df3c1201d458fa5755698eace76e510471ecc9d857d6083dac"
+    }
+  ]
+}
