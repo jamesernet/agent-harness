@@ -298,6 +298,24 @@ class KnowledgeChecks(unittest.TestCase):
                 self.write(meta, f"# Gap\n\n## {questions}\n\n- What is unknown?\n\n## {evidence}\n\n- A policy.\n")
                 self.assertIn("R007", self.codes())
 
+    def test_wrapped_gap_headings_preserve_word_boundaries(self):
+        meta = copy.deepcopy(META)
+        del meta["sources"]
+        meta["x-repo-knowledge-gap"] = True
+        for evidence in ("Evidence\nneeded", "Evidence  \nneeded", "Evidence\\\nneeded", "**Evidence**\n*needed*", "Evidence \t needed"):
+            with self.subTest(evidence=evidence):
+                self.write(meta, "# Gap\n\n## Questions\n\n- What is unknown?\n\n" + evidence + "\n-------\n\n- A policy.\n")
+                self.run_check()
+
+    def test_gap_heading_breaks_cannot_join_split_words(self):
+        meta = copy.deepcopy(META)
+        del meta["sources"]
+        meta["x-repo-knowledge-gap"] = True
+        for questions in ("Ques\ntions", "Ques  \ntions", "Ques\\\ntions", "**Ques**\n*tions*"):
+            with self.subTest(questions=questions):
+                self.write(meta, "# Gap\n\n" + questions + "\n-------\n\n- What is unknown?\n\n## Evidence needed\n\n- A policy.\n")
+                self.assertIn("R007", self.codes())
+
     def test_generated_requires_timestamp_not_only_actor(self):
         meta = copy.deepcopy(META)
         del meta["generated"]["at"]

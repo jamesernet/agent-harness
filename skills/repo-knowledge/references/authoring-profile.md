@@ -26,8 +26,10 @@ Markdown rendering. A concept with sources must cite at least one in rendered
 prose; metadata or footnote definitions alone do not meet this profile. Citations
 inside comments, escaped text, image alt text, link titles and code examples do
 not count. Gap section headings must also be actual Markdown headings; the
-required names match their parsed text, so emphasis, inline code, character
-entities, links and complete inline comments do not change the section name. Additional
+required names match normalized parsed text, so emphasis, inline code, character
+entities, links and complete inline comments do not change the section name.
+Markdown line breaks preserve word separators; whitespace between words is
+normalized, so wrapping cannot join split words into a required name. Additional
 background sources may remain uncited. The checker cannot establish that every
 claim is supported. Related-concept links convey relationships through their
 surrounding prose. Never copy long passages or standards text into the library.

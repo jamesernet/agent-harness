@@ -37,7 +37,13 @@ def upstream_module():
 
 
 def inline_text(tokens):
-    return "".join(token.content for token in tokens if token.type in ("text", "code_inline"))
+    parts = []
+    for token in tokens:
+        if token.type in ("text", "code_inline"):
+            parts.append(token.content)
+        elif token.type in ("softbreak", "hardbreak"):
+            parts.append(" ")
+    return "".join(parts)
 
 
 def profile(checker, upstream, pin):
@@ -93,7 +99,7 @@ def profile(checker, upstream, pin):
         tokens = markdown.parse(body)
         check_raw_html(checker, path, tokens, first_line)
         if not sources:
-            headings = {inline_text(tokens[index + 1].children or ()).strip().casefold() for index, token in enumerate(tokens) if token.type == "heading_open"}
+            headings = {" ".join(inline_text(tokens[index + 1].children or ()).split()).casefold() for index, token in enumerate(tokens) if token.type == "heading_open"}
             if not (meta.get("status") == "draft" and meta.get("x-repo-knowledge-gap") is True and {"questions", "evidence needed"} <= headings):
                 checker.error(path, 1, "R007", "sources are required; a source-free gap needs draft status, x-repo-knowledge-gap: true, and Questions / Evidence needed headings")
         source_ids = check_sources(checker, path, sources)
