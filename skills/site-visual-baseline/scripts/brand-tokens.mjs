@@ -139,15 +139,57 @@ async function inspectDOM(page) {
       }
       return true;
     };
-    const visible = el => { const s = style(el), r = el.getBoundingClientRect(); return paintVisible(el) && s.visibility === 'visible' && r.width > 0 && r.height > 0; };
+    const clipRect = (el, rect) => {
+      let left = Math.max(0, rect.left), top = Math.max(0, rect.top);
+      let right = Math.min(innerWidth, rect.right), bottom = Math.min(innerHeight, rect.bottom);
+      for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+        const s = style(parent), r = parent.getBoundingClientRect();
+        if (s.overflowX !== 'visible') { left = Math.max(left, r.left + parent.clientLeft); right = Math.min(right, r.left + parent.clientLeft + parent.clientWidth); }
+        if (s.overflowY !== 'visible') { top = Math.max(top, r.top + parent.clientTop); bottom = Math.min(bottom, r.top + parent.clientTop + parent.clientHeight); }
+      }
+      return { left, top, right, bottom, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+    };
+    const transparent = value => /^(?:rgba\([^)]*,\s*0\)|[^()]+\([^)]*\/\s*0\)|transparent)$/.test(value);
+    const visible = el => { const s = style(el), r = clipRect(el, el.getBoundingClientRect()); return paintVisible(el) && s.visibility === 'visible' && r.width > 0 && r.height > 0; };
+    const pseudoCache = new WeakMap();
+    const fixedPseudoCovers = (el, x, y) => {
+      if (!pseudoCache.has(el)) pseudoCache.set(el, ['::before', '::after'].map(name => getComputedStyle(el, name)));
+      return pseudoCache.get(el).some(s => {
+        if (s.content === 'none' || s.content === 'normal' || s.position !== 'fixed' || Number(s.opacity) === 0 || Number(s.zIndex) < 0) return false;
+        if (transparent(s.backgroundColor) && s.backgroundImage === 'none') return false;
+        const left = parseFloat(s.left), top = parseFloat(s.top), width = parseFloat(s.width), height = parseFloat(s.height);
+        return [left, top, width, height].every(Number.isFinite) && x >= left && x < left + width && y >= top && y < top + height;
+      });
+    };
+    const exposedText = (el, node) => {
+      // A hit-tested text range is an exposure estimate, not per-glyph proof.
+      const range = document.createRange(); range.selectNodeContents(node);
+      for (const raw of range.getClientRects()) {
+        const r = clipRect(el, raw);
+        if (!r.width || !r.height) continue;
+        for (const x of [.2, .5, .8]) for (const y of [.3, .7]) {
+          const px = r.left + x * r.width, py = r.top + y * r.height;
+          if (fixedPseudoCovers(el, px, py)) continue;
+          const stack = document.elementsFromPoint(px, py);
+          const index = stack.indexOf(el);
+          if (index < 0) continue;
+          const blocked = stack.slice(0, index).some(above => {
+            const s = style(above);
+            return paintVisible(above) && s.visibility === 'visible' && (fixedPseudoCovers(above, px, py) || !transparent(s.backgroundColor) || s.backgroundImage !== 'none' || /^(IMG|SVG|CANVAS|VIDEO)$/.test(above.tagName));
+          });
+          if (!blocked) return true;
+        }
+      }
+      return false;
+    };
     const styles = [...document.querySelectorAll('style')].map(s => s.textContent);
     const styleAttributes = [...document.querySelectorAll('[style]')].map(el => el.getAttribute('style'));
     const sheets = [...document.querySelectorAll('link[rel~="stylesheet"]')].map(s => s.href);
     let cssBytesInBrowser = 0, corsBlockedSheets = 0;
     for (const sheet of document.styleSheets) { try { cssBytesInBrowser += new TextEncoder().encode([...sheet.cssRules].map(r => r.cssText).join('\n')).length; } catch { corsBlockedSheets++; } }
     const samples = [...document.querySelectorAll('html, body, body *')].filter(visible).map(el => {
-      const s = getComputedStyle(el), r = el.getBoundingClientRect();
-      const text = [...el.childNodes].filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join('').trim();
+      const s = getComputedStyle(el), r = clipRect(el, el.getBoundingClientRect());
+      const text = [...el.childNodes].filter(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim() && exposedText(el, n)).map(n => n.textContent).join('').trim();
       const w = Math.max(0, Math.min(innerWidth, r.right) - Math.max(0, r.left));
       const h = Math.max(0, Math.min(innerHeight, r.bottom) - Math.max(0, r.top));
       return { tag: el.tagName.toLowerCase(), background: s.backgroundColor, backgroundImage: s.backgroundImage,
@@ -160,7 +202,7 @@ async function inspectDOM(page) {
       for (const el of document.elementsFromPoint((column + .5) * innerWidth / columns, (row + .5) * innerHeight / rows)) {
         const s = style(el), value = s.backgroundColor;
         if (!paintVisible(el) || s.visibility !== 'visible') continue;
-        if (/^(?:rgba\([^)]*,\s*0\)|[^()]+\([^)]*\/\s*0\)|transparent)$/.test(value)) continue;
+        if (transparent(value)) continue;
         backgrounds.set(value, (backgrounds.get(value) || 0) + innerWidth * innerHeight / (columns * rows));
         break;
       }
@@ -326,7 +368,7 @@ export async function extract(url, { out, browser: suppliedBrowser } = {}) {
     for (const group of typography) {
       group.familyCandidates = [...new Set(group.files.map(f => f.family))];
       if (group.familyCandidates.length > 1) group.family = null;
-      group.usageLimit = 'weights describe computed CSS family usage; font matching and selected subset per glyph are not proven';
+      group.usageLimit = 'weights describe computed CSS family usage with layout/hit-test exposure estimates; glyph painting, font matching and selected subset per glyph are not proven';
     }
     if (!typography.length) warnings.push('no used downloadable font faces resolved; system fonts or unreadable CSS may be in use');
     const excluded = new Set();
@@ -359,14 +401,15 @@ export async function extract(url, { out, browser: suppliedBrowser } = {}) {
     const computedKnown = Object.values(computedMeasurements).every(Boolean);
     const computedChanged = computedKnown && new Set(Object.values(computedMeasurements)).size > 1;
     const pixelsChanged = new Set(Object.values(measurements).map(values => values[0].value)).size > 1;
-    const variantDetected = computedChanged ? true : pixelsChanged || !computedKnown ? null : false;
-    if (pixelsChanged && !computedChanged) warnings.push('theme observations are ambiguous: rendered pixels changed while sampled color layers did not; inspect all four captures');
+    const variantDetected = !computedKnown || computedChanged !== pixelsChanged ? null : computedChanged;
+    if (computedChanged !== pixelsChanged) warnings.push('theme observations are ambiguous: computed color layers and rendered pixels disagree about a change; inspect all four captures');
     const report = {
       schemaVersion: 1,
       source: { requested: url, final, capturedAt: new Date().toISOString(), viewport: [VIEWPORT.width, VIEWPORT.height], coverage: {
         cssBytesStatic: allCSS.reduce((n, c) => n + c.bytes, 0), cssBytesInBrowser: dom.cssBytesInBrowser, corsBlockedSheets: dom.corsBlockedSheets,
         inlineStyleBlocks: dom.styles.length, inlineStyleAttributes: dom.styleAttributes.length, cssSources: allCSS.map(c => c.url), cssReadsAttempted: seenCSS.size, fontFilesParsed: fontCache.size,
-        scope: 'top-level document; viewport pixels; readable static CSS including imports; no shadow DOM, frames or authenticated browser state' } },
+        textExposure: 'viewport bounds, ancestor clipping and sampled hit tests; partial text counts and complex masks/pseudo-element occlusion are not per-glyph paint proof',
+        scope: 'top-level document; viewport pixels and computed text exposure estimates; readable static CSS including imports/attributes; no shadow DOM, frames or authenticated browser state' } },
       colors: [...colors.values()].sort((a, b) => b.evidence.paintedArea - a.evidence.paintedArea), declaredTokens: declared, declaredColors,
       background: { computed: background || null, renderedDominant: measurements.schemeLight[0], limitation: 'computed background uses a 32x20 visible-layer grid; rendered pixels can include alpha, gradients and images' },
       accent: { value: null, status: 'unassigned', candidates: [...colors.values()].map(c => ({ value: c.value, evidence: c.evidence })),
@@ -376,7 +419,7 @@ export async function extract(url, { out, browser: suppliedBrowser } = {}) {
       themes: { variantDetected,
         method: 'four-render-background-comparison', measurements: Object.fromEntries(Object.entries(measurements).map(([k, v]) => [k, v[0]])),
         computedMeasurements, declaredColorScheme: dom.declaredColorScheme, switchMechanism: 'prefers-color-scheme; forced html .light/.dark and data-theme',
-        limitation: 'compares a 32x20 grid of visible computed color layers; disagreeing rendered pixels yield unknown rather than no variant; other theme mechanisms and smaller changes can be missed' },
+        limitation: 'compares a 32x20 grid of visible computed color layers; disagreement in either direction yields unknown rather than a confirmed variant; other theme mechanisms and smaller changes can be missed' },
       warnings: [...new Set(warnings)]
     };
     if (out) {

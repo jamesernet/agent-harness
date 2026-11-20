@@ -35,6 +35,11 @@ before(async () => {
       '/hidden-parent': '<style>@font-face{font-family:HiddenBrand;src:url(/font.ttf)}body{background:white;color:black}.hide{opacity:0}.hide p{color:#ff00ff;font-family:HiddenBrand}</style><p>Visible copy</p><div class="hide"><p>Hidden copy must not become a measured foreground or font family</p></div>',
       '/opaque-theme-parents': '<style>html,body{margin:0;background:white;color:black;min-height:100vh}main{min-height:100vh;background:white}:root.dark main{background:black;color:white}</style><main>Theme fills the viewport</main>',
       '/style-attributes': '<body style="background:#123456;color:#fedcba;--brand:#987654"><p style="color:#112233">Inline declarations</p></body>',
+      '/clipped-copy': '<style>@font-face{font-family:HiddenBrand;src:url(/font.ttf)}body{margin:0;background:white;color:black}.hide{position:absolute;width:0;height:0;overflow:hidden}.hide p{width:1000px;color:#ff00ff;font-family:HiddenBrand}</style><p>Visible copy</p><div class="hide"><p>Completely clipped identity must not supply foreground or font evidence</p></div>',
+      '/covered-copy': '<style>@font-face{font-family:HiddenBrand;src:url(/font.ttf)}body{margin:0;background:white;color:black}.covered{color:#ff00ff;font-family:HiddenBrand}.overlay{position:fixed;inset:0;background:white;z-index:1000}</style><p class="covered">Covered identity must not supply foreground or font evidence</p><div class="overlay">Visible copy</div>',
+      '/pseudo-covered-copy': '<style>@font-face{font-family:HiddenBrand;src:url(/font.ttf)}body{margin:0;background:white;min-height:100vh}main{position:fixed;inset:0;color:#ff00ff;font-family:HiddenBrand}main::before{content:"";position:fixed;inset:0;background:white}</style><main>Opaque pseudo-element hides this identity</main>',
+      '/covered-theme': '<style>html,body{margin:0;background:white;color:black;min-height:100vh}main{position:fixed;inset:0;background:white}:root.dark main{background:black}main::before{content:"";position:fixed;inset:0;background:white}</style><main>Background changes behind an opaque pseudo-element</main>',
+
     };
     if (regressionPages[u.pathname]) return send('text/html', '<!doctype html><html>' + regressionPages[u.pathname] + '</html>');
     const themed = u.pathname === '/themed';
@@ -168,4 +173,19 @@ test('style attributes contribute declared colors, tokens and coverage', async (
   assert.ok(r.source.coverage.inlineStyleAttributes >= 2);
   assert.ok(r.declaredTokens.some(t => t.siteTokenName === '--brand' && t.value === '#987654'));
   assert.ok(r.declaredColors.some(c => c.hex === '#123456' && c.source.includes('inline-style-attribute-')));
+});
+
+test('fully clipped or covered copy cannot supply exposed foreground or font evidence', async () => {
+  for (const path of ['/clipped-copy', '/covered-copy', '/pseudo-covered-copy']) {
+    const r = await extract(`${base}${path}`, { browser });
+    assert.ok(!r.colors.some(c => c.hex === '#FF00FF' && c.roleConfidence === 'measured'), path);
+    assert.ok(!r.typography.some(t => t.cssFamily === 'HiddenBrand'), path);
+    assert.ok(!r.computedTypography.some(t => t.cssFamily.includes('HiddenBrand')), path);
+  }
+});
+test('a computed-only background change under an opaque pseudo-element is unknown', async () => {
+  const r = await extract(`${base}/covered-theme`, { browser });
+  assert.ok(Object.values(r.themes.measurements).every(v => v.value === '#FFFFFF' && v.paintedArea === 1440 * 900));
+  assert.equal(r.themes.variantDetected, null);
+  assert.ok(r.warnings.some(w => w.includes('theme observations are ambiguous')));
 });

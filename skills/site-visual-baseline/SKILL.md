@@ -52,7 +52,8 @@ in the user cache. Dependencies and browser binaries stay outside the skill. Run
 `node <skill-dir>/scripts/brand-tokens.mjs <url> --out <new-directory>`; it writes
 JSON plus four viewport screenshots. Read its coverage and warnings, compare
 sampled visible background layers with rendered pixels, and check font glyph coverage before
-reusing a subset. Accent is deliberately unassigned: rankings are measurements,
+reusing a subset. Text exposure is estimated from viewport/clipping bounds and
+hit tests; glyph painting and complex masks are not proven. Accent is deliberately unassigned: rankings are measurements,
 not brand judgment. Confirm the accent against the rendered site and the brief.
 Theme detection covers media queries and common HTML class/data-theme switches;
 disagreeing computed layers and pixels produce an unknown result for review.
