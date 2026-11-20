@@ -20,6 +20,8 @@ SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGETS_DIR="$SRC/targets"
 # shellcheck source=lib/policy.sh
 source "$SCRIPT_DIR/lib/policy.sh"
+# shellcheck source=lib/context-policy.sh
+source "$SCRIPT_DIR/lib/context-policy.sh"
 
 mode="${1:-check}"
 # With no argument, the REPOSITORY the cwd is in, as explain-policy.sh and
@@ -84,6 +86,8 @@ field() { sed -n "s/^$1=//p" "$target_file" | head -1; }
 split() { tr ',' '\n' <<<"${1:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;/^$/d'; }
 
 description="$(field description)"
+llmctx_context_policy_load "$root"
+context_value() { jq -r "$1 // empty" <<<"$LLMCTX_CONTEXT_POLICY_JSON"; }
 
 if [[ "$mode" == "explain" ]]; then
   echo "Repository: $root"
@@ -104,6 +108,8 @@ if [[ "$mode" == "explain" ]]; then
     [[ -n "${values// /}" ]] && printf '%-8s    %s\n' "$key" "$values"
   done
   echo
+  echo "Context policy: $LLMCTX_CONTEXT_POLICY_STATE (machine-local llmctx.contextProfile)"
+  [[ -z "$LLMCTX_CONTEXT_POLICY_ERROR" ]] || echo "  $LLMCTX_CONTEXT_POLICY_ERROR"
   echo "Still manual, and deliberately:"
   [[ -n "$(field onboard_hint)" ]] && echo "  onboard:  $(field onboard_hint)"
   [[ -n "$(field offboard_hint)" ]] && echo "  offboard: $(field offboard_hint)"
@@ -115,6 +121,40 @@ if [[ "$mode" == "explain" ]]; then
 fi
 
 add OK target "$target — $description" ""
+
+# A resolved name is not evidence of read-only access. The private context
+# attests the allowed ambient profile and code-egress policy. Missing policy
+# must not look like a successful check for AWS or MCP declarations.
+aws_profile="$(declared '.environment.cloud.awsProfile')"
+mcp_count="$(jq '.environment.mcp // [] | length' "$policy_file")"
+if [[ "$LLMCTX_CONTEXT_POLICY_STATE" == invalid ]]; then
+  add CONFLICT context:policy "$LLMCTX_CONTEXT_POLICY_ERROR" "correct the machine-local llmctx.contextProfile binding"
+elif [[ "$LLMCTX_CONTEXT_POLICY_STATE" == absent && (-n "$aws_profile" || "$mcp_count" -gt 0) ]]; then
+  add MISSING context:policy "AWS and MCP declarations need an explicit context policy" \
+    "git config --local llmctx.contextProfile /absolute/path/to/private-context.toml"
+elif [[ "$LLMCTX_CONTEXT_POLICY_STATE" == loaded ]]; then
+  add OK context:policy "loaded from machine-local llmctx.contextProfile" ""
+  if [[ -n "$aws_profile" ]]; then
+    read_profile="$(context_value '.awsReadProfile')"
+    write_profile="$(context_value '.awsWriteProfile')"
+    if [[ -z "$read_profile" ]]; then
+      add MISSING aws:ambient-policy "context declares no read-only ambient AWS profile" "declare cloud.aws_profile in the private context"
+    elif [[ "$aws_profile" == "$write_profile" || "$aws_profile" != "$read_profile" ]]; then
+      add CONFLICT aws:ambient-policy "repository AWS profile is not the context's read-only ambient profile" "use the context's cloud.aws_profile; keep step-up profiles out of repository defaults"
+    else
+      add OK aws:ambient-policy "matches the context's declared read-only profile; IAM permissions are not verified" ""
+    fi
+  fi
+  if [[ "$mcp_count" -gt 0 ]]; then
+    if [[ "$(jq '.allowCodeEgress' <<<"$LLMCTX_CONTEXT_POLICY_JSON")" == false || "$(jq '.agentsAllowed' <<<"$LLMCTX_CONTEXT_POLICY_JSON")" == false ]]; then
+      add CONFLICT mcp:policy "context prohibits code egress or agent use; MCP entries cannot be approved" "remove MCP declarations and review this context's permitted local workflow"
+    elif [[ "$(jq '.allowCodeEgress' <<<"$LLMCTX_CONTEXT_POLICY_JSON")" != true ]]; then
+      add MISSING mcp:policy "context has no explicit code-egress policy" "declare ai.allow_code_egress in the private context"
+    else
+      add OK mcp:policy "context permits code egress; server registration and permissions are not verified" ""
+    fi
+  fi
+fi
 
 # Required environment variable NAMES must appear in the declaration. This
 # checks the declaration is complete, not that a value is set: a value set in
