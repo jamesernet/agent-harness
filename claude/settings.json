@@ -39,6 +39,11 @@
             "type": "command",
             "command": "{{CLAUDE_CONFIG_DIR}}/hooks/routing-tripwire.sh",
             "statusMessage": "Checking the Claude account for this directory..."
+          },
+          {
+            "type": "command",
+            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/environment-tripwire.sh",
+            "statusMessage": "Checking the AWS environment for this context..."
           }
         ]
       }
