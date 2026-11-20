@@ -193,9 +193,25 @@ bin/llmctx env explain [repo]    the declaration, and what is still manual
 It verifies resolution, not validity — whether a profile still has working
 credentials only using it can tell you, and finding that out is a deploy.
 
-What it does not do is judge whether an identifier is the *right* one. A profile
-name that resolves may still be the wrong account; only the human who granted it
-knows. The validator keeps credentials out and the checker says what is missing.
+AWS and MCP declarations also need a private work-context policy, bound on the
+machine rather than committed to the project:
+
+```sh
+git config --local llmctx.contextProfile /absolute/path/to/private-context.toml
+```
+
+A conditional Git include can supply the same key for a whole context. The
+checker reads TOML with Python 3.11+ and never sources it. Canonical contexts use
+`[cloud] aws_profile` for the read-only ambient profile, `aws_write_profile` for
+human step-up, and `[ai] allow_code_egress` / `agents_allowed`. Legacy
+`[aws] default_profile` / `write_profile` remain supported. Contradictory fields,
+missing policy, a non-ambient repository AWS profile, or MCP entries under a
+no-egress/no-agent policy produce findings. Missing policy is also a finding
+in CI; only machine-specific AWS configuration and secret bindings are exempt.
+
+These are checks against the owner's declaration. They do not prove IAM
+permissions, remove ambient credentials, constrain MCP execution, or authorize
+a deployment. Machine isolation and profile binding remain WorkStation's job.
 
 Where a value comes from is layered, lowest to highest: the target file, the
 repository's declaration, then the machine's binding in `workstation`. Claude

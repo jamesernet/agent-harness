@@ -30,6 +30,17 @@ max_effort = "high"
 mode = "dedicated"      # dedicated | shared | disabled
 account = "acme"        # registered with: llmctx account add --provider codex
 
+[ai]
+# Read by llmctx env check through a machine-local llmctx.contextProfile binding.
+agents_allowed = true
+allow_code_egress = true
+
+[cloud]
+# Ambient means read-only by policy; the checker cannot prove IAM permissions.
+aws_profile = "acme-readonly"
+# Explicit human step-up, never the repository's default profile.
+aws_write_profile = "acme-admin"
+
 [[projects]]
 id = "payments-api"
 paths = ["~/repos/github.com/acme/payments-api"]
