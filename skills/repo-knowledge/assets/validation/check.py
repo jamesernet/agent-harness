@@ -36,6 +36,10 @@ def upstream_module():
     return module, pin
 
 
+def inline_text(tokens):
+    return "".join(token.content for token in tokens if token.type in ("text", "code_inline"))
+
+
 def profile(checker, upstream, pin):
     from markdown_it import MarkdownIt
     from mdit_py_plugins.footnote import footnote_plugin
@@ -89,7 +93,7 @@ def profile(checker, upstream, pin):
         tokens = markdown.parse(body)
         check_raw_html(checker, path, tokens, first_line)
         if not sources:
-            headings = {tokens[index + 1].content.strip().casefold() for index, token in enumerate(tokens) if token.type == "heading_open"}
+            headings = {inline_text(tokens[index + 1].children or ()).strip().casefold() for index, token in enumerate(tokens) if token.type == "heading_open"}
             if not (meta.get("status") == "draft" and meta.get("x-repo-knowledge-gap") is True and {"questions", "evidence needed"} <= headings):
                 checker.error(path, 1, "R007", "sources are required; a source-free gap needs draft status, x-repo-knowledge-gap: true, and Questions / Evidence needed headings")
         source_ids = check_sources(checker, path, sources)
@@ -136,9 +140,8 @@ def index_targets(checker, path, body, first_line):
             for part in block.children[position + 1:]:
                 if part.type == "link_close":
                     break
-                if part.type in ("text", "code_inline"):
-                    label.append(part.content)
-            if not any(character.isprintable() and not character.isspace() for character in "".join(label)):
+                label.append(part)
+            if not any(character.isprintable() and not character.isspace() for character in inline_text(label)):
                 checker.error(path, line, "R018", "index links need a nonblank printable text label; comments and image-only labels do not provide navigation")
                 continue
             if target.startswith("#"):

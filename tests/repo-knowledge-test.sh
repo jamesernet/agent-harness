@@ -273,6 +273,31 @@ class KnowledgeChecks(unittest.TestCase):
                 stream.write(f"\n- [{area}]({area}/): Example area.\n")
         self.run_check()
 
+    def test_gap_heading_names_use_rendered_markdown_text(self):
+        meta = copy.deepcopy(META)
+        del meta["sources"]
+        meta["x-repo-knowledge-gap"] = True
+        headings = (
+            ("**Questions**", "*Evidence needed*"),
+            ("`Questions`", "`Evidence needed`"),
+            ("Qu&#101;stions", "Evidence n&#101;eded"),
+            ("<!-- note -->Questions", "Evidence <!-- note -->needed"),
+            ("[Questions](https://example.com/questions)", "[Evidence needed](https://example.com/evidence)"),
+        )
+        for questions, evidence in headings:
+            with self.subTest(questions=questions, evidence=evidence):
+                self.write(meta, f"# Gap\n\n## {questions}\n\n- What is unknown?\n\n## {evidence}\n\n- A policy.\n")
+                self.run_check()
+
+    def test_formatted_gap_headings_still_need_the_exact_required_names(self):
+        meta = copy.deepcopy(META)
+        del meta["sources"]
+        meta["x-repo-knowledge-gap"] = True
+        for questions, evidence in (("**Question**", "*Evidence needed*"), ("`Questions`", "`Evidence`")):
+            with self.subTest(questions=questions, evidence=evidence):
+                self.write(meta, f"# Gap\n\n## {questions}\n\n- What is unknown?\n\n## {evidence}\n\n- A policy.\n")
+                self.assertIn("R007", self.codes())
+
     def test_generated_requires_timestamp_not_only_actor(self):
         meta = copy.deepcopy(META)
         del meta["generated"]["at"]

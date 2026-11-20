@@ -25,7 +25,9 @@ footnotes keyed to those IDs, including the definitions needed for ordinary
 Markdown rendering. A concept with sources must cite at least one in rendered
 prose; metadata or footnote definitions alone do not meet this profile. Citations
 inside comments, escaped text, image alt text, link titles and code examples do
-not count. Gap section headings must also be actual Markdown headings. Additional
+not count. Gap section headings must also be actual Markdown headings; the
+required names match their parsed text, so emphasis, inline code, character
+entities, links and complete inline comments do not change the section name. Additional
 background sources may remain uncited. The checker cannot establish that every
 claim is supported. Related-concept links convey relationships through their
 surrounding prose. Never copy long passages or standards text into the library.
@@ -88,4 +90,6 @@ instead of the upstream regex-based W108 warning; other upstream warnings remain
 fatal. Staleness is informational. It does not contact source
 websites, prove factual correctness, check deployed systems, grant access, or
 create human review. URL fragments are not checked against heading anchors.
-Review source availability, anchor targets and applicability separately.
+Review source availability, anchor targets and applicability separately. The
+retained upstream W115 link heuristic can flag literal links in comments or
+nested fence examples; inspect that context before changing source documents.
