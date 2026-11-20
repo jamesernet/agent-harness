@@ -22,8 +22,13 @@ else
   # it reaches tests/run.sh above and the worktree-install test rightly fails.
   test_home="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-adapters.XXXXXX")"
   trap 'rm -rf "$test_home"' EXIT
-  HOME="$test_home" LLMCTX_ALLOW_WORKTREE_INSTALL=1 bin/build-adapters.sh >/dev/null
-  HOME="$test_home" LLMCTX_ALLOW_WORKTREE_INSTALL=1 bin/build-adapters.sh --check
+  # Registry entries can contain absolute account paths. A temporary HOME alone
+  # must not let this smoke build install into those real accounts via XDG Git
+  # configuration or an inherited GIT_CONFIG_GLOBAL.
+  HOME="$test_home" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    LLMCTX_ALLOW_WORKTREE_INSTALL=1 bin/build-adapters.sh >/dev/null
+  HOME="$test_home" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    LLMCTX_ALLOW_WORKTREE_INSTALL=1 bin/build-adapters.sh --check
 fi
 
 # Framework hooks (shellcheck, shfmt, hygiene) from .pre-commit-config.yaml.
