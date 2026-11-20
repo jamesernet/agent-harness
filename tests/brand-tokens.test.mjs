@@ -29,6 +29,14 @@ before(async () => {
     if (u.pathname === '/missing.css') return send('text/html', '<html>not found</html>', 404);
     if (u.pathname === '/style.css') return send('text/css', '@import url("/more.css"); @font-face{font-family:"__Fixture_hash";font-weight:400;src:local("Missing Local Font"),url("/font.ttf") format("truetype")} @font-face{font-family:"Ignore Fallback";src:local("Arial")} :root{--brand:#123456;--derived:var(--brand)} @media(prefers-color-scheme:dark){:root{--brand:#654321}}');
     if (u.pathname === '/more.css') return send('text/css', ':root{--imported:#abcdef}');
+    const dataIcon = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="red"/></svg>');
+    const regressionPages = {
+      '/data-images': `<link rel="icon" href="${dataIcon}"><header><a href="/"><img width="160" height="20" src="data:image/png;base64,${logo.toString('base64')}"></a></header><p>Visible brand</p>`,
+      '/hidden-parent': '<style>@font-face{font-family:HiddenBrand;src:url(/font.ttf)}body{background:white;color:black}.hide{opacity:0}.hide p{color:#ff00ff;font-family:HiddenBrand}</style><p>Visible copy</p><div class="hide"><p>Hidden copy must not become a measured foreground or font family</p></div>',
+      '/opaque-theme-parents': '<style>html,body{margin:0;background:white;color:black;min-height:100vh}main{min-height:100vh;background:white}:root.dark main{background:black;color:white}</style><main>Theme fills the viewport</main>',
+      '/style-attributes': '<body style="background:#123456;color:#fedcba;--brand:#987654"><p style="color:#112233">Inline declarations</p></body>',
+    };
+    if (regressionPages[u.pathname]) return send('text/html', '<!doctype html><html>' + regressionPages[u.pathname] + '</html>');
     const themed = u.pathname === '/themed';
     const bad = u.pathname === '/bad';
     const blue = u.pathname === '/blue';
@@ -133,4 +141,31 @@ test('evidence directories are new and existing artifacts survive a repeat', asy
     assert.deepEqual(await readFile(join(out, 'brand-tokens.json')), original);
     assert.ok((await readFile(join(out, 'schemeLight.png'))).length > 100);
   } finally { await rm(tmp, { recursive: true, force: true }); }
+});
+
+test('data-URL favicons and logos retain a complete validated report', async () => {
+  const r = await extract(`${base}/data-images`, { browser });
+  assert.ok(r.logo.url.startsWith('data:image/png;base64,'));
+  assert.equal(r.logo.verified, true);
+  assert.deepEqual(r.logo.intrinsic, [320, 40]);
+  assert.ok(r.logo.excludedIconUrls.some(url => url.startsWith('data:image/svg+xml,')));
+});
+test('ancestor opacity excludes hidden foreground and font attribution', async () => {
+  const r = await extract(`${base}/hidden-parent`, { browser });
+  assert.ok(!r.colors.some(c => c.hex === '#FF00FF' && c.roleConfidence === 'measured'));
+  assert.ok(!r.typography.some(t => t.cssFamily === 'HiddenBrand'));
+  assert.ok(!r.computedTypography.some(t => t.cssFamily.includes('HiddenBrand')));
+});
+test('opaque parents do not outweigh a full-viewport child theme', async () => {
+  const r = await extract(`${base}/opaque-theme-parents`, { browser });
+  assert.equal(r.themes.variantDetected, true);
+  assert.equal(r.themes.computedMeasurements.forcedLight, '#FFFFFF');
+  assert.equal(r.themes.computedMeasurements.forcedDark, '#000000');
+  assert.equal(r.themes.measurements.forcedDark.value, '#000000');
+});
+test('style attributes contribute declared colors, tokens and coverage', async () => {
+  const r = await extract(`${base}/style-attributes`, { browser });
+  assert.ok(r.source.coverage.inlineStyleAttributes >= 2);
+  assert.ok(r.declaredTokens.some(t => t.siteTokenName === '--brand' && t.value === '#987654'));
+  assert.ok(r.declaredColors.some(c => c.hex === '#123456' && c.source.includes('inline-style-attribute-')));
 });

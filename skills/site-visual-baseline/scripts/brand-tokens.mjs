@@ -30,8 +30,23 @@ export function originImage(url, base) {
     ? httpURL(u.searchParams.get('url'), u) : httpURL(u.href);
 }
 
+const imageURL = (url, base) => {
+  const parsed = new URL(url, base);
+  return parsed.protocol === 'data:' ? parsed.href : originImage(parsed.href);
+};
+
 // Node fetch follows redirects independently of browser CSSOM/CORS access.
 async function asset(url, kind) {
+  const parsed = new URL(url);
+  if (parsed.protocol === 'data:') {
+    const comma = parsed.pathname.indexOf(',');
+    if (comma < 0 || parsed.pathname.length > MAX_BYTES * 4) throw new Error(`${kind}: invalid or oversized data URL`);
+    const metadata = parsed.pathname.slice(0, comma);
+    const payload = decodeURIComponent(parsed.pathname.slice(comma + 1));
+    const bytes = Buffer.from(payload, /;base64(?:;|$)/i.test(metadata) ? 'base64' : 'utf8');
+    if (!bytes.length || bytes.length > MAX_BYTES) throw new Error(`${kind}: empty or oversized data URL`);
+    return { bytes, final: parsed.href, type: metadata.split(';')[0].toLowerCase() || 'text/plain' };
+  }
   const response = await fetch(httpURL(url), { redirect: 'follow', signal: AbortSignal.timeout(15000) });
   if (!response.ok) throw new Error(`${kind}: HTTP ${response.status}`);
   const chunks = [];
@@ -112,8 +127,21 @@ async function pixels(png) {
 
 async function inspectDOM(page) {
   return page.evaluate(() => {
-    const visible = el => { const s = getComputedStyle(el), r = el.getBoundingClientRect(); return s.display !== 'none' && s.visibility === 'visible' && Number(s.opacity) > 0 && r.width > 0 && r.height > 0; };
+    const styleCache = new WeakMap();
+    const style = el => {
+      if (!styleCache.has(el)) styleCache.set(el, getComputedStyle(el));
+      return styleCache.get(el);
+    };
+    const paintVisible = el => {
+      for (let node = el; node; node = node.parentElement) {
+        const s = style(node);
+        if (s.display === 'none' || s.contentVisibility === 'hidden' || Number(s.opacity) === 0) return false;
+      }
+      return true;
+    };
+    const visible = el => { const s = style(el), r = el.getBoundingClientRect(); return paintVisible(el) && s.visibility === 'visible' && r.width > 0 && r.height > 0; };
     const styles = [...document.querySelectorAll('style')].map(s => s.textContent);
+    const styleAttributes = [...document.querySelectorAll('[style]')].map(el => el.getAttribute('style'));
     const sheets = [...document.querySelectorAll('link[rel~="stylesheet"]')].map(s => s.href);
     let cssBytesInBrowser = 0, corsBlockedSheets = 0;
     for (const sheet of document.styleSheets) { try { cssBytesInBrowser += new TextEncoder().encode([...sheet.cssRules].map(r => r.cssText).join('\n')).length; } catch { corsBlockedSheets++; } }
@@ -125,6 +153,19 @@ async function inspectDOM(page) {
       return { tag: el.tagName.toLowerCase(), background: s.backgroundColor, backgroundImage: s.backgroundImage,
         color: s.color, boxArea: w * h, textChars: text.length, sampleText: text.slice(0, 100), family: s.fontFamily, weight: Number(s.fontWeight), fontSize: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing };
     });
+    // Count each viewport sample once, taking the first visible color layer.
+    // Summing element boxes double-counts opaque parents behind their children.
+    const backgrounds = new Map(), columns = 32, rows = 20;
+    for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
+      for (const el of document.elementsFromPoint((column + .5) * innerWidth / columns, (row + .5) * innerHeight / rows)) {
+        const s = style(el), value = s.backgroundColor;
+        if (!paintVisible(el) || s.visibility !== 'visible') continue;
+        if (/^(?:rgba\([^)]*,\s*0\)|[^()]+\([^)]*\/\s*0\)|transparent)$/.test(value)) continue;
+        backgrounds.set(value, (backgrounds.get(value) || 0) + innerWidth * innerHeight / (columns * rows));
+        break;
+      }
+    }
+    const visibleBackgrounds = [...backgrounds].sort((a, b) => b[1] - a[1]).map(([value, sampledArea]) => ({ value, sampledArea }));
     const icons = [...document.querySelectorAll('link[rel]')].filter(l => /icon/i.test(l.rel)).map(l => l.href);
     const manifests = [...document.querySelectorAll('link[rel="manifest"]')].map(l => l.href);
     const candidates = [];
@@ -133,13 +174,13 @@ async function inspectDOM(page) {
       if (u.origin !== location.origin || u.pathname !== '/') continue;
       for (const el of anchor.querySelectorAll('img, svg')) {
         const r = el.getBoundingClientRect(), s = getComputedStyle(el);
-        if (s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) === 0) continue;
+        if (!paintVisible(el) || s.visibility === 'hidden') continue;
         candidates.push({ kind: el.tagName.toLowerCase() === 'svg' ? 'inline-svg' : 'raster', inlineSvg: el.tagName.toLowerCase() === 'svg' ? el.outerHTML : null,
           urlAsRendered: el.currentSrc || el.src || null, renderedAt: [r.width, r.height], alt: el.getAttribute('alt') || el.getAttribute('aria-label') || null,
           markupLength: el.outerHTML.length, foundVia: 'largest-node-in-header-home-link' });
       }
     }
-    return { styles, sheets, samples, icons, manifests, candidates, cssBytesInBrowser, corsBlockedSheets, declaredColorScheme: getComputedStyle(document.documentElement).colorScheme };
+    return { styles, styleAttributes, visibleBackgrounds, sheets, samples, icons, manifests, candidates, cssBytesInBrowser, corsBlockedSheets, declaredColorScheme: getComputedStyle(document.documentElement).colorScheme };
   });
 }
 
@@ -165,12 +206,8 @@ export async function extract(url, { out, browser: suppliedBrowser } = {}) {
       await settle(page, warnings);
       const renderedDOM = await inspectDOM(page);
       if (!dom) dom = renderedDOM;
-      const areas = new Map();
-      for (const sample of renderedDOM.samples) {
-        const hex = colorHex(sample.background);
-        if (hex) areas.set(hex, (areas.get(hex) || 0) + sample.boxArea);
-      }
-      computedMeasurements[name] = [...areas].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+      const measured = renderedDOM.visibleBackgrounds[0]?.value;
+      computedMeasurements[name] = measured ? colorHex(measured) || measured : null;
       const png = await page.screenshot({ animations: 'disabled', caret: 'hide' });
       measurements[name] = await pixels(png);
       screenshots[name] = png;
@@ -195,6 +232,7 @@ export async function extract(url, { out, browser: suppliedBrowser } = {}) {
     };
     for (const sheet of dom.sheets) await getCSS(sheet);
     for (const [i, text] of dom.styles.entries()) await getCSS(`${final}#inline-style-${i}`, text);
+    for (const [i, text] of dom.styleAttributes.entries()) await getCSS(`${final}#inline-style-attribute-${i}`, text);
     if (dom.corsBlockedSheets) warnings.push(`${dom.corsBlockedSheets} browser CSSOM sheets blocked; static reads recorded separately`);
 
     const declared = [], faces = [], declaredColors = [];
@@ -240,8 +278,11 @@ export async function extract(url, { out, browser: suppliedBrowser } = {}) {
       }
       if (s.textChars) { const c = entry(s.color); c.evidence.textChars += s.textChars; c.provenance.push('computed-text'); }
     }
+    for (const sample of dom.visibleBackgrounds) {
+      const c = entry(sample.value); c.evidence.sampledArea = sample.sampledArea; c.provenance.push('computed-visible-grid');
+    }
     const sorted = [...colors.values()].sort((a, b) => b.evidence.paintedArea - a.evidence.paintedArea);
-    const background = [...sorted].filter(c => c.evidence.boxArea && c.hex).sort((a, b) => b.evidence.boxArea - a.evidence.boxArea)[0];
+    const background = dom.visibleBackgrounds[0] ? entry(dom.visibleBackgrounds[0].value) : null;
     if (background) { background.role = 'background'; background.roleConfidence = 'measured'; }
     for (const c of sorted) {
       c.provenance = [...new Set(c.provenance)];
@@ -288,15 +329,23 @@ export async function extract(url, { out, browser: suppliedBrowser } = {}) {
       group.usageLimit = 'weights describe computed CSS family usage; font matching and selected subset per glyph are not proven';
     }
     if (!typography.length) warnings.push('no used downloadable font faces resolved; system fonts or unreadable CSS may be in use');
-    const excluded = new Set(dom.icons.map(u => originImage(u, final)));
+    const excluded = new Set();
+    for (const u of dom.icons) {
+      try { excluded.add(imageURL(u, final)); }
+      catch (e) { warnings.push(`icon ${u}: ${e.message}`); }
+    }
     for (const u of dom.manifests) {
       try {
         const data = await asset(u, 'manifest'), manifest = JSON.parse(data.bytes.toString());
         if (!Array.isArray(manifest.icons)) throw new Error('manifest.icons is not an array');
-        for (const i of manifest.icons) excluded.add(httpURL(i.src, data.final));
+        for (const i of manifest.icons) excluded.add(imageURL(i.src, data.final));
       } catch (e) { warnings.push(`manifest ${u}: ${e.message}`); }
     }
-    const candidates = dom.candidates.map(c => ({ ...c, url: c.urlAsRendered ? originImage(c.urlAsRendered, final) : null }));
+    const candidates = [];
+    for (const candidate of dom.candidates) {
+      try { candidates.push({ ...candidate, url: candidate.urlAsRendered ? imageURL(candidate.urlAsRendered, final) : null }); }
+      catch (e) { warnings.push(`logo candidate: ${e.message}`); }
+    }
     const logos = candidates.filter(c => !c.url || !excluded.has(c.url)).sort((a, b) => b.renderedAt[0] * b.renderedAt[1] - a.renderedAt[0] * a.renderedAt[1] || b.markupLength - a.markupLength);
     const logo = logos[0] || { kind: 'none', url: null, inlineSvg: null };
     if (logo.kind !== 'none') {
@@ -307,22 +356,27 @@ export async function extract(url, { out, browser: suppliedBrowser } = {}) {
         Object.assign(logo, metadata, { verified: true, bytes: data.bytes.length, final: data.final || null, originRecovered: logo.url !== logo.urlAsRendered });
       } catch (e) { logo.verified = false; warnings.push(`logo: ${e.message}`); }
     } else warnings.push('no non-icon logo found inside a header home link');
+    const computedKnown = Object.values(computedMeasurements).every(Boolean);
+    const computedChanged = computedKnown && new Set(Object.values(computedMeasurements)).size > 1;
+    const pixelsChanged = new Set(Object.values(measurements).map(values => values[0].value)).size > 1;
+    const variantDetected = computedChanged ? true : pixelsChanged || !computedKnown ? null : false;
+    if (pixelsChanged && !computedChanged) warnings.push('theme observations are ambiguous: rendered pixels changed while sampled color layers did not; inspect all four captures');
     const report = {
       schemaVersion: 1,
       source: { requested: url, final, capturedAt: new Date().toISOString(), viewport: [VIEWPORT.width, VIEWPORT.height], coverage: {
         cssBytesStatic: allCSS.reduce((n, c) => n + c.bytes, 0), cssBytesInBrowser: dom.cssBytesInBrowser, corsBlockedSheets: dom.corsBlockedSheets,
-        inlineStyleBlocks: dom.styles.length, cssSources: allCSS.map(c => c.url), cssReadsAttempted: seenCSS.size, fontFilesParsed: fontCache.size,
+        inlineStyleBlocks: dom.styles.length, inlineStyleAttributes: dom.styleAttributes.length, cssSources: allCSS.map(c => c.url), cssReadsAttempted: seenCSS.size, fontFilesParsed: fontCache.size,
         scope: 'top-level document; viewport pixels; readable static CSS including imports; no shadow DOM, frames or authenticated browser state' } },
       colors: [...colors.values()].sort((a, b) => b.evidence.paintedArea - a.evidence.paintedArea), declaredTokens: declared, declaredColors,
-      background: { computed: background || null, renderedDominant: measurements.schemeLight[0], limitation: 'computed box areas can overlap; rendered pixels can include gradients and images' },
+      background: { computed: background || null, renderedDominant: measurements.schemeLight[0], limitation: 'computed background uses a 32x20 visible-layer grid; rendered pixels can include alpha, gradients and images' },
       accent: { value: null, status: 'unassigned', candidates: [...colors.values()].map(c => ({ value: c.value, evidence: c.evidence })),
         rankings: Object.fromEntries(['paintedArea', 'cssOccurrences', 'textChars'].map(key => [key, [...colors.values()].filter(c => c.evidence[key]).sort((a, b) => b.evidence[key] - a.evidence[key]).slice(0, 12).map(c => c.value)])) },
       computedTypography: dom.samples.filter(s => s.textChars).map(s => ({ cssFamily: s.family, weight: s.weight, fontSize: s.fontSize, textChars: s.textChars })),
       typography, logo: { ...logo, excludedIconUrls: [...excluded], candidates: logos },
-      themes: { variantDetected: Object.values(computedMeasurements).every(Boolean) ? new Set(Object.values(computedMeasurements)).size > 1 : null,
+      themes: { variantDetected,
         method: 'four-render-background-comparison', measurements: Object.fromEntries(Object.entries(measurements).map(([k, v]) => [k, v[0]])),
         computedMeasurements, declaredColorScheme: dom.declaredColorScheme, switchMechanism: 'prefers-color-scheme; forced html .light/.dark and data-theme',
-        limitation: 'compares opaque sRGB computed background areas; rendered dominant pixels are retained separately; other theme mechanisms and smaller changes can be missed' },
+        limitation: 'compares a 32x20 grid of visible computed color layers; disagreeing rendered pixels yield unknown rather than no variant; other theme mechanisms and smaller changes can be missed' },
       warnings: [...new Set(warnings)]
     };
     if (out) {

@@ -51,11 +51,12 @@ For measured colors, downloadable font metadata and logo candidates, run
 in the user cache. Dependencies and browser binaries stay outside the skill. Run
 `node <skill-dir>/scripts/brand-tokens.mjs <url> --out <new-directory>`; it writes
 JSON plus four viewport screenshots. Read its coverage and warnings, compare
-computed backgrounds with rendered pixels, and check font glyph coverage before
+sampled visible background layers with rendered pixels, and check font glyph coverage before
 reusing a subset. Accent is deliberately unassigned: rankings are measurements,
 not brand judgment. Confirm the accent against the rendered site and the brief.
 Theme detection covers media queries and common HTML class/data-theme switches;
-a negative result does not prove the site has no other theme mechanism.
+disagreeing computed layers and pixels produce an unknown result for review.
+A negative result does not prove the site has no other theme mechanism.
 
 ## The settle sequence
 
