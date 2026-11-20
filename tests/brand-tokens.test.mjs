@@ -101,6 +101,8 @@ test('known dark background survives transparency; CORS CSS, fonts and redirect 
   assert.equal(r.themes.measurements.schemeLight.value, '#050A07');
   assert.equal(r.themes.variantDetected, false, 'color-scheme alone is not a theme variant');
   assert.equal(r.colors.find(c => c.role === 'background').hex, '#050A07');
+  assert.ok(r.colors.every(c => Number.isFinite(c.evidence.boxArea)), 'every computed box area must be finite');
+  assert.ok(r.colors.some(c => c.evidence.boxArea > 0), 'exposed opaque boxes must retain area');
   assert.equal(r.accent.value, null);
   assert.equal(r.accent.status, 'unassigned');
   assert.ok(!r.colors.some(c => c.role === 'accent'));

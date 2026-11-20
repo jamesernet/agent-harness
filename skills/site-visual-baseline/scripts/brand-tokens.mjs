@@ -202,10 +202,8 @@ async function inspectDOM(page) {
     const samples = targets.filter(visible).map(el => {
       const s = getComputedStyle(el), r = clipRect(el, el.getBoundingClientRect());
       const text = [...el.childNodes].filter(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim() && exposedText(el, n)).map(n => n.textContent).join('').trim();
-      const w = Math.max(0, Math.min(innerWidth, r.right) - Math.max(0, r.left));
-      const h = Math.max(0, Math.min(innerHeight, r.bottom) - Math.max(0, r.top));
       return { tag: el.tagName.toLowerCase(), background: s.backgroundColor, backgroundImage: s.backgroundImage,
-        color: s.color, boxArea: w * h, textChars: text.length, sampleText: text.slice(0, 100), family: s.fontFamily, weight: Number(s.fontWeight), fontSize: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing };
+        color: s.color, boxArea: r.width * r.height, textChars: text.length, sampleText: text.slice(0, 100), family: s.fontFamily, weight: Number(s.fontWeight), fontSize: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing };
     });
     // Count each viewport sample once, taking the first visible color layer.
     // Summing element boxes double-counts opaque parents behind their children.
