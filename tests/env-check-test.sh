@@ -324,4 +324,17 @@ git -C "$d" config llmctx.contextProfile relative.toml
 run "$d"
 [[ "$status" -eq 1 && "$output" == *"existing absolute TOML path"* ]] || fail "relative policy binding passed: $output"
 
+# An explicit target must not borrow another repository's context binding
+# from Git variables inherited by a hook or shell.
+d="$(repo explicit-context '{"schemaVersion":1,"environment":{"target":"other","cloud":{"awsProfile":"acme-admin"}}}')"
+other="$(repo foreign-context '{"schemaVersion":1,"environment":{"target":"other"}}')"
+printf '[cloud]\naws_profile="acme-admin"\n' >"$tmp/foreign.toml"
+git -C "$other" config llmctx.contextProfile "$tmp/foreign.toml"
+printf '[profile acme-admin]\n' >>"$tmp/home/.aws/config"
+set +e
+output="$(CI='' HOME="$tmp/home" GIT_DIR="$other/.git" GIT_WORK_TREE="$other" "$CHECK" check "$d" 2>&1)"
+status=$?
+set -e
+[[ "$status" -eq 1 && "$output" == *"CONFLICT aws:ambient-policy"* ]] || fail "inherited Git pointers changed explicit-target context: $output"
+
 echo "env-check tests: passed"
