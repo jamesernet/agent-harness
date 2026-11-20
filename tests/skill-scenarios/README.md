@@ -1,10 +1,11 @@
 # Skill decision scenarios
 
 These probes check what an agent chooses next when it reads the actual skill
-against a fixed user request and observed state. They cover three skills and
-seven situations: prior publication approval, deferred activation, missing
+against a fixed user request and observed state. They cover four skills and
+eleven situations: prior publication approval, deferred activation, missing
 reviewers, review-head changes, unchanged verdicts, deferred authentication, and
-unavailable reproduction evidence.
+unavailable reproduction evidence, authorized close-out, unfinished skills,
+unknown reasoning in another session, and incomplete registered-estate coverage.
 
 Prepare a prompt without its answer key:
 
@@ -19,7 +20,7 @@ the specified JSON. Save its unedited response outside the repository, then:
 python3 tests/skill-scenarios/evaluate.py check /tmp/grab-outcomes.json --skill grab
 ```
 
-Repeat for `review-merge-queue` and `diagnosing-bugs`, or omit `--skill` to prepare
+Repeat for `review-merge-queue`, `diagnosing-bugs`, and `close-out`, or omit `--skill` to prepare
 the full set. Keep the source commit, provider/model, prompt, unedited response,
 and scorer result with the local run evidence. Report which cases failed and
 inspect the free-text reasons before changing a skill; a failed score can expose

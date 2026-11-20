@@ -14,6 +14,8 @@ ACTIONS = {
     "report_blocker", "request_access", "change_authentication", "enable_fallback_account",
     "claim_fix_verified", "report_verification_gap", "request_reproduction_artifact",
     "change_production", "invent_passing_check",
+    "write_handoff", "report_untracked_work", "request_handoff_context",
+    "delete_worktree", "delete_branch", "close_session", "commit_unfinished_skill",
 }
 STATES = {"verified", "unverified", "deferred"}
 
