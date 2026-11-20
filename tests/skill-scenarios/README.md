@@ -2,10 +2,10 @@
 
 These probes check what an agent chooses next when it reads the actual skill
 against a fixed user request and observed state. They cover four skills and
-ten situations: prior publication approval, deferred activation, missing
+eleven situations: prior publication approval, deferred activation, missing
 reviewers, review-head changes, unchanged verdicts, deferred authentication, and
 unavailable reproduction evidence, authorized close-out, unfinished skills,
-and unknown reasoning in another session.
+unknown reasoning in another session, and incomplete registered-estate coverage.
 
 Prepare a prompt without its answer key:
 

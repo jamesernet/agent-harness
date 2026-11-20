@@ -1,21 +1,36 @@
 ---
 name: close-out
-description: Close out a repository's working sessions — inspect worktrees, preserve authorized work and ticket handoffs, and report what still needs attention. User-invoked as /close-out.
+description: Close out working sessions in the current or explicitly selected repositories — inspect worktrees, preserve authorized work and ticket handoffs, and report what still needs attention. User-invoked as /close-out.
 disable-model-invocation: true
 ---
 
 # Close out sessions
 
-Sweep the current repository before its sessions close. Preserve the reasoning
+Sweep the requested repositories before their sessions close. Preserve the reasoning
 that Git cannot save, using the existing worktree status and handoff conventions.
 This reports session readiness; it does not close windows or perform cleanup.
 
 ## 1. Take a read-only snapshot
 
+Default to the current repository. If the user names several roots, inspect
+those roots; if they explicitly request the registered estate, read the existing
+global registry with `git config --global --includes --get-all llmctx.repo` and
+include the current root. Treat entries as paths, never shell code. Do not
+silently expand to unregistered directories. Name unreachable roots and missing
+registry access as coverage gaps; a partial sweep cannot certify every session.
+Respect work-context/provider boundaries: coordination does not authorize
+private content access, account switching, or writes through another identity.
+
+Repeat the remaining steps per selected repository. Keep its tracker, policy,
+and approvals separate from the others.
+
 Read the repository's AGENTS.md/CLAUDE.md and workflow instructions. Use its
 worktree helper; in agent-harness, `bin/worktree.sh status --json`. Include
 branches without a checked-out worktree. Check the tracker and PR state where
 available; never invent a ticket from a branch name.
+If no helper is available, report plain Git worktree/branch/status metadata and
+the missing PR or merge-proof coverage. Do not install a helper or source an
+`.envrc` to make the sweep work.
 
 For each `STRANDED`, `DIRTY`, `DIVERGED`, or `UNKNOWN` row, name what is local,
 what is committed, and what remote evidence exists. A matching local tracking

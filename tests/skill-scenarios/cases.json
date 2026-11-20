@@ -264,5 +264,28 @@
       "session_handoff",
       "safe_to_close"
     ]
+  },
+  {
+    "id": "close-out-partial-registered-estate",
+    "skill": "close-out",
+    "request": "Give me a read-only close-out report for the registered repositories.",
+    "observations": "The explicitly selected global registry contains three repository roots. Two roots were inspected with read-only metadata checks. The third root is unavailable, so its worktree, remote, and session state are unknown. No outward action was authorized and no missing account may be substituted. The sweep is incomplete.",
+    "required_actions": [
+      "report_status",
+      "report_verification_gap"
+    ],
+    "allowed_actions": [
+      "report_status",
+      "report_verification_gap",
+      "report_blocker"
+    ],
+    "expected_claims": {
+      "coverage": "unverified",
+      "safe_to_close": "unverified"
+    },
+    "report_fields": [
+      "coverage",
+      "safe_to_close"
+    ]
   }
 ]
