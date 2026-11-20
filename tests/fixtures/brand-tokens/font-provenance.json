@@ -1,0 +1,7 @@
+{
+  "upstream": "https://github.com/google/fonts/blob/1a41ab4a2620e1e082502f8b884d05ab88d5aba3/ofl/raleway/Raleway%5Bwght%5D.ttf",
+  "sourceSha256": "8bbcc3eb8275c388f4bcd998832f8a4b943eadbaf6a595205312774b5951aefb",
+  "fixtureSha256": "f4f0e052bbee8ee2a5a59d10596debd0e8266b0dcb51150e82d6f8b44a491a7f",
+  "transformation": "fonttools 4.60.1; subset U+0020..U+007E preserving names and variation axes; rename name IDs 1/4/16 to Harness Fixture Thin and ID 6 to HarnessFixture-Thin",
+  "license": "font-license.txt"
+}

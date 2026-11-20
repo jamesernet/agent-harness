@@ -1,0 +1,15 @@
+{
+  "name": "agent-harness-brand-tokens",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "fontkit": "3.0.0",
+    "playwright": "1.65.1",
+    "postcss": "8.5.33",
+    "postcss-value-parser": "4.2.0",
+    "sharp": "0.35.5"
+  }
+}
