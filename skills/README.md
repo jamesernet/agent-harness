@@ -74,8 +74,8 @@ cold. If the second column reads as nothing, the skill should not exist.
 
 ### Design and engineering
 
-For any codebase. Five of these share one vocabulary and call each other;
-docs-drift-audit is the odd one out, auditing the docs the others read.
+For any codebase. The design skills share a vocabulary; repo-knowledge builds
+the source-backed library, and docs-drift-audit checks the docs the others read.
 
 | skill | invoke | focus | what it adds |
 |---|---|---|---|
@@ -83,6 +83,7 @@ docs-drift-audit is the odd one out, auditing the docs the others read.
 | [tdd](tdd/) | `/tdd` · auto | red/green in vertical slices | forbids writing all tests first; refactor candidates inline; records scenarios where the repo keeps a matrix; supporting [tests](tdd/tests.md), [mocking](tdd/mocking.md) |
 | [improve-codebase-architecture](improve-codebase-architecture/) | `/improve-codebase-architecture` | scan for shallow modules, report, grill the chosen one | before/after diagrams per candidate, ADR-conflict awareness, a top recommendation rather than a list; supporting [HTML-REPORT](improve-codebase-architecture/HTML-REPORT.md) |
 | [domain-modeling](domain-modeling/) | `/domain-modeling` · auto | glossary and ADRs maintained as decisions land | the three-part ADR gate (hard to reverse, surprising, a real trade-off) keeps ADRs rare; flat, multi-context and OKF layouts; supporting [ADR-FORMAT](domain-modeling/ADR-FORMAT.md), [CONTEXT-FORMAT](domain-modeling/CONTEXT-FORMAT.md), [OKF-FORMAT](domain-modeling/OKF-FORMAT.md) |
+| [repo-knowledge](repo-knowledge/) | `/repo-knowledge` · auto | source-backed OKF libraries across industry, business, customers, platform and operations | primary-source research, explicit knowledge gaps and source authority, progressive indexes, pinned portable OKF checks; supporting [authoring profile](repo-knowledge/references/authoring-profile.md) |
 | [interview-me](interview-me/) | `/interview-me` · auto | one question at a time, each with a recommended answer | the primitive that `grab`, `triage` and the architecture review rely on; "with docs" records the answers as ADRs |
 | [diagnosing-bugs](diagnosing-bugs/) | `/diagnosing-bugs` · auto | hard, flaky and performance bugs | no hypothesis until a fast, deterministic, red-capable command exists; then minimise, rank falsifiable hypotheses, instrument with tagged logs, fix with a regression test |
 | [docs-drift-audit](docs-drift-audit/) | `/docs-drift-audit` · auto | AGENTS.md, CLAUDE.md, README against the tree | a seven-stage resolver before anything is called broken, so the report is trusted; supporting [reference-taxonomy](docs-drift-audit/references/reference-taxonomy.md), [report-template](docs-drift-audit/references/report-template.md), [extract-refs.py](docs-drift-audit/scripts/extract-refs.py) |

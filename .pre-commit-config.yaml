@@ -20,7 +20,9 @@
 # `pre-commit run --all-files` directly.
 
 # NOTE ON vendor/: it is third-party code vendored verbatim for reproducibility,
-# refreshed by bin/update-vendor.sh. Rewriting it locally would make every vendor
+# refreshed by bin/update-vendor.sh. The pinned OKF upstream snapshot under
+# skills/repo-knowledge/assets/validation/upstream/ is likewise kept verbatim.
+# Rewriting third-party files locally would make every vendor
 # update a conflict against upstream and quietly fork the copy this repo exists
 # to keep faithful. So the FORMATTING hooks below exclude it — but gitleaks
 # deliberately does not, because vendored third-party code is precisely where an
@@ -52,7 +54,7 @@ repos:
     hooks:
       - id: shfmt
         args: [-i, "2", -ci, -w]
-        exclude: '^vendor/'
+        exclude: '^vendor/|^skills/repo-knowledge/assets/validation/upstream/'
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -71,6 +73,6 @@ repos:
         exclude: '^vendor/'
       - id: detect-private-key
       - id: end-of-file-fixer
-        exclude: '^vendor/'
+        exclude: '^vendor/|^skills/repo-knowledge/assets/validation/upstream/'
       - id: trailing-whitespace
-        exclude: '^vendor/'
+        exclude: '^vendor/|^skills/repo-knowledge/assets/validation/upstream/'
