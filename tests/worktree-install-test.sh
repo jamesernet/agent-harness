@@ -33,29 +33,33 @@ fail() {
 
 clone="$tmp/clone"
 wt="$tmp/wt"
-git clone --quiet --local --no-hardlinks "$SRC" "$clone"
-git -C "$clone" worktree add --quiet --detach "$wt" HEAD
 
-# Exercise the WORKING TREE, not whatever the clone's HEAD carries. This used to
-# copy three named inputs over the clone, which holds only while every other
-# input sits where HEAD has it: a commit that moves a directory the adapters
-# read, or adds a file they need, failed here before the commit existed. Every
-# tracked or unignored file is laid over both trees instead. A nested repository
-# is listed as a directory entry and skipped; a path deleted but not yet staged
-# is listed and absent, and skipped too.
-snapshot_into() {
-  (
-    cd "$SRC"
-    git ls-files -z --cached --others --exclude-standard |
-      while IFS= read -r -d '' path; do
-        case "$path" in */) continue ;; esac
-        if [[ -e "$path" || -L "$path" ]]; then printf '%s\0' "$path"; fi
-      done |
-      tar -cf - --null -T -
-  ) | tar -xf - -C "$1"
-}
-snapshot_into "$clone"
-snapshot_into "$wt"
+# The repository under test is BUILT FROM THE WORKING TREE, not cloned from HEAD.
+# A clone carries whatever HEAD has. Copying three named inputs over one held
+# only while every other input sat where HEAD had it; laying the whole working
+# tree over one fixed additions and edits and still left every path the working
+# tree had deleted or renamed. A commit that moves a directory the adapters read
+# was then tested against a tree holding both names, where a leftover reference
+# to the old one passes. Every tracked or unignored file that exists is copied
+# into a new repository and committed there, so the worktree added below holds
+# exactly the same tree. A nested repository is listed as a directory entry and
+# skipped; a path deleted but not yet staged is listed and absent, and skipped.
+# The name stays "clone" because the assertions below read naturally with it.
+mkdir -p "$clone"
+git -C "$clone" init --quiet
+(
+  cd "$SRC"
+  git ls-files -z --cached --others --exclude-standard |
+    while IFS= read -r -d '' path; do
+      case "$path" in */) continue ;; esac
+      if [[ -e "$path" || -L "$path" ]]; then printf '%s\0' "$path"; fi
+    done |
+    tar -cf - --null -T -
+) | tar -xf - -C "$clone"
+# -f: a tracked file that an ignore rule also matches must not drop out here.
+git -C "$clone" add -A -f .
+git -C "$clone" -c user.name=test -c user.email=test@example.com commit --quiet -m snapshot
+git -C "$clone" worktree add --quiet --detach "$wt" HEAD
 
 run_wt() { "$wt/bin/build-adapters.sh" "$@" >/dev/null 2>"$tmp/err"; }
 
