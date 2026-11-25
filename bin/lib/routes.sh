@@ -4,7 +4,7 @@
 # `llmctx.accountRoute name=path` entries in global git config say which tree
 # belongs to which account, and `llmctx.claudeAccount name=dir` is the registry
 # the names resolve against. account-gate.sh answered both questions inline;
-# the SessionStart tripwire needs the same answers for the session cwd, and two
+# the SessionStart notice needs the same answers for the session cwd, and two
 # hooks answering one question separately is how target.sh's two callers drifted
 # (#67). One implementation, here, installed beside the hooks as
 # llmctx-routes.sh next to llmctx-target.sh, whose path helpers it uses.
@@ -165,7 +165,7 @@ llmctx_routes_judge() { # <absolute path>
   printf '%s\t%s\t%s\t%s\t%s\n' "$route_name" "$route_path" "$expected_dir" "$active_name" "$active_dir"
 }
 
-# One story whichever hook spoke first: the tripwire says it at session start,
+# One story whichever hook spoke first: the notice says it at session start,
 # the guard at the first write, and the person should not read two versions.
 llmctx_routes_fix_text() { # <route path> <active name> <active dir>
   local route_path="$1" active_name="$2" active_dir="$3"

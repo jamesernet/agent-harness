@@ -81,7 +81,7 @@ fi
 
 # Agents install AFTER the backstop and never abort it: a hand-written
 # ~/.claude/agents/reviewer.md is a conflict, not a reason to leave the repo
-# without its branch guard. Only the flags it understands are forwarded —
+# without its branch backstop. Only the flags it understands are forwarded —
 # --bundle belongs to skills, and an unknown flag here used to exit 2 and stop
 # everything that followed.
 agent_args=()

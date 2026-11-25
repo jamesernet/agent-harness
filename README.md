@@ -126,13 +126,13 @@ export CLAUDE_CONFIG_DIR="$HOME/.claude-acme"
 
 A repository with its own `.envrc` needs `source_up_if_exists` as its first line, or it shadows the parent entirely — silently, with no error — and the routing does not apply there. Confirm with `/status` in a live session; it names the account and org.
 
-**The backstop for that routing** is `hooks/account-gate.sh`, installed into every account like the branch guard. Declare which tree belongs to which account, once, in global git config:
+**The gate behind that routing** is `hooks/account-gate.sh`, installed into every account like the branch gate. Declare which tree belongs to which account, once, in global git config:
 
 ```sh
 git config --global --add llmctx.accountRoute acme=~/repos/github.com/acme
 ```
 
-A write under a routed path from any other account is refused at the first tool call, with the fix in the message. Routes-only and symmetric: an unrouted path is nobody's business, so the client account can still edit a personal repo. It fails fast rather than early — quota is consumed by model calls and a `PreToolUse` hook runs after the first one. `hooks/account-notice.sh` is the early word from the other side: it runs at session start, before the first prompt, reads the same routes through the same library, and when the session's directory is routed to another account it tells the person and the agent at once, with the same fix. A `SessionStart` hook cannot refuse anything, so the guard stays the gate; neither is a billing boundary, since the session was already opened on the wrong login. Suspend both deliberately with `touch <config-dir>/.allow-cross-account`. `llmctx doctor` reports the routes, refuses one that names an unregistered account, and names every repository `.envrc` under a routed tree that never runs `source_up_if_exists`, because that file shadows the routing silently.
+A write under a routed path from any other account is refused at the first tool call, with the fix in the message. Routes-only and symmetric: an unrouted path is nobody's business, so the client account can still edit a personal repo. It fails fast rather than early — quota is consumed by model calls and a `PreToolUse` hook runs after the first one. `hooks/account-notice.sh` is the early word from the other side: it runs at session start, before the first prompt, reads the same routes through the same library, and when the session's directory is routed to another account it tells the person and the agent at once, with the same fix. A `SessionStart` hook cannot refuse anything, so the gate is still what refuses; neither is a billing boundary, since the session was already opened on the wrong login. Suspend both deliberately with `touch <config-dir>/.allow-cross-account`. `llmctx doctor` reports the routes, refuses one that names an unregistered account, and names every repository `.envrc` under a routed tree that never runs `source_up_if_exists`, because that file shadows the routing silently.
 
 The AWS half uses the machine-local `llmctx.contextProfile` binding described
 under Environments. `hooks/environment-notice.sh` compares `AWS_PROFILE` and

@@ -12,7 +12,7 @@ set -euo pipefail
 # agent, which is the half a notice to the person alone does not cover.
 #
 # A SessionStart hook cannot block: Claude Code shows exit 2's stderr and the
-# session proceeds. So this is a tripwire by construction. It says, it does not
+# session proceeds. So this is a notice by construction. It says, it does not
 # stop, and it says it to both sides in one JSON answer: additionalContext
 # reaches the agent before its first prompt, systemMessage reaches the person.
 # account-gate.sh still refuses the write if either ignores it.
@@ -46,7 +46,7 @@ llmctx_routes_load
 [[ -n "$LLMCTX_ROUTES" ]] || exit 0
 
 # The sentinel is judged again inside the library; it is read here first so a
-# suspended tripwire never pays for jq.
+# suspended notice never pays for jq.
 [[ -e "$(llmctx_routes_active_dir)/.allow-cross-account" ]] && exit 0
 # An unregistered config dir cannot be judged; said here first, the payload is
 # never parsed for it.

@@ -32,7 +32,7 @@ set -euo pipefail
 # that legitimately has one branch. A guard that is wrong half the time gets
 # disabled entirely, and then it protects nothing. Defaulting to a reminder
 # keeps the norm visible everywhere while leaving `deny` available where it
-# genuinely applies. A committed client profile defaults to `deny`.
+# genuinely applies. A committed `client` repository profile defaults to `deny`.
 #
 # Which branches count as protected is configurable too:
 #   git config llmctx.protectedBranches "main master release"

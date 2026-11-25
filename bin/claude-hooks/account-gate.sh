@@ -55,7 +55,7 @@ TARGET_LIB="$SCRIPT_DIR/llmctx-target.sh"
 # shellcheck source=../lib/target.sh
 source "$TARGET_LIB"
 # Routes and the account registry are read through one library, shared with the
-# SessionStart tripwire (account-notice.sh), so the two cannot drift apart.
+# SessionStart notice (account-notice.sh), so the two cannot drift apart.
 ROUTES_LIB="$SCRIPT_DIR/llmctx-routes.sh"
 [[ -f "$ROUTES_LIB" ]] || ROUTES_LIB="$SCRIPT_DIR/../lib/routes.sh"
 [[ -f "$ROUTES_LIB" ]] || exit 0

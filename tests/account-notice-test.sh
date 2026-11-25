@@ -90,7 +90,7 @@ fired "$(run "$HOME/repos/acme/mine" "$HOME/.claude-acme")" ||
 
 # The sentinel suspends it for the active account only, as it does the guard.
 touch "$HOME/.claude/.allow-cross-account"
-[[ -z "$(run "$HOME/repos/acme/app")" ]] || fail "the sentinel did not suspend the tripwire"
+[[ -z "$(run "$HOME/repos/acme/app")" ]] || fail "the sentinel did not suspend the notice"
 # Both hooks read the sentinel before they parse a payload, so the library's own
 # sentinel case is reached by no hook; it is part of judge's contract, so it is
 # pinned here directly, for the caller that does not pre-check.
@@ -126,16 +126,16 @@ out="$(
 # Registered under SessionStart with no matcher, so every source reaches it,
 # and installed into each account beside its library.
 jq -e '[.hooks.SessionStart[]? | select(has("matcher") | not) | .hooks[]?.command] | any(test("account-notice\\.sh$"))' \
-  "$SRC/claude/settings.json" >/dev/null || fail "claude/settings.json does not register the tripwire under SessionStart without a matcher"
+  "$SRC/claude/settings.json" >/dev/null || fail "claude/settings.json does not register the notice under SessionStart without a matcher"
 LLMCTX_ALLOW_WORKTREE_INSTALL=1 "$SRC/bin/build-adapters.sh" >/dev/null 2>&1 || fail "build-adapters failed"
-[[ -x "$HOME/.claude/hooks/account-notice.sh" ]] || fail "the tripwire was not installed into the default account"
+[[ -x "$HOME/.claude/hooks/account-notice.sh" ]] || fail "the notice was not installed into the default account"
 [[ -f "$HOME/.claude/hooks/llmctx-routes.sh" ]] || fail "the routes library was not installed beside it"
-[[ -x "$HOME/.claude-acme/hooks/account-notice.sh" ]] || fail "the tripwire was not installed into the acme account"
+[[ -x "$HOME/.claude-acme/hooks/account-notice.sh" ]] || fail "the notice was not installed into the acme account"
 jq -e '[.hooks.SessionStart[]?.hooks[]?.command] | any(test("/hooks/account-notice\\.sh$"))' \
-  "$HOME/.claude/settings.json" >/dev/null || fail "the installed settings do not register the tripwire"
+  "$HOME/.claude/settings.json" >/dev/null || fail "the installed settings do not register the notice"
 # The installed copy answers the same way the in-tree one does.
 fired "$(CLAUDE_CONFIG_DIR="" bash "$HOME/.claude/hooks/account-notice.sh" <<<"$(payload "$HOME/repos/acme/app")")" ||
-  fail "the installed tripwire did not fire"
+  fail "the installed notice did not fire"
 
 # --- doctor: a repository .envrc under a routed tree must source its parent ---
 # direnv loads only the nearest .envrc, so a repository file that does not
