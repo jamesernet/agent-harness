@@ -16,8 +16,8 @@ set -euo pipefail
 #
 # Why these three and nothing else yet: "which models ran against this client's
 # code, and how hard" is the contract-shaped question nothing on the machine
-# answered. The rest of the work context (identity, SSO, kube) waits for a second
-# real client, as the template says.
+# answered. The rest of the work context (identity, SSO, kube) waits for a
+# second real client, as the template says.
 #
 # The TOML read is a flat-key awk over one table, not a parser. The [ai] keys
 # are scalars and one string array by design; anything fancier belongs in a
@@ -124,8 +124,8 @@ if [[ -n "$models_raw" ]]; then
   }
   policy="$(jq -c --argjson m "$models_json" '. + {availableModels: $m, enforceAvailableModels: true}' <<<"$policy")"
 fi
-# All three keys are always managed. A work context that drops `models` means "no
-# restriction", so the restriction is removed; a stale allowlist that
+# All three keys are always managed. A work context that drops `models` means
+# "no restriction", so the restriction is removed; a stale allowlist that
 # drift-checks clean is the wrong default for a tool whose job is to say which
 # models may run against a client's code.
 remove='[]'
