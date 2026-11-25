@@ -36,16 +36,26 @@ wt="$tmp/wt"
 git clone --quiet --local --no-hardlinks "$SRC" "$clone"
 git -C "$clone" worktree add --quiet --detach "$wt" HEAD
 
-# Exercise the WORKING TREE's script, not whatever the clone's HEAD carries —
-# including the hook libraries it installs, which the clone's HEAD may predate.
-cp "$SRC/bin/build-adapters.sh" "$clone/bin/build-adapters.sh"
-cp "$SRC/bin/build-adapters.sh" "$wt/bin/build-adapters.sh"
-mkdir -p "$clone/bin/lib" "$wt/bin/lib"
-cp "$SRC"/bin/lib/*.sh "$clone/bin/lib/"
-cp "$SRC"/bin/lib/*.sh "$wt/bin/lib/"
-# The same source snapshot supplies the required procedures the adapters link.
-cp "$SRC"/global/*.md "$clone/global/"
-cp "$SRC"/global/*.md "$wt/global/"
+# Exercise the WORKING TREE, not whatever the clone's HEAD carries. This used to
+# copy three named inputs over the clone, which holds only while every other
+# input sits where HEAD has it: a commit that moves a directory the adapters
+# read, or adds a file they need, failed here before the commit existed. Every
+# tracked or unignored file is laid over both trees instead. A nested repository
+# is listed as a directory entry and skipped; a path deleted but not yet staged
+# is listed and absent, and skipped too.
+snapshot_into() {
+  (
+    cd "$SRC"
+    git ls-files -z --cached --others --exclude-standard |
+      while IFS= read -r -d '' path; do
+        case "$path" in */) continue ;; esac
+        if [[ -e "$path" || -L "$path" ]]; then printf '%s\0' "$path"; fi
+      done |
+      tar -cf - --null -T -
+  ) | tar -xf - -C "$1"
+}
+snapshot_into "$clone"
+snapshot_into "$wt"
 
 run_wt() { "$wt/bin/build-adapters.sh" "$@" >/dev/null 2>"$tmp/err"; }
 
