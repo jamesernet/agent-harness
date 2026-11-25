@@ -20,8 +20,9 @@ printf '#!/bin/sh\nexit 0\n' >"$tmp/bin/pre-commit"
 printf '#!/bin/sh\nexit 0\n' >"$tmp/repo/bin/lint-skills.sh"
 # The vendor check goes through the dispatcher, never a script path. The
 # installed hook is shared by every linked worktree, so a path named there stops
-# resolving in whichever tree renames the script first.
-printf '#!/bin/sh\n[ "$*" = "vendor check" ] || exit 64\nexit 0\n' >"$tmp/repo/bin/llmctx"
+# resolving in whichever tree renames the script first. The stub leaves a file
+# behind so that the check being dropped from the hook altogether fails here.
+printf '#!/bin/sh\n[ "$*" = "vendor check" ] || exit 64\n: >"$CHECKS_FIXTURE/vendor-checked"\n' >"$tmp/repo/bin/llmctx"
 printf '#!/bin/sh\nexit 0\n' >"$tmp/repo/tests/run.sh"
 cat >"$tmp/repo/bin/build-adapters.sh" <<'EOF'
 #!/bin/sh
@@ -34,6 +35,7 @@ EOF
 chmod +x "$tmp/bin/"* "$tmp/repo/bin/"* "$tmp/repo/tests/run.sh"
 PATH="$tmp/bin:$PATH" GIT_CONFIG_GLOBAL="$tmp/global" \
   bash "$SRC/bin/git-hooks/pre-commit-local.agent-harness"
+[[ -e "$tmp/vendor-checked" ]]
 [[ "$(wc -l <"$tmp/smoke-homes" | tr -d ' ')" == 2 ]]
 while IFS= read -r smoke_home; do [[ ! -d "$smoke_home" ]]; done <"$tmp/smoke-homes"
 [[ ! -e "$tmp/registered-account" ]]
