@@ -63,7 +63,7 @@ bin/llmctx explain <profile|branchPolicy|irreversiblePolicy|mergePolicy|protecte
 bin/llmctx account list [--provider claude|codex] [--json]
 bin/llmctx account add [--provider claude|codex] <name> <dir>
 bin/llmctx account remove [--provider claude|codex] <name>
-bin/llmctx skills install [--dev] [--bundle <name>] [--account <name>]
+bin/llmctx skills install [--dev] [--bundle <name>[,<name>...]] [--account <name>]
 bin/llmctx agents install [--dev] [--account <name>]
 bin/llmctx context apply <work-context.toml> [--check]
 bin/llmctx vendor check
@@ -101,9 +101,9 @@ bin/llmctx account add --provider codex acme ~/.codex-acme
 ```
 
 This makes installation and drift checks cover that account without copying its
-credentials or authenticated session. `CODEX_HOME` selects the account at launch;
-authentication isolation must still be proven with independent real logins on
-the adopting machine before relying on it as a security boundary.
+credentials or authenticated session. `CODEX_HOME` selects the account at
+launch; authentication isolation must still be proven with independent real
+logins on the adopting machine before relying on it as a security boundary.
 
 `~/.claude` and `~/.codex` are always installed into as `default` for their provider and cannot be unregistered. Registration is purely additive, because a list that could omit the primary would reintroduce exactly the failure this exists to prevent: an install that skips an account and still reports success. `--account <name>` remains a Claude-only narrowing flag for compatibility; a normal run checks every registered account.
 
@@ -218,8 +218,8 @@ git config --local llmctx.contextProfile /absolute/path/to/private-context.toml
 ```
 
 A conditional Git include can supply the same key for a whole work context. The
-checker reads TOML with Python 3.11+ and never sources it. Canonical work contexts
-use `[cloud] aws_profile` for the read-only ambient AWS profile,
+checker reads TOML with Python 3.11+ and never sources it. Canonical work
+contexts use `[cloud] aws_profile` for the read-only ambient AWS profile,
 `aws_write_profile` for human step-up, and `[ai] allow_code_egress` /
 `agents_allowed`. Legacy `[aws] default_profile` / `write_profile` remain
 supported. Contradictory fields, a missing work-context file, a non-ambient
@@ -229,7 +229,8 @@ machine-specific AWS configuration and secret bindings are exempt.
 
 These are checks against the owner's declaration. They do not prove IAM
 permissions, remove ambient credentials, constrain MCP execution, or authorize
-a deployment. Machine isolation and work-context binding remain `workstation`'s job.
+a deployment. Machine isolation and work-context binding remain
+`workstation`'s job.
 
 Where a value comes from is layered, lowest to highest: the target file, the
 repository's declaration, then the machine's binding in `workstation`. Claude
@@ -282,12 +283,12 @@ git config llmctx.irreversiblePolicy deny
 ```
 
 Two things differ from `branchPolicy`, both deliberate. The default is `ask`
-**everywhere** rather than derived from the repository profile, because branch strictness
-genuinely is a dial a client engagement turns up, while "stop and confirm before
-destroying something" is the same answer in every repository — and a
-profile-derived default would have made the personal case `remind`, which for a
-destructive command means warning once and allowing every one after it. For the
-same reason `remind` is treated as `ask` here.
+**everywhere** rather than derived from the repository profile, because branch
+strictness genuinely is a dial a client engagement turns up, while "stop and
+confirm before destroying something" is the same answer in every repository —
+and a default derived from the repository profile would have made the personal
+case `remind`, which for a destructive command means warning once and allowing
+every one after it. For the same reason `remind` is treated as `ask` here.
 
 What it does not check matters as much. Database drops and migrations against a
 non-local environment are named in the guidelines and are not recognisable from
@@ -340,7 +341,7 @@ bin/llmctx publish sync
 bin/llmctx publish sync --check
 ```
 
-Normal sync skips consumer repositories that are not cloned and never creates repository roots. Check mode treats missing repositories and marker-block drift as failures. Content intended to remain private does not belong in `global/`, `brand/`, or any publish destination.
+Normal sync skips consumer repositories that are not cloned and never creates repository roots. Check mode treats missing repositories and marker-block drift as failures. Content intended to remain private does not belong in `global/`, `brand/`, or anything else that is published.
 
 ## Work contexts
 
@@ -373,7 +374,7 @@ own repo. See `templates/teams/opinion-gallery/README.md`.
 
 ```text
 install.sh        entry point; runs bin/llmctx install
-.llmctx.json      this repository's own repository policy
+.llmctx.json      the repository policy this repository declares for itself
 vendor.lock.json  the pin for vendor/
 .github/          the CI workflow
 global/           portable behavioral, communication, and handoff rules

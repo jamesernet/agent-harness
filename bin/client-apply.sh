@@ -5,7 +5,7 @@ set -euo pipefail
 #
 #   llmctx context apply <work-context.toml>            write
 #   llmctx context apply <work-context.toml> --check    report drift, change nothing
-#   llmctx client apply ...                        compatibility alias
+#   llmctx client apply ...                             compatibility alias
 #
 # This is deliberately narrow: it reads only [providers.claude] (or the legacy
 # [ai] table) and writes only the three settings keys its account, models, and
@@ -16,7 +16,7 @@ set -euo pipefail
 #
 # Why these three and nothing else yet: "which models ran against this client's
 # code, and how hard" is the contract-shaped question nothing on the machine
-# answered. The rest of the profile (identity, SSO, kube) waits for a second
+# answered. The rest of the work context (identity, SSO, kube) waits for a second
 # real client, as the template says.
 #
 # The TOML read is a flat-key awk over one table, not a parser. The [ai] keys
@@ -124,7 +124,7 @@ if [[ -n "$models_raw" ]]; then
   }
   policy="$(jq -c --argjson m "$models_json" '. + {availableModels: $m, enforceAvailableModels: true}' <<<"$policy")"
 fi
-# All three keys are always managed. A profile that drops `models` means "no
+# All three keys are always managed. A work context that drops `models` means "no
 # restriction", so the restriction is removed; a stale allowlist that
 # drift-checks clean is the wrong default for a tool whose job is to say which
 # models may run against a client's code.
@@ -147,7 +147,7 @@ fi
   exit 1
 }
 
-# The account must be one this machine knows, or the policy lands nowhere.
+# The account must be one this machine knows, or the limits land nowhere.
 account_dir=""
 while IFS=$'\t' read -r name dir; do
   [[ "$name" == "$account" ]] && account_dir="$dir" && break

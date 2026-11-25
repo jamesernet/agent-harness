@@ -108,7 +108,7 @@ if [[ "$mode" == "explain" ]]; then
     [[ -n "${values// /}" ]] && printf '%-8s    %s\n' "$key" "$values"
   done
   echo
-  echo "Work context: $LLMCTX_CONTEXT_POLICY_STATE (machine-local llmctx.contextProfile)"
+  echo "Work-context file: $LLMCTX_CONTEXT_POLICY_STATE (machine-local llmctx.contextProfile)"
   [[ -z "$LLMCTX_CONTEXT_POLICY_ERROR" ]] || echo "  $LLMCTX_CONTEXT_POLICY_ERROR"
   echo "Still manual, and deliberately:"
   [[ -n "$(field onboard_hint)" ]] && echo "  onboard:  $(field onboard_hint)"
@@ -195,7 +195,7 @@ if [[ -n "$aws_profile" ]]; then
     add OK "aws:$aws_profile" "configured in ~/.aws/config" ""
   else
     add MISSING "aws:$aws_profile" "declared but not present in ~/.aws/config" \
-      "add the profile, or correct the name in .llmctx.json"
+      "add the AWS profile, or correct the name in .llmctx.json"
   fi
 fi
 

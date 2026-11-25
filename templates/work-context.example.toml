@@ -1,8 +1,8 @@
 # Work context — the canonical isolation-boundary shape.
 #
-# Real work-context files live in the private workstation repository. This public file
-# names identifiers and references only; credentials and authenticated sessions
-# never belong in it.
+# Real work-context files live in the private workstation repository. This
+# public file names identifiers and references only; credentials and
+# authenticated sessions never belong in it.
 
 [context]
 id = "acme"

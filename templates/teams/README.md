@@ -5,10 +5,10 @@ people write and a small runtime that runs it. Copy a whole directory into the
 org's repo; the pattern lives here, the instance lives there.
 
 This is the other half of `templates/agents/`. An agent template there is one
-point of view, one file, copied into `.claude/agents/` and run inside Claude Code. A
-team here is several voices, a brief they all read, rules on how they argue,
-and code that schedules them; it runs on its own and inherits nothing from
-`global/`.
+point of view, one file, copied into `.claude/agents/` and run inside Claude
+Code. A team here is several voices, a brief they all read, rules on how they
+argue, and code that schedules them; it runs on its own and inherits nothing
+from `global/`.
 
 | team | what it does | runtime |
 |---|---|---|

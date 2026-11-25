@@ -27,14 +27,14 @@ llmctx_context_session_message() (
       issues="AWS_PROFILE does not match the context's declared read-only ambient profile ($read_profile)."
     fi
     if [[ -n "${AWS_DEFAULT_PROFILE:-}" && "${AWS_DEFAULT_PROFILE}" != "$read_profile" ]]; then
-      issues="${issues}${issues:+$'\n'}AWS_DEFAULT_PROFILE selects another profile."
+      issues="${issues}${issues:+$'\n'}AWS_DEFAULT_PROFILE selects another AWS profile."
     fi
   elif [[ -n "$active" && "$active" != __workstation_unbound__ ]] || [[ -n "${AWS_DEFAULT_PROFILE:-}" && "${AWS_DEFAULT_PROFILE}" != __workstation_unbound__ ]]; then
     issues="This context declares no ambient AWS profile, but the session selects one."
   fi
   for variable in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_SECURITY_TOKEN AWS_WEB_IDENTITY_TOKEN_FILE AWS_ROLE_ARN AWS_ROLE_SESSION_NAME AWS_CONTAINER_CREDENTIALS_RELATIVE_URI AWS_CONTAINER_CREDENTIALS_FULL_URI AWS_CONTAINER_AUTHORIZATION_TOKEN AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE; do
     if [[ -n "${!variable:-}" ]]; then
-      issues="${issues}${issues:+$'\n'}$variable is set and can override profile-based isolation."
+      issues="${issues}${issues:+$'\n'}$variable is set and can override isolation by AWS profile."
     fi
   done
   if [[ -n "${AWS_CONFIG_FILE:-}" && "$AWS_CONFIG_FILE" != "$HOME/.aws/config" ]]; then

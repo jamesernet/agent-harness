@@ -19,9 +19,9 @@ public contributors/upstreams
                                                  + project-local instructions
 ```
 
-The important crossings are untrusted contribution to executable agent instructions,
-public source to a privileged local installation, and private overlays merged
-with public defaults.
+The important crossings are untrusted contribution to executable agent
+instructions, public source to a privileged local installation, and private
+overlays merged with public defaults.
 
 ## Rules
 
