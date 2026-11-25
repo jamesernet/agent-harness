@@ -17,9 +17,11 @@ case "$*" in
 esac
 EOF
 printf '#!/bin/sh\nexit 0\n' >"$tmp/bin/pre-commit"
-for tool in lint-skills.sh check-vendor-lock.sh; do
-  printf '#!/bin/sh\nexit 0\n' >"$tmp/repo/bin/$tool"
-done
+printf '#!/bin/sh\nexit 0\n' >"$tmp/repo/bin/lint-skills.sh"
+# The vendor check goes through the dispatcher, never a script path. The
+# installed hook is shared by every linked worktree, so a path named there stops
+# resolving in whichever tree renames the script first.
+printf '#!/bin/sh\n[ "$*" = "vendor check" ] || exit 64\nexit 0\n' >"$tmp/repo/bin/llmctx"
 printf '#!/bin/sh\nexit 0\n' >"$tmp/repo/tests/run.sh"
 cat >"$tmp/repo/bin/build-adapters.sh" <<'EOF'
 #!/bin/sh
