@@ -61,9 +61,10 @@ session per worktree.
    and, when publication was requested and the repository permits unreviewed
    PRs, publish a draft or clearly blocked PR with the gap stated. A missing
    reviewer prevents automatic merge, not preparation of a reviewable result.
-   On
-   completion or when stopping mid-flight, write a handoff per
-   [handoff](../handoff/) so any agent — or a human — can resume.
+   When stopping mid-flight, write a handoff per [handoff](../handoff/) so any
+   agent — or a human — can resume. Completed work needs no handoff: the
+   commits, the ticket and the PR carry it, and [close-out](../close-out/)
+   catches what they do not.
 
 6. **When you are asked to publish the work** — and not before, because
    nothing pushes or opens a pull request without being asked — honor approval

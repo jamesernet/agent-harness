@@ -1,6 +1,6 @@
 ---
 name: close-out
-description: Close out working sessions in the current or explicitly selected repositories — inspect worktrees, preserve authorized work and ticket handoffs, and report what still needs attention. User-invoked as /close-out.
+description: Close out working sessions in the current or explicitly selected repositories — inspect worktrees, preserve authorized work and ticket handoffs, list what the current session learned that is recorded nowhere, and report what still needs attention. User-invoked as /close-out.
 disable-model-invocation: true
 ---
 
@@ -9,6 +9,11 @@ disable-model-invocation: true
 Sweep the requested repositories before their sessions close. Preserve the reasoning
 that Git cannot save, using the existing worktree status and handoff conventions.
 This reports session readiness; it does not close windows or perform cleanup.
+
+[handoff](../handoff/) is for one ticket, mid-flight: the work continues and
+the next session needs what the ticket does not say. Close-out is for the end
+of a session, across everything the session touched; it uses handoff for any
+ticket still in flight.
 
 ## 1. Take a read-only snapshot
 
@@ -43,7 +48,34 @@ when a window closes. Report live session names/cwds only when known. A clean
 tree, an old process, or an unchanged mtime does not establish that another
 session is idle or that its reasoning is captured.
 
-## 2. Propose exact preservation actions
+## 2. List what the current session learned
+
+Preserved work is not the whole of a session. Ask what this session learned or
+decided that the repository, the tracker and the agent's memory do not already
+say. Only the current session can answer for itself; do not write this list
+for another session.
+
+Check each candidate against where it would live before keeping it. An item
+already on the ticket, in a commit or PR body, or in a document is dropped,
+not restated. **An empty list is a normal result: say "nothing to capture" and
+move on.** Do not write documentation to mark the end of a session.
+
+Give each remaining item exactly one home:
+
+| what it is | home |
+|---|---|
+| where in-flight work stands, and what comes next | a comment on its existing ticket, via [handoff](../handoff/) |
+| shipped behaviour or a convention changed and a document still says the old thing | an edit to that document; find the lines with [docs-drift-audit](../docs-drift-audit/) scoped to the files this session touched, not the whole repository |
+| work found and not done | a follow-up issue, where the repository tracks work that way |
+| durable guidance on how to work here, of use to later sessions | the agent's memory, where the tool has one |
+
+A decision that should outlive the work follows the repository's own decision
+record convention. Something that fits no row stays in the report.
+
+These are proposals. They join step 3's list and need the same authorization
+as any other write; a read-only close-out request reports them and makes none.
+
+## 3. Propose exact preservation actions
 
 List the branch, ticket/PR, and action. Reuse authorization already given for
 those actions and targets in this session; ask only for missing authorization
@@ -63,7 +95,7 @@ or tracker writes by itself.
   session, request its owner's summary when needed or mark the handoff unknown;
   never reconstruct an internal decision from file timestamps or a clean diff.
 
-## 3. Perform only the approved actions
+## 4. Perform only the approved actions
 
 Before acting, re-read the relevant row and head. If another session changed it,
 reassess the proposal; do not overwrite its work. Read the required Git workflow
@@ -74,11 +106,14 @@ After a handoff, stop implementation on that ticket. Finish only the remaining
 approved close-out actions and report. Keep credentials, account details, and
 private configuration out of public ticket comments.
 
-## 4. Report what can close
+## 5. Report what can close
 
 Use `<repo> @ <branch>` and the worktree path when no session name is available.
 Separate observed committed/pushed/reviewed/merged state from activation and
 publication. Planned actions and an unverified check are not completed actions.
+
+Report the capture list: what was written and where, what was proposed and
+not approved, and what was dropped as already recorded.
 
 Name the sessions ready to close only when their disk state is preserved and
 their current reasoning is captured or confirmed by the owner. For other
@@ -92,3 +127,4 @@ as part of this skill. Those are separate workflows and authorizations.
 
 - [start-a-session](../start-a-session/) reads the same repository state at opening.
 - [handoff](../handoff/) defines the per-ticket continuity artifact.
+- [docs-drift-audit](../docs-drift-audit/) finds the document lines a change left behind.
