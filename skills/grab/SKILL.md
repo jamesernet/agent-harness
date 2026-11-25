@@ -84,7 +84,8 @@ session per worktree.
      commit or merge-forward changes that head afterwards, the verdict is
      stale: obtain a fresh independent review and CI for the new head before
      merging. A finding goes back through fix and re-review, never
-     a quiet patch. Then clean up the worktree and branch by the global
+     a quiet patch; the re-review is narrow and the loop stops as
+     [review-merge-queue](../review-merge-queue/) step 5 says. Then clean up the worktree and branch by the global
      guidelines' §5 rules. If `gh pr merge` is refused by a permission rule,
      say so and fall back to `hold` out loud — do not treat the refusal as a
      verdict on the work.

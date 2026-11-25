@@ -16,6 +16,7 @@ ACTIONS = {
     "change_production", "invent_passing_check",
     "write_handoff", "report_untracked_work", "request_handoff_context",
     "delete_worktree", "delete_branch", "close_session", "commit_unfinished_skill",
+    "record_accepted_note",
 }
 STATES = {"verified", "unverified", "deferred"}
 
