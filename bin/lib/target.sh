@@ -22,7 +22,7 @@
 # What this does NOT decide, deliberately, because the two callers need
 # different answers:
 #
-#   * whether the path exists. branch-policy.sh needs somewhere real for
+#   * whether the path exists. branch-gate.sh needs somewhere real for
 #     `git -C` to stand and applies its own `-d` test; account-guard.sh
 #     prefix-matches a path that may not exist yet and canonicalises instead.
 #   * whether a relative path is resolved, and against what. A relative result
@@ -32,7 +32,7 @@
 # WHICH REPOSITORY, not which directory. `--git-dir=<x>/.git` names a
 # repository, so the answer is `<x>` -- the directory CONTAINING it, because
 # `rev-parse --show-toplevel` is fatal from inside a `.git` (measured), and
-# that call is the first thing branch-policy.sh makes with this answer; the
+# that call is the first thing branch-gate.sh makes with this answer; the
 # git dir itself would make it exit 0, which is the bypass this closes (#103).
 # A git dir not named `.git` -- bare, or `--separate-git-dir` -- has no work
 # tree to contain it, so the git dir is returned as-is and the callers'
@@ -63,7 +63,7 @@ llmctx_target_tilde="~"
 # ending in whitespace, so it slots between a statement start and the verb.
 #
 # One definition, three consumers. This was written three times -- in
-# branch-policy.sh's gate, in irreversible-policy.sh, and (as awk) in the
+# branch-gate.sh's gate, in irreversible-policy.sh, and (as awk) in the
 # resolver below -- and each copy was found to miss a different spelling. The
 # review of #103 found `sudo -u root git --git-dir=…` still walking past the
 # branch guard after the resolver had learned it, which is the same bug one
@@ -389,7 +389,7 @@ llmctx_target_from_command() {
   # THE ONE DIVERGENCE, now decided.
   #
   # `cd "$VAR"` where the assignment is not in this command text cannot be
-  # resolved here. branch-policy.sh used to keep the literal `$VAR` and let its
+  # resolved here. branch-gate.sh used to keep the literal `$VAR` and let its
   # `-d` test reject it, falling back to the session cwd. account-guard.sh kept
   # the literal too, but had no `-d` test, so it canonicalised `$VAR` — which
   # walks up to the nearest existing ancestor and could select a route the
@@ -399,7 +399,7 @@ llmctx_target_from_command() {
   # variable means "cannot tell", the caller falls back to the cwd it was given,
   # and no route is matched on the strength of a path nobody wrote. That makes
   # account-guard.sh strictly more careful than before and leaves
-  # branch-policy.sh's effective behaviour unchanged.
+  # branch-gate.sh's effective behaviour unchanged.
   case "$dir" in
     '$'*)
       # Only the variable NAME is a lookup key, and it is a bare identifier

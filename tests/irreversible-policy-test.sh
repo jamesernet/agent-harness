@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # bin/claude-hooks/irreversible-policy.sh — the second tenant on the policy
-# ladder. Driven through its real stdin contract, like the branch-policy suite.
+# ladder. Driven through its real stdin contract, like the branch-gate suite.
 #
 # Half of this file is false-positive cases. A guard that is wrong on ordinary
 # work gets switched off, and then it protects nothing — so "this must NOT
@@ -265,7 +265,7 @@ want allow "global off applies" "$repo" "$PF origin main"
 # destructive command that follows protects nothing.
 git config --global llmctx.irreversiblePolicy remind
 want ask "remind behaves as ask" "$repo" "$PF origin main"
-# ...and unlike branch-policy's remind, it fires EVERY time rather than once.
+# ...and unlike the branch gate's remind, it fires EVERY time rather than once.
 want ask "remind fires again" "$repo" "$PF origin main"
 git config --global --unset llmctx.irreversiblePolicy
 

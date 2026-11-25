@@ -105,6 +105,39 @@ HOOK_LIBS=(policy target routes context-policy context-session)
 hook_lib_src() { printf '%s\n' "$SRC/bin/lib/$1.sh"; }
 hook_lib_dest() { printf '%s\n' "$CLAUDE_HOOKS_DEST/llmctx-$1.sh"; }
 
+# Hook file names this repository used to ship; the file says why they are
+# listed. RETIRED_HOOKS holds the `old|new` lines that apply to the account
+# use_account() last pointed at.
+RETIRED_HOOKS_FILE="$CLAUDE_HOOKS_SRC/retired.conf"
+RETIRED_HOOKS=""
+RETIRED_HOOK_MARKER='# llmctx-retired-hook'
+
+# The old names, as the JSON array the settings filters take.
+retired_json() {
+  if [[ -z "$RETIRED_HOOKS" ]]; then
+    echo '[]'
+    return
+  fi
+  cut -d'|' -f1 <<<"$RETIRED_HOOKS" | jq -R . | jq -sc .
+}
+
+# What stands at a retired name for one release. A session that started before
+# the upgrade keeps the settings it loaded, old path included, and a hook
+# command that cannot start does not block: deleting the old file would switch
+# the check off for exactly the sessions nobody is watching. The shim runs the
+# successor from its own directory, so it holds for every account. Line 2 is the
+# marker --check and the tests recognise it by.
+render_retired_shim() { # <old> <new>
+  cat <<EOF
+#!/usr/bin/env bash
+$RETIRED_HOOK_MARKER
+# $1 was renamed to $2. This file exists so that a session started before the
+# rename, which still holds this path, keeps reaching the check. It is removed
+# in the release after the rename; nothing new should name this path.
+exec "\$(dirname "\${BASH_SOURCE[0]}")/$2" "\$@"
+EOF
+}
+
 # Point every per-account destination at one config directory.
 use_account() {
   local dir="$1"
@@ -116,6 +149,7 @@ use_account() {
   CLAUDE_SETTINGS_DEST="$dir/settings.json"
   CLAUDE_HOOKS_DEST="$dir/hooks"
   CLAUDE_CONFIG_PREFIX="$(llmctx_account_home_path "$dir")"
+  RETIRED_HOOKS="$(llmctx_retired_hooks "$RETIRED_HOOKS_FILE" "$CLAUDE_ACCOUNT_NAME")"
   # A LITERAL tilde: this one is prose inside the generated CLAUDE.md, read by a
   # human, not a path this script ever opens.
   # shellcheck disable=SC2088
@@ -154,8 +188,24 @@ use_codex_account() {
 #
 # Not on the MATCHER, because two entries legitimately share one: that is how
 # you attach two independent guards to the same tools.
+#
+# A RETIRED name ($retired, from retired.conf) is the one exception to "a script
+# this repo does not ship survives": it is our own previous name, and kept by
+# that rule it would run beside its successor in every account. Only the hook
+# object naming it is removed, and its group goes only if that leaves it empty,
+# because a foreign hook can share the group and is not ours to delete.
+#
+# A command is read for its script name only when it is a string. The array form
+# used to reach split() and abort the whole merge, leaving that account's
+# settings as they were with nothing said.
 HOOK_MERGE_JQ='
-def entry_cmds: [.hooks[]? | .command // empty | split("/") | last];
+def cmd_name: (.command // empty) | if type == "string" then split("/") | last else empty end;
+def entry_cmds: [.hooks[]? | cmd_name];
+def without_retired:
+  if (entry_cmds | any(IN($retired[]))) then
+    .hooks = [.hooks[]? | select(([cmd_name] | any(IN($retired[]))) | not)]
+    | select((.hooks | length) > 0)
+  else . end;
 . as $local
 | ($local * $repo)
 | if ($repo | has("hooks")) then
@@ -163,15 +213,20 @@ def entry_cmds: [.hooks[]? | .command // empty | split("/") | last];
       reduce ($repo.hooks | keys_unsorted[]) as $e (($local.hooks // {});
         ([$repo.hooks[$e][]? | entry_cmds[]] | unique) as $rc
         | .[$e] = (($repo.hooks[$e] // [])
-                   + [($local.hooks[$e][]?) | select((entry_cmds | any(IN($rc[]))) | not)]))
+                   + [($local.hooks[$e][]?)
+                      | select((entry_cmds | any(IN($rc[]))) | not)
+                      | without_retired]))
     )
   else . end
 '
 
 # The mirror image, for --check: the part of the live file this repo manages, so
-# a local `theme` or a foreign hook entry never reports as drift.
+# a local `theme` or a foreign hook entry never reports as drift. An entry naming
+# a retired hook counts as managed here, which is what makes one that is still
+# registered show up as drift instead of passing as somebody else's.
 HOOK_SUBSET_JQ='
-def entry_cmds: [.hooks[]? | .command // empty | split("/") | last];
+def cmd_name: (.command // empty) | if type == "string" then split("/") | last else empty end;
+def entry_cmds: [.hooks[]? | cmd_name];
 . as $local
 | ($repo | keys) as $rk
 | ($local | with_entries(select(.key as $k | $rk | index($k))))
@@ -179,7 +234,7 @@ def entry_cmds: [.hooks[]? | .command // empty | split("/") | last];
     .hooks = (
       reduce ($repo.hooks | keys_unsorted[]) as $e ({};
         ([$repo.hooks[$e][]? | entry_cmds[]] | unique) as $rc
-        | .[$e] = [($local.hooks[$e][]?) | select(entry_cmds | any(IN($rc[])))])
+        | .[$e] = [($local.hooks[$e][]?) | select(entry_cmds | any(IN($rc[]), IN($retired[])))])
     )
   else . end
 '
@@ -200,7 +255,7 @@ render_settings() {
   local current="{}"
   [[ -f "$CLAUDE_SETTINGS_DEST" ]] && current="$(cat "$CLAUDE_SETTINGS_DEST")"
   printf '%s' "$current" |
-    jq --argjson repo "$(render_settings_src)" "$HOOK_MERGE_JQ"
+    jq --argjson repo "$(render_settings_src)" --argjson retired "$(retired_json)" "$HOOK_MERGE_JQ"
 }
 
 # The subset of the live file that this repo actually manages — used by --check
@@ -210,7 +265,7 @@ managed_subset() {
     echo '{}'
     return
   }
-  jq --argjson repo "$(render_settings_src)" "$HOOK_SUBSET_JQ" \
+  jq --argjson repo "$(render_settings_src)" --argjson retired "$(retired_json)" "$HOOK_SUBSET_JQ" \
     "$CLAUDE_SETTINGS_DEST"
 }
 GEN_NOTE="GENERATED by jamesernet/agent-harness/bin/build-adapters.sh — edit the source files in agent-harness, not here."
@@ -326,7 +381,7 @@ render_claude() {
   fi
   echo "## Claude Code specifics"
   echo
-  echo "The \"branch before you build\" rule has a global \`PreToolUse\` hook behind it (\`$CLAUDE_CONFIG_DISPLAY/hooks/branch-policy.sh\`). How hard it pushes is per-repo, via \`git config llmctx.branchPolicy\`:"
+  echo "The \"branch before you build\" rule has a global \`PreToolUse\` hook behind it (\`$CLAUDE_CONFIG_DISPLAY/hooks/branch-gate.sh\`). How hard it pushes is per-repo, via \`git config llmctx.branchPolicy\`:"
   echo
   echo "| policy | behaviour |"
   echo "|---|---|"
@@ -508,6 +563,17 @@ if [[ "$check_only" -eq 1 ]]; then
         drift=1
       }
     done
+    # A file at a retired name is in sync only as the shim. The previous
+    # release's script still sitting there is an account the rename has not
+    # reached; an account that never had the file has nothing to compare.
+    while IFS='|' read -r old new; do
+      [[ -n "$old" ]] || continue
+      [[ -e "$CLAUDE_HOOKS_DEST/$old" ]] || continue
+      diff <(render_retired_shim "$old" "$new") "$CLAUDE_HOOKS_DEST/$old" >/dev/null 2>&1 || {
+        echo "drift: $CLAUDE_HOOKS_DEST/$old (retired in favour of $new)"
+        drift=1
+      }
+    done <<<"$RETIRED_HOOKS"
   done <<<"$accounts"
 
   # Codex is not a Claude account, so a run narrowed to one has nothing to say
@@ -549,15 +615,32 @@ while IFS=$'\t' read -r account_name account_dir; do
   echo "account: $account_name -> $account_dir"
   install_rendered render_claude "$CLAUDE_MD" '^@'
   mkdir -p "$CLAUDE_HOOKS_DEST"
+  # Libraries before the hooks that source them. A hook exits 0 -- allow -- when
+  # a library it needs is not beside it, so the other order leaves a moment in
+  # which a newly installed hook cannot find a newly named library.
+  for lib in "${HOOK_LIBS[@]}"; do
+    install -m 0644 "$(hook_lib_src "$lib")" "$(hook_lib_dest "$lib")"
+    echo "built: $(hook_lib_dest "$lib")"
+  done
   for h in "$CLAUDE_HOOKS_SRC"/*.sh; do
     [[ -e "$h" ]] || continue
     install -m 0755 "$h" "$CLAUDE_HOOKS_DEST/$(basename "$h")"
     echo "built: $CLAUDE_HOOKS_DEST/$(basename "$h")"
   done
-  for lib in "${HOOK_LIBS[@]}"; do
-    install -m 0644 "$(hook_lib_src "$lib")" "$(hook_lib_dest "$lib")"
-    echo "built: $(hook_lib_dest "$lib")"
-  done
+  # Shims after their successors exist and before the settings stop naming the
+  # old path, so there is no moment at which a path in use leads nowhere. Only
+  # where the previous release left a file: an account that never had one has no
+  # session holding its path. Staged beside the target and renamed into place,
+  # because a truncated script exits 0.
+  while IFS='|' read -r old new; do
+    [[ -n "$old" ]] || continue
+    [[ -f "$CLAUDE_HOOKS_DEST/$old" ]] || continue
+    shim_tmp="$(mktemp "$CLAUDE_HOOKS_DEST/.llmctx-shim.XXXXXX")"
+    render_retired_shim "$old" "$new" >"$shim_tmp"
+    chmod 0755 "$shim_tmp"
+    mv "$shim_tmp" "$CLAUDE_HOOKS_DEST/$old"
+    echo "retired: $CLAUDE_HOOKS_DEST/$old now runs $new"
+  done <<<"$RETIRED_HOOKS"
 
   # Merge, never clobber — see the comment at CLAUDE_SETTINGS_SRC. Written via a
   # temp file so an interrupted or failed jq cannot leave a truncated

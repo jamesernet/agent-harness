@@ -67,7 +67,7 @@ git init --quiet "$repo"
 git -C "$repo" symbolic-ref HEAD refs/heads/main
 printf '%s\n' '{"schemaVersion":1,"profile":"client"}' >"$repo/.llmctx.json"
 
-want deny branch-policy.sh "$(jq -nc --arg c "$repo" --arg f "$repo/README.md" \
+want deny branch-gate.sh "$(jq -nc --arg c "$repo" --arg f "$repo/README.md" \
   '{tool_name:"Edit",session_id:"t",tool_input:{file_path:$f},cwd:$c}')" \
   "an edit on a protected branch of a client repository"
 

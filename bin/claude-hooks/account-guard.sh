@@ -4,7 +4,7 @@ set -euo pipefail
 # Claude Code PreToolUse hook: a routed path is edited on its own account.
 #
 # Installed by bin/build-adapters.sh into `hooks/` inside EVERY registered Claude
-# account directory, like branch-policy.sh. It is symmetric and routes-only: a
+# account directory, like branch-gate.sh. It is symmetric and routes-only: a
 # path with no route is nobody's business, so on a client account you can still
 # edit a personal repo, and on the personal account a client tree is refused.
 #
@@ -43,7 +43,7 @@ set -euo pipefail
 # volume, `~/Repos/acme` and `~/repos/acme` are one directory and this hook
 # treats them as two. Route the spelling your shell actually uses.
 #
-# Fails OPEN on any error, matching branch-policy.sh.
+# Fails OPEN on any error, matching branch-gate.sh.
 trap 'exit 0' ERR
 
 command -v jq >/dev/null 2>&1 || exit 0
@@ -91,9 +91,9 @@ case "$tool" in
   *) exit 0 ;;
 esac
 
-# Judge the TARGET, not the session cwd, for the reason branch-policy.sh gives.
+# Judge the TARGET, not the session cwd, for the reason branch-gate.sh gives.
 # For Bash that means the directory a `git -C` names or the last
-# statement-initial `cd` lands in, the way branch-policy.sh resolves it; the
+# statement-initial `cd` lands in, the way branch-gate.sh resolves it; the
 # session cwd is the fallback. Judging Bash by cwd alone let `cd <client> &&
 # edit` pass from a personal directory and denied `direnv allow` — the very
 # fix the denial prints — from inside the client tree.
@@ -108,7 +108,7 @@ if [[ -z "$target" && "$tool" == "Bash" ]]; then
     *.allow-cross-account*) exit 0 ;;
   esac
   # Which directory the command acts on is bin/lib/target.sh's job, shared with
-  # branch-policy.sh so the two can no longer drift. An unresolvable `$VAR`
+  # branch-gate.sh so the two can no longer drift. An unresolvable `$VAR`
   # yields nothing there, so this falls back to the payload cwd rather than
   # matching a route on the strength of a path nobody wrote.
   target="$(llmctx_target_from_command "$cmd")"

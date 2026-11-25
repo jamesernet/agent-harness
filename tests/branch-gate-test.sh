@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
-HOOK="$SRC/bin/claude-hooks/branch-policy.sh"
+HOOK="$SRC/bin/claude-hooks/branch-gate.sh"
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-branch-test.XXXXXX")"
 repo="$tmp/repo"

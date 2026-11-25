@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/branch-policy.sh",
+            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/branch-gate.sh",
             "statusMessage": "Checking branch policy..."
           }
         ]

@@ -521,9 +521,18 @@ check_account_hooks() { # <hooks dir> <check id> <settings file> <account name>
     git config --global --includes --get-all "llmctx.accountHook.$account" 2>/dev/null || true
   )"
 
+  # A name this repository used to ship is still its own: the installer leaves a
+  # shim there for one release, and reporting that shim as somebody's unmanaged
+  # hook would send the reader to delete the one file keeping an older session's
+  # check alive. Whether the account has caught up with the rename is the
+  # adapters check's to say, as drift.
+  local retired
+  retired="$(llmctx_retired_hooks "$SRC/bin/claude-hooks/retired.conf" "$account" | cut -d'|' -f1)"
+
   is_managed_hook() { # <basename>
     local b="$1" l
     [[ ! -f "$SRC/bin/claude-hooks/$b" ]] || return 0
+    if [[ -n "$retired" ]] && grep -qxF "$b" <<<"$retired"; then return 0; fi
     case "$b" in
       llmctx-*.sh)
         l="${b#llmctx-}"
