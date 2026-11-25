@@ -76,7 +76,7 @@ account-gate.sh refuses writes under that route from this account.
 
 $(llmctx_routes_fix_text "$route_path" "$active_name" "$active_dir")"
 
-agent_note="Routing tripwire: this session is on the \"$active_name\" Claude account, but its working directory is routed to \"$route_name\". Do not edit, write or run commands under $route_path on this account; account-gate.sh refuses them, and the person has been shown how to restart the session on the right account. Tell them this is why, and stop. The notice they were shown:
+agent_note="Account notice: this session is on the \"$active_name\" Claude account, but its working directory is routed to \"$route_name\". Do not edit, write or run commands under $route_path on this account; account-gate.sh refuses them, and the person has been shown how to restart the session on the right account. Tell them this is why, and stop. The notice they were shown:
 
 $message"
 

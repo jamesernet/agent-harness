@@ -698,7 +698,7 @@ fi
 # A repository .envrc under a routed tree that never runs `source_up_if_exists`
 # shadows the directory-level .envrc carrying CLAUDE_CONFIG_DIR -- silently,
 # direnv loads only the nearest file -- and the routing does not apply there.
-# That is the state account-gate.sh and routing-tripwire.sh then catch at run
+# That is the state account-gate.sh and account-notice.sh then catch at run
 # time; README has said so since the routes arrived. This names WHICH file,
 # before a session is started in it.
 #

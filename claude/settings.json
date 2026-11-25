@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/routing-tripwire.sh",
+            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/account-notice.sh",
             "statusMessage": "Checking the Claude account for this directory..."
           },
           {

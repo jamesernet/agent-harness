@@ -3,9 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
-HOOK="$SRC/bin/claude-hooks/routing-tripwire.sh"
+HOOK="$SRC/bin/claude-hooks/account-notice.sh"
 
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-routing-tripwire.XXXXXX")"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-account-notice.XXXXXX")"
 tmp="$(cd "$tmp" && pwd)"
 export HOME="$tmp/home"
 export GIT_CONFIG_GLOBAL="$tmp/global.gitconfig"
@@ -13,7 +13,7 @@ mkdir -p "$HOME/.claude" "$HOME/.claude-acme" "$HOME/repos/acme/app" "$HOME/repo
 unset CLAUDE_CONFIG_DIR
 
 fail() {
-  echo "routing tripwire test failed: $*" >&2
+  echo "account notice test failed: $*" >&2
   exit 1
 }
 
@@ -125,16 +125,16 @@ out="$(
 
 # Registered under SessionStart with no matcher, so every source reaches it,
 # and installed into each account beside its library.
-jq -e '[.hooks.SessionStart[]? | select(has("matcher") | not) | .hooks[]?.command] | any(test("routing-tripwire\\.sh$"))' \
+jq -e '[.hooks.SessionStart[]? | select(has("matcher") | not) | .hooks[]?.command] | any(test("account-notice\\.sh$"))' \
   "$SRC/claude/settings.json" >/dev/null || fail "claude/settings.json does not register the tripwire under SessionStart without a matcher"
 LLMCTX_ALLOW_WORKTREE_INSTALL=1 "$SRC/bin/build-adapters.sh" >/dev/null 2>&1 || fail "build-adapters failed"
-[[ -x "$HOME/.claude/hooks/routing-tripwire.sh" ]] || fail "the tripwire was not installed into the default account"
+[[ -x "$HOME/.claude/hooks/account-notice.sh" ]] || fail "the tripwire was not installed into the default account"
 [[ -f "$HOME/.claude/hooks/llmctx-routes.sh" ]] || fail "the routes library was not installed beside it"
-[[ -x "$HOME/.claude-acme/hooks/routing-tripwire.sh" ]] || fail "the tripwire was not installed into the acme account"
-jq -e '[.hooks.SessionStart[]?.hooks[]?.command] | any(test("/hooks/routing-tripwire\\.sh$"))' \
+[[ -x "$HOME/.claude-acme/hooks/account-notice.sh" ]] || fail "the tripwire was not installed into the acme account"
+jq -e '[.hooks.SessionStart[]?.hooks[]?.command] | any(test("/hooks/account-notice\\.sh$"))' \
   "$HOME/.claude/settings.json" >/dev/null || fail "the installed settings do not register the tripwire"
 # The installed copy answers the same way the in-tree one does.
-fired "$(CLAUDE_CONFIG_DIR="" bash "$HOME/.claude/hooks/routing-tripwire.sh" <<<"$(payload "$HOME/repos/acme/app")")" ||
+fired "$(CLAUDE_CONFIG_DIR="" bash "$HOME/.claude/hooks/account-notice.sh" <<<"$(payload "$HOME/repos/acme/app")")" ||
   fail "the installed tripwire did not fire"
 
 # --- doctor: a repository .envrc under a routed tree must source its parent ---
@@ -220,4 +220,4 @@ git config --global --add llmctx.accountRoute "acme=~/repos/nowhere"
 r="$(envrc_check)"
 [[ "$(jq -r .status <<<"$r")" == PASS ]] || fail "a route to a missing directory broke the check: $r"
 
-echo "routing tripwire tests: passed"
+echo "account notice tests: passed"

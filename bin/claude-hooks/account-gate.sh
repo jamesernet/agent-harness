@@ -25,7 +25,7 @@ set -euo pipefail
 # PreToolUse hook runs after the first of those. This fails the session fast, at
 # the first write, rather than preventing the first request. Early enough to stop
 # a long run landing on the wrong account; not a billing boundary.
-# routing-tripwire.sh says the same thing at session start, before the first
+# account-notice.sh says the same thing at session start, before the first
 # prompt, through the same library; a SessionStart hook cannot refuse anything,
 # so this hook remains the gate.
 #
@@ -55,7 +55,7 @@ TARGET_LIB="$SCRIPT_DIR/llmctx-target.sh"
 # shellcheck source=../lib/target.sh
 source "$TARGET_LIB"
 # Routes and the account registry are read through one library, shared with the
-# SessionStart tripwire (routing-tripwire.sh), so the two cannot drift apart.
+# SessionStart tripwire (account-notice.sh), so the two cannot drift apart.
 ROUTES_LIB="$SCRIPT_DIR/llmctx-routes.sh"
 [[ -f "$ROUTES_LIB" ]] || ROUTES_LIB="$SCRIPT_DIR/../lib/routes.sh"
 [[ -f "$ROUTES_LIB" ]] || exit 0
@@ -125,7 +125,7 @@ case "$target" in
 esac
 
 # Everything that decides whether this write belongs to another account is one
-# library call, shared with routing-tripwire.sh. Silence is "cannot tell" or
+# library call, shared with account-notice.sh. Silence is "cannot tell" or
 # "nothing to say"; the library's header lists which cases, and every one of
 # them fails open.
 verdict="$(llmctx_routes_judge "$target")"
