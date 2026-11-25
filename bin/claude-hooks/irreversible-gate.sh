@@ -86,7 +86,7 @@ set -euo pipefail
 # outside of, and asking about every recursive delete in a scratch directory is
 # how a guard earns its own removal.
 #
-# Fails OPEN on any error, matching branch-gate.sh and account-guard.sh: a
+# Fails OPEN on any error, matching branch-gate.sh and account-gate.sh: a
 # broken guard that wedges every command is worse than no guard, because it
 # trains you to remove it.
 trap 'exit 0' ERR

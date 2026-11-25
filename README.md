@@ -126,7 +126,7 @@ export CLAUDE_CONFIG_DIR="$HOME/.claude-acme"
 
 A repository with its own `.envrc` needs `source_up_if_exists` as its first line, or it shadows the parent entirely — silently, with no error — and the routing does not apply there. Confirm with `/status` in a live session; it names the account and org.
 
-**The backstop for that routing** is `hooks/account-guard.sh`, installed into every account like the branch guard. Declare which tree belongs to which account, once, in global git config:
+**The backstop for that routing** is `hooks/account-gate.sh`, installed into every account like the branch guard. Declare which tree belongs to which account, once, in global git config:
 
 ```sh
 git config --global --add llmctx.accountRoute acme=~/repos/github.com/acme

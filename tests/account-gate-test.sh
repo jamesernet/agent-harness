@@ -3,9 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
-HOOK="$SRC/bin/claude-hooks/account-guard.sh"
+HOOK="$SRC/bin/claude-hooks/account-gate.sh"
 
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-account-guard.XXXXXX")"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-account-gate.XXXXXX")"
 tmp="$(cd "$tmp" && pwd)"
 export HOME="$tmp/home"
 export GIT_CONFIG_GLOBAL="$tmp/global.gitconfig"
@@ -13,7 +13,7 @@ mkdir -p "$HOME/.claude" "$HOME/.claude-acme" "$HOME/repos/acme/app" "$HOME/repo
 unset CLAUDE_CONFIG_DIR
 
 fail() {
-  echo "account guard test failed: $*" >&2
+  echo "account gate test failed: $*" >&2
   exit 1
 }
 
@@ -130,4 +130,4 @@ HOME="$HOME" "$SRC/bin/doctor.sh" --json >"$tmp/doctor.json" 2>/dev/null || true
 jq -e '.checks[] | select(.id == "account-routes") | .status == "FAIL" and (.detail | contains("not absolute"))' "$tmp/doctor.json" >/dev/null ||
   fail "doctor did not report a relative route"
 
-echo "account guard tests: passed"
+echo "account gate tests: passed"

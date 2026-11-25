@@ -81,7 +81,7 @@ want ask irreversible-gate.sh "$(jq -nc --arg c "$repo" --arg cmd "$PF origin ma
 # Registered after the build, so the build installed the default account only.
 git config --global --add llmctx.claudeAccount "acme=$HOME/.claude-acme"
 git config --global --add llmctx.accountRoute "acme=~/repos/acme"
-want deny account-guard.sh "$(jq -nc --arg c "$HOME" --arg f "$HOME/repos/acme/app/x.py" \
+want deny account-gate.sh "$(jq -nc --arg c "$HOME" --arg f "$HOME/repos/acme/app/x.py" \
   '{tool_name:"Edit",session_id:"t",tool_input:{file_path:$f},cwd:$c}')" \
   "an edit under a path routed to another account"
 

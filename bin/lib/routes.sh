@@ -3,7 +3,7 @@
 #
 # `llmctx.accountRoute name=path` entries in global git config say which tree
 # belongs to which account, and `llmctx.claudeAccount name=dir` is the registry
-# the names resolve against. account-guard.sh answered both questions inline;
+# the names resolve against. account-gate.sh answered both questions inline;
 # the SessionStart tripwire needs the same answers for the session cwd, and two
 # hooks answering one question separately is how target.sh's two callers drifted
 # (#67). One implementation, here, installed beside the hooks as
@@ -42,7 +42,7 @@
 # doctor's finding, since a denial pointing at a directory that does not exist
 # would send the person the wrong way.
 #
-# ONE READ. account-guard.sh runs on every Edit, Write and Bash call, and the
+# ONE READ. account-gate.sh runs on every Edit, Write and Bash call, and the
 # inline version read each key once. The library keeps that: `load` reads both
 # keys into two variables and every other function reads those, so a hook spawns
 # git twice however many questions it asks. A `$(...)` caller inherits the loaded

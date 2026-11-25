@@ -120,7 +120,7 @@ case "$tool" in
     esac
 
     # This hook needs somewhere real for `git -C` to stand, so a path that does
-    # not exist falls through to the session cwd. account-guard.sh wants the
+    # not exist falls through to the session cwd. account-gate.sh wants the
     # opposite and canonicalises instead; that difference is why the library
     # does not decide existence.
     [[ -n "$cd_dir" && -d "$cd_dir" ]] && scope_dir="$cd_dir"

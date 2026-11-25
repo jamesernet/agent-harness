@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # bin/lib/target.sh — the shared "which directory does this command act on"
-# resolver, extracted from branch-gate.sh and account-guard.sh.
+# resolver, extracted from branch-gate.sh and account-gate.sh.
 #
 # Every case below was behaviour one of those two hooks already had. The suite
 # exists so the two can never diverge again without a test saying so.
@@ -120,7 +120,7 @@ want "empty command yields nothing" \
 # so the caller falls back to the cwd it was given rather than matching a
 # route on the strength of a path nobody wrote. branch-gate.sh's effective
 # behaviour is unchanged (its -d test already rejected the literal);
-# account-guard.sh becomes strictly more careful.
+# account-gate.sh becomes strictly more careful.
 want "an unresolvable \$VAR yields nothing rather than the literal" \
   "" 'cd "$NOT_ASSIGNED_HERE" && git commit -m x'
 

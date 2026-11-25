@@ -101,7 +101,7 @@ cwd="$(printf '%s' "$input" | jq -r '.cwd // "."')"
 target="$(printf '%s' "$input" | jq -r '.tool_input.file_path // ""')"
 if [[ -z "$target" && "$tool" == "Bash" ]]; then
   cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // ""')"
-  # The remediation this hook prints is `touch <config-dir>/.allow-cross-account`,
+  # The remediation this hook prints is `touch <account>/.allow-cross-account`,
   # and the session that needs it is usually standing in the routed tree. A
   # command that names the sentinel is operating on the account, not the tree.
   case "$cmd" in

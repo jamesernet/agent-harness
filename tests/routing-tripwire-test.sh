@@ -48,7 +48,7 @@ jq -r '.systemMessage' <<<"$out" | grep -q 'routed to the "acme" Claude account'
 jq -r '.systemMessage' <<<"$out" | grep -q "expected $HOME/.claude-acme" ||
   fail "the notice did not name the expected config directory"
 jq -r '.systemMessage' <<<"$out" | grep -q 'direnv allow' || fail "the notice did not carry the fix"
-jq -r '.hookSpecificOutput.additionalContext' <<<"$out" | grep -q 'account-guard.sh refuses' ||
+jq -r '.hookSpecificOutput.additionalContext' <<<"$out" | grep -q 'account-gate.sh refuses' ||
   fail "the agent context did not say the guard will refuse writes"
 jq -r '.hookSpecificOutput.additionalContext' <<<"$out" | grep -q 'and stop' ||
   fail "the agent context did not tell the agent to stop"

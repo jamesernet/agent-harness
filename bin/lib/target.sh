@@ -23,7 +23,7 @@
 # different answers:
 #
 #   * whether the path exists. branch-gate.sh needs somewhere real for
-#     `git -C` to stand and applies its own `-d` test; account-guard.sh
+#     `git -C` to stand and applies its own `-d` test; account-gate.sh
 #     prefix-matches a path that may not exist yet and canonicalises instead.
 #   * whether a relative path is resolved, and against what. A relative result
 #     is returned as written; the caller resolves it against the payload cwd,
@@ -390,7 +390,7 @@ llmctx_target_from_command() {
   #
   # `cd "$VAR"` where the assignment is not in this command text cannot be
   # resolved here. branch-gate.sh used to keep the literal `$VAR` and let its
-  # `-d` test reject it, falling back to the session cwd. account-guard.sh kept
+  # `-d` test reject it, falling back to the session cwd. account-gate.sh kept
   # the literal too, but had no `-d` test, so it canonicalised `$VAR` — which
   # walks up to the nearest existing ancestor and could select a route the
   # command never named.
@@ -398,7 +398,7 @@ llmctx_target_from_command() {
   # Returning nothing is the conservative reading of both: an unresolvable
   # variable means "cannot tell", the caller falls back to the cwd it was given,
   # and no route is matched on the strength of a path nobody wrote. That makes
-  # account-guard.sh strictly more careful than before and leaves
+  # account-gate.sh strictly more careful than before and leaves
   # branch-gate.sh's effective behaviour unchanged.
   case "$dir" in
     '$'*)

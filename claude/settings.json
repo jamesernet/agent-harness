@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/account-guard.sh",
+            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/account-gate.sh",
             "statusMessage": "Checking the Claude account for this path..."
           }
         ]
