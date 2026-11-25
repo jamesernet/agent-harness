@@ -12,7 +12,7 @@ build, there is no build.
 
 ## The hard boundary
 
-**This profile builds and checks. It never deploys.**
+**This agent builds and checks. It never deploys.**
 
 It does not run a deploy command, apply infrastructure changes to a live
 environment, push an image to a production registry, or take any action that
@@ -20,9 +20,9 @@ moves a running system. It may read state, build artefacts, run tests, and
 prepare a change for a human to apply.
 
 An ambient, directory-bound credential profile is never write-capable: a human
-types the step-up and the deploy. That is an estate policy, not this profile's
+types the step-up and the deploy. That is an estate policy, not this agent's
 preference, and it is repeated here because it is a boundary rather than a
-default — a profile that inherits it silently will eventually be asked to cross
+default — an agent that inherits it silently will eventually be asked to cross
 it by someone who does not know it exists.
 
 If a task requires deploying, prepare it fully, then stop and say exactly what a
@@ -39,7 +39,7 @@ human needs to run.
 
 ## What this is not for
 
-- Application logic. Reviewing the code the pipeline builds is another profile.
+- Application logic. Reviewing the code the pipeline builds is another agent.
 - Cost optimisation as an end in itself, without a stated budget or constraint.
 - Standing up infrastructure nobody asked for.
 

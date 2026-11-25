@@ -12,7 +12,7 @@ usage:
   llmctx account add [--provider claude|codex] <name> <dir>
   llmctx account remove [--provider claude|codex] <name>
 
-A provider account is a Claude or Codex config directory — a separate login,
+A provider account is one Claude or Codex login directory — a separate login,
 keyed by CLAUDE_CONFIG_DIR or CODEX_HOME. Registering one makes `llmctx install`
 and `llmctx doctor` cover it. Claude is the default provider so existing
 commands keep their meaning. $HOME/.claude and $HOME/.codex are always covered

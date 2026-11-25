@@ -17,7 +17,7 @@ llmctx_context_session_message() (
   llmctx_context_policy_load "$root"
   [[ "$LLMCTX_CONTEXT_POLICY_STATE" != absent ]] || return 0
   if [[ "$LLMCTX_CONTEXT_POLICY_STATE" == invalid ]]; then
-    printf 'The session context policy could not be checked. %s\n' "$LLMCTX_CONTEXT_POLICY_ERROR"
+    printf 'The session work context could not be checked. %s\n' "$LLMCTX_CONTEXT_POLICY_ERROR"
     return 0
   fi
   read_profile="$(jq -r '.awsReadProfile // empty' <<<"$LLMCTX_CONTEXT_POLICY_JSON")"

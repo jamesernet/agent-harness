@@ -108,7 +108,7 @@ if [[ "$mode" == "explain" ]]; then
     [[ -n "${values// /}" ]] && printf '%-8s    %s\n' "$key" "$values"
   done
   echo
-  echo "Context policy: $LLMCTX_CONTEXT_POLICY_STATE (machine-local llmctx.contextProfile)"
+  echo "Work context: $LLMCTX_CONTEXT_POLICY_STATE (machine-local llmctx.contextProfile)"
   [[ -z "$LLMCTX_CONTEXT_POLICY_ERROR" ]] || echo "  $LLMCTX_CONTEXT_POLICY_ERROR"
   echo "Still manual, and deliberately:"
   [[ -n "$(field onboard_hint)" ]] && echo "  onboard:  $(field onboard_hint)"
@@ -130,7 +130,7 @@ mcp_count="$(jq '.environment.mcp // [] | length' "$policy_file")"
 if [[ "$LLMCTX_CONTEXT_POLICY_STATE" == invalid ]]; then
   add CONFLICT context:policy "$LLMCTX_CONTEXT_POLICY_ERROR" "correct the machine-local llmctx.contextProfile binding"
 elif [[ "$LLMCTX_CONTEXT_POLICY_STATE" == absent && (-n "$aws_profile" || "$mcp_count" -gt 0) ]]; then
-  add MISSING context:policy "AWS and MCP declarations need an explicit context policy" \
+  add MISSING context:policy "AWS and MCP declarations need a work-context file" \
     "git config --local llmctx.contextProfile /absolute/path/to/private-context.toml"
 elif [[ "$LLMCTX_CONTEXT_POLICY_STATE" == loaded ]]; then
   add OK context:policy "loaded from machine-local llmctx.contextProfile" ""

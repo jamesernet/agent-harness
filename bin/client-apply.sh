@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Render a work context's Claude model policy into its registered account.
+# Render a work context's Claude model limits into its registered account.
 #
-#   llmctx context apply <profile.toml>            write
-#   llmctx context apply <profile.toml> --check    report drift, change nothing
+#   llmctx context apply <work-context.toml>            write
+#   llmctx context apply <work-context.toml> --check    report drift, change nothing
 #   llmctx client apply ...                        compatibility alias
 #
 # This is deliberately narrow: it reads only [providers.claude] (or the legacy
@@ -28,7 +28,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/accounts.sh"
 
 usage() {
-  echo "usage: llmctx context apply <profile.toml> [--check]" >&2
+  echo "usage: llmctx context apply <work-context.toml> [--check]" >&2
   exit 2
 }
 
@@ -47,7 +47,7 @@ while [[ "$#" -gt 0 ]]; do
 done
 [[ -n "$profile" ]] || usage
 [[ -f "$profile" ]] || {
-  echo "error: no such profile: $profile" >&2
+  echo "error: no such work-context file: $profile" >&2
   exit 1
 }
 command -v jq >/dev/null 2>&1 || {
@@ -95,12 +95,12 @@ models_raw="$(claude_key models)"
 effort_raw="$(claude_key max_effort)"
 
 if [[ "$(unquote "$mode_raw")" == "disabled" ]]; then
-  echo "error: Claude is disabled in $profile — there is no account policy to apply" >&2
+  echo "error: Claude is disabled in $profile — there are no model limits to apply" >&2
   exit 1
 fi
 
 [[ -n "$account_raw" ]] || {
-  echo "error: Claude account is not set in $profile — the policy needs a registered home to land in" >&2
+  echo "error: Claude account is not set in $profile — the model limits need a registered account to land in" >&2
   exit 1
 }
 account="$(unquote "$account_raw")"
