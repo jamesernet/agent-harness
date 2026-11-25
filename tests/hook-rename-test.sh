@@ -49,6 +49,19 @@ done <<<"$pairs"
 
 first_old="${pairs%%|*}"
 
+# --- reading the list --------------------------------------------------------
+# A line the reader drops is a rename the installer never hears about, and the
+# old registration then stays beside its successor. A final line with no newline
+# is one way to lose a line: `read` fills its variables and still reports
+# failure. A line with no successor must go the other way and be dropped, since
+# its shim would exec the hooks directory itself.
+# shellcheck source=bin/lib/accounts.sh
+source "$SRC/bin/lib/accounts.sh"
+printf '# comment\n\none.sh|uno.sh\nno-successor.sh\ntwo.sh|dos.sh' >"$tmp/list.conf"
+got="$(llmctx_retired_hooks "$tmp/list.conf")"
+[[ "$got" == $'one.sh|uno.sh\ntwo.sh|dos.sh' ]] ||
+  fail "the list reader returned $(printf '%q' "$got")"
+
 build() { # <home> [args...]
   local home="$1"
   shift

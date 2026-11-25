@@ -121,19 +121,20 @@ retired_json() {
   cut -d'|' -f1 <<<"$RETIRED_HOOKS" | jq -R . | jq -sc .
 }
 
-# What stands at a retired name for one release. A session that started before
-# the upgrade keeps the settings it loaded, old path included, and a hook
-# command that cannot start does not block: deleting the old file would switch
-# the check off for exactly the sessions nobody is watching. The shim runs the
-# successor from its own directory, so it holds for every account. Line 2 is the
-# marker --check and the tests recognise it by.
+# What stands at a retired name. A session that started before the upgrade keeps
+# the settings it loaded, old path included, and a hook command that cannot
+# start does not block: deleting the old file would switch the check off for
+# exactly the sessions nobody is watching. The shim runs the successor from its
+# own directory, so it holds for every account. Line 2 is the marker --check and
+# the tests recognise it by. A shim is meant to last one release; nothing here
+# removes one yet, and the text it carries says no more than that.
 render_retired_shim() { # <old> <new>
   cat <<EOF
 #!/usr/bin/env bash
 $RETIRED_HOOK_MARKER
 # $1 was renamed to $2. This file exists so that a session started before the
-# rename, which still holds this path, keeps reaching the check. It is removed
-# in the release after the rename; nothing new should name this path.
+# rename, which still holds this path, keeps reaching the check. It is meant to
+# last one release, and a later one removes it. Nothing new should name this path.
 exec "\$(dirname "\${BASH_SOURCE[0]}")/$2" "\$@"
 EOF
 }
@@ -565,10 +566,12 @@ if [[ "$check_only" -eq 1 ]]; then
     done
     # A file at a retired name is in sync only as the shim. The previous
     # release's script still sitting there is an account the rename has not
-    # reached; an account that never had the file has nothing to compare.
+    # reached; an account that never had the file has nothing to compare. The
+    # same -f test as the install loop, so this never reports what a build
+    # would not change.
     while IFS='|' read -r old new; do
       [[ -n "$old" ]] || continue
-      [[ -e "$CLAUDE_HOOKS_DEST/$old" ]] || continue
+      [[ -f "$CLAUDE_HOOKS_DEST/$old" ]] || continue
       diff <(render_retired_shim "$old" "$new") "$CLAUDE_HOOKS_DEST/$old" >/dev/null 2>&1 || {
         echo "drift: $CLAUDE_HOOKS_DEST/$old (retired in favour of $new)"
         drift=1
@@ -636,9 +639,13 @@ while IFS=$'\t' read -r account_name account_dir; do
     [[ -n "$old" ]] || continue
     [[ -f "$CLAUDE_HOOKS_DEST/$old" ]] || continue
     shim_tmp="$(mktemp "$CLAUDE_HOOKS_DEST/.llmctx-shim.XXXXXX")"
+    # An interrupted run must not leave the staging file in hooks/, where
+    # doctor would report it as somebody's unmanaged hook.
+    trap 'rm -f "$shim_tmp"' EXIT
     render_retired_shim "$old" "$new" >"$shim_tmp"
     chmod 0755 "$shim_tmp"
     mv "$shim_tmp" "$CLAUDE_HOOKS_DEST/$old"
+    trap - EXIT
     echo "retired: $CLAUDE_HOOKS_DEST/$old now runs $new"
   done <<<"$RETIRED_HOOKS"
 
