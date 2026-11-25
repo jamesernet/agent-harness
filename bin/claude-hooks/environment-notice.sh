@@ -13,5 +13,5 @@ cwd="$(jq -er '.cwd | select(type == "string" and startswith("/"))' 2>/dev/null)
 cwd="$(cd "$cwd" && pwd -P)"
 message="$(llmctx_context_session_message "$cwd")"
 [[ -n "$message" ]] || exit 0
-jq -n --arg msg "$message" --arg ctx "AWS environment tripwire: $message Stop work in this context and explain the mismatch to the person before continuing." \
+jq -n --arg msg "$message" --arg ctx "AWS environment notice: $message Stop work in this context and explain the mismatch to the person before continuing." \
   '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$ctx},systemMessage:$msg}'

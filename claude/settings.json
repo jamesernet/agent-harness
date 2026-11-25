@@ -42,7 +42,7 @@
           },
           {
             "type": "command",
-            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/environment-tripwire.sh",
+            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/environment-notice.sh",
             "statusMessage": "Checking the AWS environment for this context..."
           }
         ]
