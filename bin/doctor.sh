@@ -639,6 +639,48 @@ else
   add_check claude-agents FAIL "managed agents could not be inventoried" "$SRC/bin/llmctx agents install"
 fi
 
+# Model and effort are machine-local on purpose: a managed default would fight
+# /model and per-session choice. So nothing here is ever a failure. What was
+# missing is visibility: two accounts on one machine had drifted to different
+# defaults by hand and no command said so. `context apply` writes the ceiling
+# keys; `model` and `effortLevel` are the person's own.
+model_summaries=""
+check_account_model() { # <settings file> <check id> <account name>
+  local settings="$1" id="$2" name="$3" summary
+  if [[ ! -f "$settings" ]]; then
+    summary="no settings.json; model and effort are the tool's defaults"
+  elif ! summary="$(jq -r '
+      def shown: if . == null then "unset" else tostring end;
+      "model=" + (.model | shown)
+      + ", effort=" + (.effortLevel | shown)
+      + ", allowed=" + (if (.availableModels | type) == "array" then (.availableModels | join(",")) else "any" end)
+      + ", max effort=" + (.maxEffortLevel | if . == null then "none" else tostring end)
+    ' "$settings" 2>/dev/null)"; then
+    summary="settings.json is not readable JSON; model not reported"
+  fi
+  add_check "$id" PASS "$summary" ""
+  model_summaries="$model_summaries$name"$'\t'"$summary"$'\n'
+}
+if [[ -n "$accounts" ]]; then
+  while IFS=$'\t' read -r account_name account_dir; do
+    [[ -n "$account_name" ]] || continue
+    if [[ "$account_name" == "$LLMCTX_ACCOUNT_DEFAULT_NAME" ]]; then
+      check_account_model "$account_dir/settings.json" claude-model "$account_name"
+    else
+      check_account_model "$account_dir/settings.json" "claude-model[$account_name]" "$account_name"
+    fi
+  done <<<"$accounts"
+  model_count="$(printf '%s' "$model_summaries" | grep -c . || true)"
+  if [[ "$model_count" -gt 1 ]]; then
+    if [[ "$(printf '%s' "$model_summaries" | cut -f2 | LC_ALL=C sort -u | grep -c .)" -eq 1 ]]; then
+      add_check claude-model-agreement PASS "$model_count accounts share one model and effort setting" ""
+    else
+      add_check claude-model-agreement PASS \
+        "accounts differ, which may be deliberate: $(printf '%s' "$model_summaries" | sed 's/\t/ has /' | tr '\n' ';' | sed 's/;$//; s/;/; /g')" ""
+    fi
+  fi
+fi
+
 # Account routes feed hooks/account-guard.sh. A route naming an account that is
 # not registered makes the guard silent — it cannot judge what it cannot name —
 # so that is the state to report, not an empty route list.

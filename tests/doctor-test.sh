@@ -318,6 +318,31 @@ jq -e '.checks[] | select(.id == "skill-bundle") | .detail | contains("acme")' \
   "$tmp/per-account.json" >/dev/null ||
   fail "skill-bundle did not report the per-account override"
 
+# Model and effort are reported per account and never fail: they are
+# machine-local. Two accounts that differ are named, and stay healthy.
+model_of() { jq -r --arg id "$1" '.checks[] | select(.id == $id) | .status + " " + .detail' "$tmp/models.json"; }
+mkdir -p "$nb_home/.claude" "$nb_home/.claude-acme"
+HOME="$nb_home" "$SRC/bin/doctor.sh" --json >"$tmp/models.json" 2>/dev/null || true
+[[ "$(model_of claude-model)" == "PASS no settings.json; model and effort are the tool's defaults" ]] ||
+  fail "an account without settings.json was not reported as on defaults: $(model_of claude-model)"
+printf '%s\n' '{"model":"opus","effortLevel":"high"}' >"$nb_home/.claude/settings.json"
+printf '%s\n' '{"model":"sonnet","availableModels":["opus","sonnet"],"maxEffortLevel":"high"}' \
+  >"$nb_home/.claude-acme/settings.json"
+HOME="$nb_home" "$SRC/bin/doctor.sh" --json >"$tmp/models.json" 2>/dev/null || true
+[[ "$(model_of claude-model)" == "PASS model=opus, effort=high, allowed=any, max effort=none" ]] ||
+  fail "the default account's model was not reported: $(model_of claude-model)"
+[[ "$(model_of 'claude-model[acme]')" == "PASS model=sonnet, effort=unset, allowed=opus,sonnet, max effort=high" ]] ||
+  fail "a second account's model and ceiling were not reported: $(model_of 'claude-model[acme]')"
+[[ "$(model_of claude-model-agreement)" == "PASS accounts differ, which may be deliberate: default has model=opus"*"; acme has model=sonnet"* ]] ||
+  fail "differing accounts were not named: $(model_of claude-model-agreement)"
+printf '%s\n' '{"model":"opus","effortLevel":"high"}' >"$nb_home/.claude-acme/settings.json"
+HOME="$nb_home" "$SRC/bin/doctor.sh" --json >"$tmp/models.json" 2>/dev/null || true
+[[ "$(model_of claude-model-agreement)" == "PASS 2 accounts share one model and effort setting" ]] ||
+  fail "matching accounts were not reported as agreeing: $(model_of claude-model-agreement)"
+HOME="$nb_home" "$SRC/bin/doctor.sh" --account acme --json >"$tmp/models.json" 2>/dev/null || true
+[[ -z "$(model_of claude-model-agreement)" ]] || fail "a single-account run compared accounts"
+rm -f "$nb_home/.claude/settings.json" "$nb_home/.claude-acme/settings.json"
+
 git config --global --unset llmctx.skillBundle.acme
 git config --global --unset llmctx.skillBundle
 git config --global --unset-all llmctx.claudeAccount

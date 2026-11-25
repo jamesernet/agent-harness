@@ -23,6 +23,18 @@ hard cap belongs in managed settings and is a follow-up.
 | `prose-reviewer` | sonnet | high | 10 | one lens of review-prose's three; fixed output contract |
 | `implementer` | inherit | inherit | 150 | one slice from a brief in its own worktree, test-first |
 
+This table is the routing record: which model and effort each kind of
+delegated work gets. Two kinds of work are not in it because no file here sets
+them:
+
+- **The session itself**, including planning, runs on whatever the person
+  chose for that account with `/model`. That is machine-local on purpose; a
+  managed default would fight a per-session choice. `llmctx doctor` reports
+  each account's model, effort and any ceiling (`claude-model`), and says when
+  two accounts differ.
+- **A ceiling**, where one applies, is written per account by
+  `llmctx context apply` (`availableModels`, `maxEffortLevel`).
+
 Design subagents (codebase-design's design-it-twice) stay on the session model
 on purpose: alternative interfaces are judgment work, and a cheaper model there
 produces three similar designs instead of three different ones.
@@ -33,8 +45,9 @@ produces three similar designs instead of three different ones.
 - `improve-codebase-architecture` names `scout` for the exploration walk.
 - Skills that are judgment end to end declare `effort:` in their frontmatter.
   It is an override, not a floor: the skill runs at that level whatever the
-  session is set to, up or down. `threat-model`, `tech-due-diligence` and
-  `money-movement-review` pin `xhigh`, the highest level settings can hold;
+  session is set to, up or down. `threat-model`, `tech-due-diligence`,
+  `money-movement-review` and `shopify-storefront-review` pin `xhigh`, the
+  highest level settings can hold;
   procedure-shaped `site-visual-baseline` pins `medium`, deliberately cheaper
   than most sessions.
 
@@ -81,4 +94,4 @@ Change the file here, run `llmctx agents install`, and `llmctx doctor` reports
 the copy current. If `scout` returns thin results on a large codebase, move it
 to `sonnet` before widening its turns. Valid `model` values are `sonnet`,
 `opus`, `haiku`, `fable`, `inherit`, or a full model id; `bin/lint-skills.sh`
-checks the frontmatter.
+checks the frontmatter, and a skill's `effort:` the same way.
