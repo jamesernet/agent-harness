@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/irreversible-policy.sh",
+            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/irreversible-gate.sh",
             "statusMessage": "Checking for an action that cannot be undone..."
           }
         ]

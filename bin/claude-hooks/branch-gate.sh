@@ -196,14 +196,14 @@ if [[ "$tool" == "Bash" ]]; then
   # protected branch never reached the gate at all (#79). One fragment, defined
   # beside the target resolver in lib/target.sh and used by both greps below,
   # so the refspec check sees the same prefix the gate does -- and so the
-  # sibling irreversible-policy hook can see it too, rather than growing a
+  # sibling irreversible-gate hook can see it too, rather than growing a
   # third hand-rolled matcher.
   git_opts="$LLMCTX_GIT_GLOBAL_OPTS_RE"
   # The subcommand must be the whole word: `commit-graph write` and
   # `commit-tree` are plumbing, not commits, and `\b` let `commit` match the
   # front of both (`-` is a word boundary). A bare `K=V` assignment is a
   # prefix the shell allows exactly as `env K=V` is, so it is one too.
-  # The prefix group is lib/target.sh's, shared with irreversible-policy.sh.
+  # The prefix group is lib/target.sh's, shared with irreversible-gate.sh.
   # The local copy accepted `sudo ` but not `sudo -u root `, so a wrapper flag
   # with its own value walked a commit on a protected branch straight past the
   # gate -- found by the review of #103, after the same gap had been fixed in

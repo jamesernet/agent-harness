@@ -63,7 +63,7 @@ llmctx_target_tilde="~"
 # ending in whitespace, so it slots between a statement start and the verb.
 #
 # One definition, three consumers. This was written three times -- in
-# branch-gate.sh's gate, in irreversible-policy.sh, and (as awk) in the
+# branch-gate.sh's gate, in irreversible-gate.sh, and (as awk) in the
 # resolver below -- and each copy was found to miss a different spelling. The
 # review of #103 found `sudo -u root git --git-dir=…` still walking past the
 # branch guard after the resolver had learned it, which is the same bug one

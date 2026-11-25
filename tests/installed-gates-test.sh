@@ -74,7 +74,7 @@ want deny branch-gate.sh "$(jq -nc --arg c "$repo" --arg f "$repo/README.md" \
 # The literal is split so this file can be edited by an agent without the gate
 # under test matching its own source.
 PF="git"" push --force"
-want ask irreversible-policy.sh "$(jq -nc --arg c "$repo" --arg cmd "$PF origin main" \
+want ask irreversible-gate.sh "$(jq -nc --arg c "$repo" --arg cmd "$PF origin main" \
   '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')" \
   "a force push"
 

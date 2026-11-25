@@ -270,7 +270,7 @@ git config llmctx.mergePolicy review-and-merge
 judges the **action** rather than the branch it happens on: force push, hard
 reset, history rewrite, force branch deletion, remote branch deletion, and a
 recursive delete whose target resolves outside the repository. The hook is
-`<account>/hooks/irreversible-policy.sh`.
+`<account>/hooks/irreversible-gate.sh`.
 
 ```sh
 bin/llmctx explain irreversiblePolicy

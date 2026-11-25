@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# bin/claude-hooks/irreversible-policy.sh — the second tenant on the policy
+# bin/claude-hooks/irreversible-gate.sh — the second tenant on the policy
 # ladder. Driven through its real stdin contract, like the branch-gate suite.
 #
 # Half of this file is false-positive cases. A guard that is wrong on ordinary
@@ -10,7 +10,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
-HOOK="$SRC/bin/claude-hooks/irreversible-policy.sh"
+HOOK="$SRC/bin/claude-hooks/irreversible-gate.sh"
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-irrev-test.XXXXXX")"
 tmp="$(cd "$tmp" && pwd)"
@@ -22,7 +22,7 @@ mkdir -p "$HOME"
 : >"$GIT_CONFIG_GLOBAL"
 
 fail() {
-  echo "irreversible-policy test failed: $*" >&2
+  echo "irreversible-gate test failed: $*" >&2
   exit 1
 }
 
