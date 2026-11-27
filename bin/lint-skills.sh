@@ -54,6 +54,14 @@ for dir in "$SRC"/skills/*/; do
     err "$name" "description is ${#desc} chars (max $MAX_DESC)"
   fi
 
+  # A skill's effort is an override the loader applies as written; a typo
+  # there is silently ignored and the skill runs at the session's level.
+  skill_effort="$(printf '%s\n' "$fm" | sed -n 's/^effort:[[:space:]]*//p' | head -1)"
+  case "$skill_effort" in
+    '' | low | medium | high | xhigh | max) ;;
+    *) err "$name" "effort \"$skill_effort\" is not low|medium|high|xhigh|max" ;;
+  esac
+
   # Relative links between skills must resolve (to skills/ or vendor/).
   while IFS= read -r target; do
     [ -z "$target" ] && continue
