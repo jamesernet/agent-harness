@@ -34,7 +34,11 @@ that gets a skill abandoned.
    looked up one by one. The default `gh` limits are 30 issues and 30 PRs, which a
    busy repository exceeds; the limits above are deliberate.
 2. **Tracker.** `gh issue list --state open --limit 200 --json number,title,labels,assignees,updatedAt`
-   into three buckets: `ready` and unassigned (grabbable); open and unlabelled
+   into three buckets. `ready` below and in [SEAMS](SEAMS.md) stands for
+   whatever label this repository gives the ready role (`ready` in
+   agent-harness, `ready-for-agent` by default elsewhere; the repository's
+   AGENTS.md or `docs/agents/triage-labels.md` says which). `ready` and
+   unassigned (grabbable); open and unlabelled
    (untriaged); `ready` but untouched for weeks (suspect — the premise may have
    moved since it was written).
 3. **Merge queue.** `gh pr list --state open --limit 100 --json number,title,baseRefName,mergeStateStatus,reviewDecision,isDraft`.
