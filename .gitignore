@@ -10,3 +10,6 @@ __pycache__/
 templates/teams/opinion-gallery/opinion-gallery/
 .venv/
 .pytest_cache/
+
+# Local dependencies for skill scripts
+node_modules/

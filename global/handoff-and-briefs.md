@@ -6,6 +6,7 @@ Where cross-agent work lives, so any agent — Claude Code, Codex, or a human en
 - **An agent brief is the ticket**, not a copy of the ticket. A brief that restates its ticket is worse than no brief, because it is a second copy free to drift.
 - **A mid-flight handoff is a comment on that ticket**: what you did, what you were about to do, and what you learned that the ticket does not already say. Then stop.
 - **Working notes stay local and uncommitted.** Scratch a plan wherever your agent tool puts temporary files; do not commit it.
+- **For a repository with a machine-local `llmctx.contextProfile` binding, run `llmctx env session` before work** and resolve any finding. Codex relies on this preflight; Claude also has a SessionStart notice. Neither verifies IAM permissions or removes credentials.
 - **On session start, read the tracker** — open, unassigned, ready-labelled tickets — before asking what to work on.
 
 **This file no longer prescribes a directory.** It used to mirror briefs into `docs/briefs/` and tell a session to look there first. A global file cannot know whether a repo has adopted that layout, retired it, or forbidden it — one repo retired it after the mirror rotted, and now gitignores the path. A committed briefs directory is still fine where a repo chooses one. **Where a repo says otherwise, the repo wins**, so read the repo before creating a directory for artifacts.

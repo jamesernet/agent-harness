@@ -134,6 +134,20 @@ git config --global --add llmctx.accountRoute acme=~/repos/github.com/acme
 
 A write under a routed path from any other account is refused at the first tool call, with the fix in the message. Routes-only and symmetric: an unrouted path is nobody's business, so the client account can still edit a personal repo. It fails fast rather than early — quota is consumed by model calls and a `PreToolUse` hook runs after the first one. `hooks/routing-tripwire.sh` is the early word from the other side: it runs at session start, before the first prompt, reads the same routes through the same library, and when the session's directory is routed to another account it tells the person and the agent at once, with the same fix. A `SessionStart` hook cannot refuse anything, so the guard stays the gate; neither is a billing boundary, since the session was already opened on the wrong login. Suspend both deliberately with `touch <config-dir>/.allow-cross-account`. `llmctx doctor` reports the routes, refuses one that names an unregistered account, and names every repository `.envrc` under a routed tree that never runs `source_up_if_exists`, because that file shadows the routing silently.
 
+The AWS half uses the machine-local `llmctx.contextProfile` binding described
+under Environments. `hooks/environment-tripwire.sh` compares `AWS_PROFILE` and
+`AWS_DEFAULT_PROFILE` with the context's declared read-only profile, and notices
+ambient credentials or alternate configuration sources that can override it.
+Only variable names are reported. A context with no AWS role accepts an unset
+profile or WorkStation's explicit unbound sentinel. Invalid bound policy also
+produces a notice; an unbound directory cannot be judged.
+
+`llmctx env session [directory]` runs the same checks from Codex or a shell and
+returns nonzero on a finding. Claude's SessionStart notice reaches both person
+and agent but cannot block execution. These checks never call AWS, resolve a
+secret or change the environment. They do not verify IAM permissions or replace
+WorkStation's credential isolation.
+
 ## Data flow
 
 ```text
@@ -193,9 +207,25 @@ bin/llmctx env explain [repo]    the declaration, and what is still manual
 It verifies resolution, not validity — whether a profile still has working
 credentials only using it can tell you, and finding that out is a deploy.
 
-What it does not do is judge whether an identifier is the *right* one. A profile
-name that resolves may still be the wrong account; only the human who granted it
-knows. The validator keeps credentials out and the checker says what is missing.
+AWS and MCP declarations also need a private work-context policy, bound on the
+machine rather than committed to the project:
+
+```sh
+git config --local llmctx.contextProfile /absolute/path/to/private-context.toml
+```
+
+A conditional Git include can supply the same key for a whole context. The
+checker reads TOML with Python 3.11+ and never sources it. Canonical contexts use
+`[cloud] aws_profile` for the read-only ambient profile, `aws_write_profile` for
+human step-up, and `[ai] allow_code_egress` / `agents_allowed`. Legacy
+`[aws] default_profile` / `write_profile` remain supported. Contradictory fields,
+missing policy, a non-ambient repository AWS profile, or MCP entries under a
+no-egress/no-agent policy produce findings. Missing policy is also a finding
+in CI; only machine-specific AWS configuration and secret bindings are exempt.
+
+These are checks against the owner's declaration. They do not prove IAM
+permissions, remove ambient credentials, constrain MCP execution, or authorize
+a deployment. Machine isolation and profile binding remain WorkStation's job.
 
 Where a value comes from is layered, lowest to highest: the target file, the
 repository's declaration, then the machine's binding in `workstation`. Claude
