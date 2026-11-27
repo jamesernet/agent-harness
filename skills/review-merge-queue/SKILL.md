@@ -101,25 +101,36 @@ finding count did not, because a full review of a changed diff always finds
 another edge case. The rule stays. What is bounded is the scope and budget of
 each re-review, and the stop is said out loud before the first one runs.
 
-1. **Say the stop condition before starting**: a real defect gets one fix
-   commit and a narrow re-review; anything less is recorded and not fixed in
-   this PR.
+1. **Say the stop condition before starting**: each defect gets a fix commit
+   and a narrow re-review of that commit, for at most three narrow re-reviews;
+   anything else is recorded and not fixed in this PR. A defect is wrong
+   behaviour, a claim the change makes that is false, or a step two readers
+   would act on differently. A preference about wording, style or structure
+   is not one.
 2. **A fix gets a narrow re-review, not a new full review.** A fresh `reviewer`
    is briefed with the fix commit's own claims and only that commit's diff, and
    told to look one door over from the fix. Budget 15 tool calls, and smaller
    for each later round.
-3. **Stop at `CLEAN`.** A low-severity preference, or a finding that belongs to
-   another slice, is recorded by name as an accepted note in the PR body or as
-   a follow-up issue. It does not open another round.
+3. **Stop at `CLEAN`.** A preference, or a finding that belongs to another
+   slice, is recorded by name as an accepted note or as a follow-up issue. It
+   does not open another round. The note goes in the verdict comment of
+   step 4; it goes in the PR body only where this session authored the PR.
 4. **A test gap found by a narrow re-review is a tests-only commit**, verified
    by the suite, not a further review round.
 5. **If the third narrow re-review still finds a defect, stop and tell the
-   owner.** The change is not converging, and whether to continue, split it or
-   rethink it is their decision.
+   owner.** No fourth fix is made. The change is not converging, and whether
+   to continue, split it or rethink it is their decision.
 
-The head rule in step 3 still holds: every fix commit moves the head, so the
-verdict that permits a merge is the last narrow `CLEAN`, naming the current
-head.
+A fix commit moves the head, and step 1 would then call the PR reviewable
+again. It is not: a PR whose last verdict was `DO-NOT-MERGE` and whose only
+commits since are the fix goes to the narrow re-review here, not to a full
+review in step 2.
+
+The head rule in step 3 still holds. The verdict step 4 acts on is the last
+narrow `CLEAN`, naming the current head, and it stands for the whole PR only
+when every defect in the full verdict has a fix commit that was re-reviewed.
+Stopping the loop is not a decision to merge: that is still `mergePolicy`, in
+step 4.
 
 ## Rules
 
