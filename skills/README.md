@@ -140,7 +140,7 @@ and a test checklist.
 |---|---|---|---|
 | [money-movement-review](money-movement-review/) | `/money-movement-review` · auto | a payment flow end to end | the state machine drawn first and every failure mode walked; carries two rule sets — [MONEY](money-movement-review/MONEY.md) (minor units, currency, rounding, allocation, FX) and [LEDGER](money-movement-review/LEDGER.md) (double-entry, immutability, derived balances, reconciliation) |
 | [pci-dss-scoping](pci-dss-scoping/) | `/pci-dss-scoping` · auto | cardholder-data flow, CDE, SAQ | "the goal is never pass PCI": shrink the environment until compliance is small |
-| [kyc-aml-review](kyc-aml-review/) | `/kyc-aml-review` · auto | identity verification, screening, risk rating, monitoring, SAR workflow | traces one customer and one alert end to end; "screening at signup only" as the most common real finding |
+| [review-kyc-aml](review-kyc-aml/) | `/review-kyc-aml` · auto | identity verification, screening, risk rating, monitoring, SAR workflow | traces one customer and one alert end to end; "screening at signup only" as the most common real finding |
 
 ### Media
 

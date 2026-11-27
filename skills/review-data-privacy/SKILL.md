@@ -62,4 +62,4 @@ logs on PII access, and a breach-notification path with owners and clocks
 - One database role that every service and employee shares.
 
 ## Related
-- [threat-model](../threat-model/) · [kyc-aml-review](../kyc-aml-review/) (identity data overlaps) · [tech-due-diligence](../tech-due-diligence/) §5
+- [threat-model](../threat-model/) · [review-kyc-aml](../review-kyc-aml/) (identity data overlaps) · [tech-due-diligence](../tech-due-diligence/) §5

@@ -1,5 +1,5 @@
 ---
-name: kyc-aml-review
+name: review-kyc-aml
 description: Review a KYC/AML program's technical implementation — identity verification, sanctions/PEP screening, risk rating, transaction monitoring, case management, SAR workflow. Use when building or reviewing onboarding, compliance screening, or monitoring systems for a fintech.
 ---
 
