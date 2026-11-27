@@ -15,7 +15,7 @@ evidence from step 1, never by taste.
 | a decision to walk | an open `ADR-NNN:` issue, or a decision ticket, still carrying `ready` | a decision ticket closes with a decision, not with work; labelling it `ready` invites someone to do the expensive half by default |
 | merge queue | `CONFLICTING`; approved and unmerged; a child PR whose base branch has merged | a held PR is held for a reason recorded on it; read its last comment before touching it |
 | blocked on access or a key | an issue naming credentials, account access or a server apply; `env check` failing on a secret *name* | the agent must not hold the credential, so the deliverable is the exact ask to a person, not the unblock |
-| sensitive-code review | an open PR touching `bin/claude-hooks/`, `bin/git-hooks/`, `bin/lib/policy.sh`, `claude/settings.json` or `install*` | the author's own session reviewing the author's own guard is how a fix lands wrong one door over; the reviewer must be fresh |
+| sensitive-code review | a fresh `reviewer` agent, never the authoring session, briefed per [BRIEF](../review-merge-queue/BRIEF.md); report its verdict and stop. Not `/code-review` in the authoring session, and not the [review-merge-queue](../review-merge-queue/) skill itself, which goes on to act on `mergePolicy`: a request to review is not a request to merge | PR number and the paths touched |
 | policy and doc drift | `repo diff` reports `STALE`, `MISSING` or `CONFLICT`; a doc names a path that is not there | a declared `OVERRIDE` is a position the repo took; a checker a mature repo must ignore is a checker nobody reads |
 
 ## Seam → destination
