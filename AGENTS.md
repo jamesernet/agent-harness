@@ -44,6 +44,11 @@ declares `"briefs": "tracker"` in `.llmctx.json`, so there is deliberately no
 mirror in the tree — do not create one. Working notes stay local and
 uncommitted.
 
+Triage labels: the ready role, which the skills call `ready-for-agent`, is the
+label `ready` here. `wontfix` is `wontfix`. `needs-triage`, `needs-info` and
+`ready-for-human` have no label; state them in the triage comment. Category
+labels are `bug`, `enhancement` and `documentation`. Do not create labels.
+
 Architecture decisions **extend** that rule rather than follow from it: an ADR
 is an issue titled `ADR-NNN: <decision>`, not a file under `docs/`. The two are
 not the same artifact — a brief is forward-looking and goes stale by design, an
