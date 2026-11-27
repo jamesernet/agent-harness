@@ -60,4 +60,4 @@ for the same artifacts (see tech-due-diligence §5).
 - "We're SAQ A" while server-side code handles raw PANs.
 
 ## Related
-- [money-movement-review](../money-movement-review/) · [threat-model](../threat-model/) · [tech-due-diligence](../tech-due-diligence/)
+- [review-money-movement](../review-money-movement/) · [threat-model](../threat-model/) · [tech-due-diligence](../tech-due-diligence/)

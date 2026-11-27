@@ -34,7 +34,7 @@ produces three similar designs instead of three different ones.
 - Skills that are judgment end to end declare `effort:` in their frontmatter.
   It is an override, not a floor: the skill runs at that level whatever the
   session is set to, up or down. `threat-model`, `tech-due-diligence` and
-  `money-movement-review` pin `xhigh`, the highest level settings can hold;
+  `review-money-movement` pin `xhigh`, the highest level settings can hold;
   procedure-shaped `site-visual-baseline` pins `medium`, deliberately cheaper
   than most sessions.
 

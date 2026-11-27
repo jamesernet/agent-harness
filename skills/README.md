@@ -21,10 +21,10 @@ is a suggestion, not an import.
 
 ```sh
 git clone https://github.com/jamesernet/agent-harness.git
-cp -R agent-harness/skills/money-movement-review ~/.claude/skills/
+cp -R agent-harness/skills/review-money-movement ~/.claude/skills/
 ```
 
-Then describe the work in a session, or type `/money-movement-review`.
+Then describe the work in a session, or type `/review-money-movement`.
 
 To install the set as versioned copies that survive moving this checkout, with
 per-account selection and a drift check, use the harness: `./install.sh`, then
@@ -60,7 +60,7 @@ phrase (`start-a-session` is both).
 
 Five skills pin an `effort` level. It is an override, not a floor: the skill
 runs at that level whatever the session is set to, up or down. `threat-model`,
-`tech-due-diligence`, `money-movement-review` and `shopify-storefront-review`
+`tech-due-diligence`, `review-money-movement` and `shopify-storefront-review`
 pin `xhigh`; `site-visual-baseline` pins `medium`, deliberately cheaper than
 most sessions. Two name a managed subagent for their fan-out work so the model
 and turn budget of that work has a default that travels with the skill:
@@ -138,7 +138,7 @@ and a test checklist.
 
 | skill | invoke | focus | what it adds |
 |---|---|---|---|
-| [money-movement-review](money-movement-review/) | `/money-movement-review` · auto | a payment flow end to end | the state machine drawn first and every failure mode walked; carries two rule sets — [MONEY](money-movement-review/MONEY.md) (minor units, currency, rounding, allocation, FX) and [LEDGER](money-movement-review/LEDGER.md) (double-entry, immutability, derived balances, reconciliation) |
+| [review-money-movement](review-money-movement/) | `/review-money-movement` · auto | a payment flow end to end | the state machine drawn first and every failure mode walked; carries two rule sets — [MONEY](review-money-movement/MONEY.md) (minor units, currency, rounding, allocation, FX) and [LEDGER](review-money-movement/LEDGER.md) (double-entry, immutability, derived balances, reconciliation) |
 | [pci-dss-scoping](pci-dss-scoping/) | `/pci-dss-scoping` · auto | cardholder-data flow, CDE, SAQ | "the goal is never pass PCI": shrink the environment until compliance is small |
 | [review-kyc-aml](review-kyc-aml/) | `/review-kyc-aml` · auto | identity verification, screening, risk rating, monitoring, SAR workflow | traces one customer and one alert end to end; "screening at signup only" as the most common real finding |
 
@@ -205,7 +205,7 @@ Everything below lives in git history if ever needed.
 - `review` — 2026-07. `grab` uses the built-in `/code-review`. Not to be confused with `review-prose`, which reviews writing and deliberately declines code.
 - `to-prd` — 2026-11, folded into `to-issues` as its "no parent issue yet" step.
 - `implement` — 2026-11, folded into `grab` as its step 5.
-- `money-modeling`, `payment-flow-review`, `ledger-and-reconciliation` — 2026-11, merged into `money-movement-review`.
+- `money-modeling`, `payment-flow-review`, `ledger-and-reconciliation` — 2026-11, merged into `review-money-movement`.
 
 ## Attribution and licence
 
