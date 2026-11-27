@@ -644,22 +644,38 @@ fi
 # missing is visibility: two accounts on one machine had drifted to different
 # defaults by hand and no command said so. `context apply` writes the ceiling
 # keys; `model` and `effortLevel` are the person's own.
-model_summaries=""
+# The report covers the account's settings.json and nothing else: an environment
+# variable, a project setting or /model can still change what a session runs.
+# Accounts are compared only when every one of them was read.
+model_accounts=0
+model_unread=""
+model_first=""
+model_same=1
+model_listing=""
 check_account_model() { # <settings file> <check id> <account name>
   local settings="$1" id="$2" name="$3" summary
   if [[ ! -f "$settings" ]]; then
-    summary="no settings.json; model and effort are the tool's defaults"
-  elif ! summary="$(jq -r '
-      def shown: if . == null then "unset" else tostring end;
-      "model=" + (.model | shown)
-      + ", effort=" + (.effortLevel | shown)
-      + ", allowed=" + (if (.availableModels | type) == "array" then (.availableModels | join(",")) else "any" end)
-      + ", max effort=" + (.maxEffortLevel | if . == null then "none" else tostring end)
+    summary="no settings.json, so it sets no model or effort"
+  elif ! summary="$(jq -rs '
+      def shown(absent): if . == null then absent else tostring | gsub("[[:cntrl:]]"; " ") end;
+      if length != 1 or (.[0] | type) != "object" then error("not one object") else .[0] end
+      | "model=" + (.model | shown("unset"))
+      + ", effort=" + (.effortLevel | shown("unset"))
+      + ", allowed=" + (.availableModels
+          | if type == "array" then map(shown("null")) | join(",") else shown("any") end)
+      + ", max effort=" + (.maxEffortLevel | shown("none"))
     ' "$settings" 2>/dev/null)"; then
-    summary="settings.json is not readable JSON; model not reported"
+    summary="settings.json could not be read as one JSON object; model not reported"
+    model_unread="$model_unread${model_unread:+, }$name"
   fi
   add_check "$id" PASS "$summary" ""
-  model_summaries="$model_summaries$name"$'\t'"$summary"$'\n'
+  model_accounts=$((model_accounts + 1))
+  if [[ "$model_accounts" -eq 1 ]]; then
+    model_first="$summary"
+  elif [[ "$summary" != "$model_first" ]]; then
+    model_same=0
+  fi
+  model_listing="$model_listing${model_listing:+; }$name has $summary"
 }
 if [[ -n "$accounts" ]]; then
   while IFS=$'\t' read -r account_name account_dir; do
@@ -670,13 +686,13 @@ if [[ -n "$accounts" ]]; then
       check_account_model "$account_dir/settings.json" "claude-model[$account_name]" "$account_name"
     fi
   done <<<"$accounts"
-  model_count="$(printf '%s' "$model_summaries" | grep -c . || true)"
-  if [[ "$model_count" -gt 1 ]]; then
-    if [[ "$(printf '%s' "$model_summaries" | cut -f2 | LC_ALL=C sort -u | grep -c .)" -eq 1 ]]; then
-      add_check claude-model-agreement PASS "$model_count accounts share one model and effort setting" ""
+  if [[ "$model_accounts" -gt 1 ]]; then
+    if [[ -n "$model_unread" ]]; then
+      add_check claude-model-agreement PASS "accounts not compared: settings.json could not be read for $model_unread" ""
+    elif [[ "$model_same" -eq 1 ]]; then
+      add_check claude-model-agreement PASS "$model_accounts accounts share one model and effort setting" ""
     else
-      add_check claude-model-agreement PASS \
-        "accounts differ, which may be deliberate: $(printf '%s' "$model_summaries" | sed 's/\t/ has /' | tr '\n' ';' | sed 's/;$//; s/;/; /g')" ""
+      add_check claude-model-agreement PASS "accounts differ, which may be deliberate: $model_listing" ""
     fi
   fi
 fi
