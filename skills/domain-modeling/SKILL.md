@@ -9,7 +9,9 @@ Actively build and sharpen the project's domain model as you design. This is the
 
 ## File structure
 
-The repo's layout is recorded in `docs/agents/domain.md` (written by `setup-skills`). It's one of three:
+Discover the repo's chosen layout from project instructions and existing docs;
+`docs/agents/domain.md` records it where `setup-skills` has been used. Common
+layouts include:
 
 **Single-context** — a flat `CONTEXT.md` glossary at the root:
 
@@ -39,7 +41,9 @@ The repo's layout is recorded in `docs/agents/domain.md` (written by `setup-skil
 │       └── docs/adr/
 ```
 
-**OKF** — no `CONTEXT.md`; per-concept docs under `docs/knowledge/` indexed by `docs/architecture/domain-model.md`:
+**OKF** — per-concept docs under the chosen knowledge root (commonly
+`docs/knowledge/`), with progressive indexes. Some repos also maintain an entity
+map at `docs/architecture/domain-model.md`:
 
 ```
 /
@@ -50,7 +54,10 @@ The repo's layout is recorded in `docs/agents/domain.md` (written by `setup-skil
 └── src/ (or app/)
 ```
 
-Create files lazily — only when you have something to write. In flat repos, create `CONTEXT.md` when the first term is resolved; in OKF repos, create the first concept doc (see below). If no `docs/adr/` exists, create it when the first ADR is needed.
+Create files lazily — only when you have something to write. In flat repos, create
+`CONTEXT.md` when the first term is resolved; in OKF repos, create the first
+concept doc (see below). Follow the repo's ADR convention, including tracker-based
+decisions; create `docs/adr/` only when file-based ADRs are its chosen convention.
 
 ## During the session
 
@@ -75,7 +82,7 @@ When the user states how something works, check whether the code agrees. If you 
 When a term is resolved, record it in the repo's domain docs right there. Don't batch these up — capture them as they happen. Which file, and in what format, depends on the layout (see `docs/agents/domain.md`):
 
 - **Flat repos (`CONTEXT.md` / `CONTEXT-MAP.md`)** — update the glossary using the format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md). `CONTEXT.md` should be totally devoid of implementation details — it is a glossary and nothing else. Don't treat it as a spec, a scratch pad, or a repository for implementation decisions.
-- **OKF repos (`docs/knowledge/`)** — refine the existing concept doc, or create a new one plus its index links, using the format in [OKF-FORMAT.md](./OKF-FORMAT.md). If the resolved term is a new domain *entity*, also add a row to `docs/architecture/domain-model.md`. OKF concept docs deliberately carry how-it-works detail (fields, lifecycles, tables) — the "glossary only" rule above does **not** apply to them; that constraint is specific to flat `CONTEXT.md`.
+- **OKF repos (`docs/knowledge/`)** — refine the existing concept doc, or create a new one plus its index links, using the format in [OKF-FORMAT.md](./OKF-FORMAT.md). If the resolved term is a new domain *entity* and the repo already maintains an entity map, also update that map. OKF concept docs deliberately carry how-it-works detail (fields, lifecycles, tables) — the "glossary only" rule above does **not** apply to them; that constraint is specific to flat `CONTEXT.md`.
 
 ### Offer ADRs sparingly
 
