@@ -1,5 +1,5 @@
 ---
-name: data-privacy-review
+name: review-data-privacy
 description: Review how a system collects, stores, shares, and deletes personal data — PII inventory, retention, deletion paths, DSAR readiness, residency, processors. Use when code or schemas touch user personal data, emails, analytics or tracking pixels (GA4, GTM, Meta pixel), cookie banners and consent (Consent Mode), third-party data sharing, AI vendors receiving user data, or when GDPR/CCPA questions come up.
 ---
 

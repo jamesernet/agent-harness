@@ -61,7 +61,7 @@ timebox. Standard request list:
 
 ## 5. Security and compliance
 - Run [threat-model](../threat-model/) on the highest-value flow.
-- Run [pci-dss-scoping](../pci-dss-scoping/), [data-privacy-review](../data-privacy-review/),
+- Run [pci-dss-scoping](../pci-dss-scoping/), [review-data-privacy](../review-data-privacy/),
   and [kyc-aml-review](../kyc-aml-review/) as the domain requires; use the
   built-in `/security-review` for the code-level pass.
 - Check secrets handling, access control, dependency vulnerabilities,
@@ -93,4 +93,4 @@ Rules for findings:
   former belongs in the top tier.
 
 ## Related
-- [threat-model](../threat-model/) · [pci-dss-scoping](../pci-dss-scoping/) · [data-privacy-review](../data-privacy-review/) · [kyc-aml-review](../kyc-aml-review/) · [improve-codebase-architecture](../improve-codebase-architecture/) (post-diligence deepening)
+- [threat-model](../threat-model/) · [pci-dss-scoping](../pci-dss-scoping/) · [review-data-privacy](../review-data-privacy/) · [kyc-aml-review](../kyc-aml-review/) · [improve-codebase-architecture](../improve-codebase-architecture/) (post-diligence deepening)

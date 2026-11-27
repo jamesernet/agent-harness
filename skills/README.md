@@ -128,7 +128,7 @@ precedes an engagement.
 | skill | invoke | focus | what it adds |
 |---|---|---|---|
 | [threat-model](threat-model/) | `/threat-model` · auto | one flow: data-flow diagram, trust boundaries, STRIDE, ranked mitigations | Mermaid with one subgraph per trust zone so the artifact diffs; "unmitigated and unaccepted is not an allowed state" |
-| [data-privacy-review](data-privacy-review/) | `/data-privacy-review` · auto | PII inventory, retention and deletion paths, DSAR, processors, consent | "a policy document without a cron job is a finding"; treats prompts to AI vendors as data transfers |
+| [review-data-privacy](review-data-privacy/) | `/review-data-privacy` · auto | PII inventory, retention and deletion paths, DSAR, processors, consent | "a policy document without a cron job is a finding"; treats prompts to AI vendors as data transfers |
 | [tech-due-diligence](tech-due-diligence/) | `/tech-due-diligence` · auto | investor, M&A or situation-review pass | one skeleton, three audiences; findings memo and ranked risk register; separates "expensive to reverse" from "not how I would do it" |
 
 ### Payments and fintech
@@ -179,9 +179,9 @@ harness installs one per Claude account and prunes the rest.
 | bundle | a project that is | adds |
 |---|---|---|
 | `core` | any codebase | design and engineering, the intake pipeline, plus metadata-audit because every project here ships a page somewhere and tech-due-diligence because it is the owner's first deliverable on any engagement |
-| `website` | something people look at | core + the website audit family + data-privacy-review |
+| `website` | something people look at | core + the website audit family + review-data-privacy |
 | `webapp` | a website that holds user data | website + threat-model |
-| `platform` | a backend other things depend on | core + threat-model, data-privacy-review |
+| `platform` | a backend other things depend on | core + threat-model, review-data-privacy |
 | `fintech` | somewhere money moves (additive) | the payments and fintech family |
 | `metered` | willing to spend on a third-party API (additive) | the motion family; `all` excludes these, so they arrive only when the bundle is named. Name it persistently — `git config --global llmctx.skillBundle webapp,metered` — because `--bundle` is one-shot and the next plain install prunes them again |
 

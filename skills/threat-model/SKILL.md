@@ -63,7 +63,7 @@ that is not graph-shaped in prose rather than forcing it into a diagram.
 - **R**epudiation — can an actor deny having done it? (audit logs with
   actor, timestamp, and integrity; especially admin and money actions)
 - **I**nformation disclosure — what leaks? (errors, logs, timing, IDs;
-  PII/PAN in logs is the classic — see data-privacy-review, pci-dss-scoping)
+  PII/PAN in logs is the classic — see review-data-privacy, pci-dss-scoping)
 - **D**enial of service — what's the cheapest way to take it down or run
   up its bill? (rate limits, quotas, queue backpressure, cost caps)
 - **E**levation of privilege — can a user reach admin, or a service exceed
@@ -91,4 +91,4 @@ a calendar.
 - Internal services that trust each other because "it's inside the VPC."
 
 ## Related
-- [money-movement-review](../money-movement-review/) · [data-privacy-review](../data-privacy-review/) · [pci-dss-scoping](../pci-dss-scoping/) · [tech-due-diligence](../tech-due-diligence/) §5
+- [money-movement-review](../money-movement-review/) · [review-data-privacy](../review-data-privacy/) · [pci-dss-scoping](../pci-dss-scoping/) · [tech-due-diligence](../tech-due-diligence/) §5
