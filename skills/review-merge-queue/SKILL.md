@@ -56,6 +56,11 @@ raises the cap; `/review-merge-queue 113` reviews exactly that PR.
 
 ### 3. One fresh reviewer per PR
 
+The reviewer is the managed `reviewer` agent where it is installed, or the
+nearest independent equivalent. `/code-review` in the authoring session is the
+author's own pre-publication pass ([grab](../grab/) step 5); it comes before
+this verdict and does not replace it.
+
 Resolve branch updates before dispatching the reviewer, then record the exact
 head being reviewed. If that head changes at any later step, including during a
 merge-forward, invalidate the old verdict and obtain a fresh independent review
@@ -82,11 +87,39 @@ reviewer did not reach. Then resolve `mergePolicy` once
 - **`review-and-merge`** — for a `CLEAN` verdict: confirm it names the current
   head, wait for required CI on that same head, merge, then clean up by the global guidelines' §5
   rules. A finding goes back to its author through fix → re-review, never a
-  quiet patch. If `gh pr merge` is refused by a permission rule, say so and
+  quiet patch; step 5 bounds that loop. If `gh pr merge` is refused by a permission rule, say so and
   fall back to `hold` out loud; a refusal is not a verdict on the work.
 - **`queue`** — say which are ready, with verdicts, and stop.
 
 A `DO-NOT-MERGE` verdict is never merged under any policy.
+
+### 5. Fix rounds, and where they stop
+
+"Every fix is re-reviewed" has no end of its own. On 2026-11-14 two branches
+ran five and six full re-review rounds; severity fell each round and the
+finding count did not, because a full review of a changed diff always finds
+another edge case. The rule stays. What is bounded is the scope and budget of
+each re-review, and the stop is said out loud before the first one runs.
+
+1. **Say the stop condition before starting**: a real defect gets one fix
+   commit and a narrow re-review; anything less is recorded and not fixed in
+   this PR.
+2. **A fix gets a narrow re-review, not a new full review.** A fresh `reviewer`
+   is briefed with the fix commit's own claims and only that commit's diff, and
+   told to look one door over from the fix. Budget 15 tool calls, and smaller
+   for each later round.
+3. **Stop at `CLEAN`.** A low-severity preference, or a finding that belongs to
+   another slice, is recorded by name as an accepted note in the PR body or as
+   a follow-up issue. It does not open another round.
+4. **A test gap found by a narrow re-review is a tests-only commit**, verified
+   by the suite, not a further review round.
+5. **If the third narrow re-review still finds a defect, stop and tell the
+   owner.** The change is not converging, and whether to continue, split it or
+   rethink it is their decision.
+
+The head rule in step 3 still holds: every fix commit moves the head, so the
+verdict that permits a merge is the last narrow `CLEAN`, naming the current
+head.
 
 ## Rules
 
@@ -95,6 +128,7 @@ A `DO-NOT-MERGE` verdict is never merged under any policy.
 - Keyed on the head SHA: an unchanged head is not re-reviewed.
 - The reviewer reports; it never edits, pushes, merges or comments itself.
 - Never merge a `DO-NOT-MERGE`, and never merge on your own verification.
+- A fix is re-reviewed narrowly, every time; the loop stops at `CLEAN` (step 5).
 - If an independent reviewer is unavailable, report insufficient coverage and
   hold the PR. Do not substitute the authoring session or install a tool merely
   to satisfy the named workflow.
