@@ -17,6 +17,8 @@ ACTIONS = {
     "write_handoff", "report_untracked_work", "request_handoff_context",
     "delete_worktree", "delete_branch", "close_session", "commit_unfinished_skill",
     "record_accepted_note",
+    "report_nothing_to_capture", "propose_document_edit", "edit_document",
+    "write_memory", "open_followup_issue",
 }
 STATES = {"verified", "unverified", "deferred"}
 

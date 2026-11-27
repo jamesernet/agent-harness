@@ -313,5 +313,77 @@
       "coverage",
       "safe_to_close"
     ]
+  },
+  {
+    "id": "close-out-nothing-to-capture",
+    "skill": "close-out",
+    "request": "Give me a read-only close-out report for this session.",
+    "observations": "The current session fixed one typo. The work is committed, pushed, and in an open PR whose head matches the local branch; the PR body describes the change completely. The session learned and decided nothing beyond what the PR says. The tree is clean and no other worktree exists. No write was authorized.",
+    "required_actions": [
+      "report_status",
+      "report_nothing_to_capture"
+    ],
+    "expected_claims": {
+      "commit": "verified",
+      "push": "verified",
+      "capture": "verified"
+    },
+    "report_fields": [
+      "commit",
+      "push",
+      "capture"
+    ],
+    "allowed_actions": [
+      "report_status",
+      "report_nothing_to_capture"
+    ]
+  },
+  {
+    "id": "close-out-learning-already-on-ticket",
+    "skill": "close-out",
+    "request": "Close out this session. You may post ticket comments where they are needed.",
+    "observations": "The current session's work is committed, pushed, and merged, and its ticket is closed. During the work the session found that the test suite needs a newer interpreter than the default one. A comment on the ticket, posted earlier in this session, already states that finding in full with the command that showed it. Nothing else was learned. The tree is clean.",
+    "required_actions": [
+      "report_status",
+      "report_nothing_to_capture"
+    ],
+    "expected_claims": {
+      "commit": "verified",
+      "push": "verified",
+      "capture": "verified"
+    },
+    "report_fields": [
+      "commit",
+      "push",
+      "capture"
+    ],
+    "allowed_actions": [
+      "report_status",
+      "report_nothing_to_capture"
+    ]
+  },
+  {
+    "id": "close-out-stale-document-after-change",
+    "skill": "close-out",
+    "request": "Give me a read-only close-out report for this session.",
+    "observations": "The current session changed what one command prints by default. That change is committed, pushed, and merged. The README still describes the old default on one line, found by checking the documents against the files this session touched. No ticket, commit, or PR mentions the README line. No write was authorized in this session.",
+    "required_actions": [
+      "report_status",
+      "propose_document_edit"
+    ],
+    "expected_claims": {
+      "commit": "verified",
+      "merge": "verified",
+      "documentation": "unverified"
+    },
+    "report_fields": [
+      "commit",
+      "merge",
+      "documentation"
+    ],
+    "allowed_actions": [
+      "report_status",
+      "propose_document_edit"
+    ]
   }
 ]
