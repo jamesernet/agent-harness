@@ -114,8 +114,9 @@ rounds.
    structure is not one.
 2. **A fix gets a narrow re-review, not a new full review.** A fresh `reviewer`
    is briefed with the fix commit's own claims and only that commit's diff, and
-   told to look one door over from the fix. Budget 15 tool calls in the first
-   round and fewer in each later one.
+   told to look one door over from the fix. The brief also lists the defects
+   the fix answers, and the reviewer says of each whether it is answered.
+   Budget 15 tool calls in the first round and fewer in each later one.
 3. **Stop at `CLEAN`.** A preference, or a finding that belongs to another
    slice, is recorded by name as an accepted note or as a follow-up issue. It
    does not start a round. Every verdict, full or narrow, is posted as its own
