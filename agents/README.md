@@ -84,7 +84,9 @@ gets to a verdict inside them.
   authoring session's verification is a claim to falsify, not evidence.
 - **A finding goes back through fix → re-review, never a quiet patch.** On
   PR #99 the first fix for a reviewer's finding had the same hole one door
-  over; the second reviewer found it because it was asked to.
+  over; the second reviewer found it because it was asked to. The re-review
+  is narrow and the loop has a stated stop:
+  [review-merge-queue, step 5](../skills/review-merge-queue/SKILL.md).
 - **Ask a stalled agent for its verdict; do not read its transcript.** An
   agent that has run long is resumed with one message: "deliver your verdict
   on the evidence in hand; mark the rest insufficient coverage". Both agents
