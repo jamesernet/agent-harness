@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The billed call behind the gemini-motion spend gate. The gate test stops
+# The billed call behind the create-motion spend gate. The gate test stops
 # every case before a client exists, so it cannot see how the call that bills
 # is made. This one runs the real scripts against a stub google.genai that
 # records each call and never opens a socket. The stub shadows an installed
@@ -10,17 +10,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
-GEN="$SRC/skills/gemini-motion/scripts/generate_video.py"
-SB="$SRC/skills/gemini-motion/scripts/storyboard.py"
-EXAMPLE="$SRC/skills/gemini-motion/references/storyboard-example.json"
+GEN="$SRC/skills/create-motion/scripts/generate_video.py"
+SB="$SRC/skills/create-motion/scripts/storyboard.py"
+EXAMPLE="$SRC/skills/create-motion/references/storyboard-example.json"
 
 fail() {
-  echo "gemini-motion render test failed: $*" >&2
+  echo "create-motion render test failed: $*" >&2
   exit 1
 }
 
 command -v python3 >/dev/null || {
-  echo "gemini-motion render tests: skipped (no python3)"
+  echo "create-motion render tests: skipped (no python3)"
   exit 0
 }
 
@@ -375,4 +375,4 @@ grep -q 'no longer stored' "$sb2/log" && grep -q 'delete "coffee" from out/manif
 ! grep -q 'run render again to retry' "$sb2/log" ||
   fail "an expired storyboard fetch told the user to retry: $(cat "$sb2/log")"
 
-echo "gemini-motion render tests: passed"
+echo "create-motion render tests: passed"

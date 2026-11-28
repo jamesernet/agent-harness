@@ -149,7 +149,7 @@ the video path has no free tier.
 
 | skill | invoke | focus | what it adds |
 |---|---|---|---|
-| [gemini-motion](gemini-motion/) | `/gemini-motion` · auto | short rendered video, longer videos storyboarded shot by shot, and code animations that ship inside a page | three paths behind one setup — Omni Flash renders mp4 with audio, a storyboard renders a plan of shots through the same gate and stitches them, Gemini 3.8 Flash writes self-contained HTML/CSS/SVG/Lottie; the effort goes into the brief and the review, and a render refuses until the price it will bill, seconds and resolution both, is confirmed back to it |
+| [create-motion](create-motion/) | `/create-motion` · auto | short rendered video, longer videos storyboarded shot by shot, and code animations that ship inside a page | three paths behind one setup — Omni Flash renders mp4 with audio, a storyboard renders a plan of shots through the same gate and stitches them, Gemini 3.8 Flash writes self-contained HTML/CSS/SVG/Lottie; the effort goes into the brief and the review, and a render refuses until the price it will bill, seconds and resolution both, is confirmed back to it |
 
 ## What depends on things outside this repository
 

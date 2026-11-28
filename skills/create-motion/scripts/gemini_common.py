@@ -1,4 +1,4 @@
-"""Shared helpers for the gemini-motion scripts.
+"""Shared helpers for the create-motion scripts.
 
 Everything here is deliberately small: build a client from GEMINI_API_KEY,
 turn local files into Interactions API content blocks, extract a code block
@@ -360,7 +360,7 @@ def ignored_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     ignore = path / ".gitignore"
     if not ignore.exists():
-        ignore.write_text("# written by the gemini-motion skill: this is local run state\n*\n",
+        ignore.write_text("# written by the create-motion skill: this is local run state\n*\n",
                           encoding="utf-8")
     return path
 

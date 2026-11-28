@@ -81,6 +81,10 @@ the log the first time one is created, so prompts and raw replies cannot be
 committed by accident from a project under version control. Delete that file if
 you actually want the log in git.
 
+The directory keeps the name this skill had before it was called create-motion:
+it holds Gemini interaction ids, and renaming it would split the log in every
+project that already has one.
+
 ## Troubleshooting
 
 - `ImportError: google.genai` → step 3.
