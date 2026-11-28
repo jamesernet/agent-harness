@@ -648,7 +648,7 @@ def _build(pkg, evdir, tool):
             "pagesNotMeasured": not_measured,
             "checksNotRun": checks_not_run,
             "notes": [
-                "Source: the metadata layer only. product-ux-review, web-perf and the capture "
+                "Source: the metadata layer only. review-product-ux, web-perf and the capture "
                 "emit no machine-readable findings yet, so nothing from them is in this register.",
                 "State is Live as of each page's capture time (asOf, with asOfSource saying "
                 "where it came from). Re-labelling against the tracker and the source branch is "

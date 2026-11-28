@@ -17,7 +17,7 @@ refuse to do. The same codebase reviewed by the QA profile and the business-owne
 profile returns two different lists, and that is the point.
 
 Where a profile's job overlaps a skill that already exists, the profile says so
-and defers. `ux-designer` does not reimplement `product-ux-review`.
+and defers. `ux-designer` does not reimplement `review-product-ux`.
 
 ## The shape
 

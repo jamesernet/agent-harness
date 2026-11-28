@@ -105,7 +105,7 @@ document that argues for findings instead of reporting them.
 1. **Capture** — [site-visual-baseline](../site-visual-baseline/). Full-page, three
    viewports, filenames derived from URL and viewport so a later run aligns
    file-for-file. This is what makes an after-column possible at all.
-2. **Experience** — [product-ux-review](../product-ux-review/). Measured in a
+2. **Experience** — [review-product-ux](../review-product-ux/). Measured in a
    browser from computed styles, not judged from screenshots.
 3. **Performance** — [web-perf](../web-perf/). Capture desktop *and* mobile; the
    gap between them is frequently the headline.

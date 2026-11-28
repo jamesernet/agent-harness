@@ -1,5 +1,5 @@
 ---
-name: product-ux-review
+name: review-product-ux
 description: Evidence-driven UX and interaction-quality audit of an implemented web interface, driven through the browser and traced into source. Use when asked to audit, test, or critique a running product's usability; when hunting interaction defects such as dialogs without close controls, dead ends, broken forms, weak feedback, focus traps, inaccessible interactions, or responsive failures; or when validating a frontend before launch. Supports explicitly limited source-only or screenshot-only reviews when runtime access is unavailable.
 ---
 

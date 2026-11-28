@@ -178,6 +178,6 @@ Name the Custom App scope needed. Do not build it inside the review.
 ## Related
 
 - [website-audit-package](../website-audit-package/) — three-state labels and the package this report lands in
-- [product-ux-review](../product-ux-review/) — the cart drawer and checkout interactions themselves
+- [review-product-ux](../review-product-ux/) — the cart drawer and checkout interactions themselves
 - [review-money-movement](../review-money-movement/) — where the store's own payment or ledger code is in scope
 - [review-data-privacy](../review-data-privacy/) — flows, pixels and consent on the same pages
