@@ -19,9 +19,27 @@ hard cap belongs in managed settings and is a follow-up.
 | agent | model | effort | turns | job |
 |---|---|---|---|---|
 | `scout` | haiku | — | 25 | enumeration, read-only; lists not judgments |
-| `reviewer` | sonnet | high | 40 | unanchored read of code or a diff, evidence per finding |
+| `reviewer` | inherit | high | 40 | unanchored read of code or a diff, evidence per finding |
 | `prose-reviewer` | sonnet | high | 10 | one lens of review-prose's three; fixed output contract |
 | `implementer` | inherit | inherit | 150 | one slice from a brief in its own worktree, test-first |
+
+This table is the routing record: which model and effort each kind of
+delegated work gets. Two kinds of work are not in it because no file here sets
+them:
+
+- **The session itself**, including planning, runs on whatever the person
+  chose for that account with `/model`. That is machine-local on purpose; a
+  managed default would fight a per-session choice. `llmctx doctor` reports
+  each account's model, effort and any ceiling (`claude-model`), and says when
+  two accounts differ.
+- **A ceiling**, where one applies, is written per account by
+  `llmctx context apply` (`availableModels`, `maxEffortLevel`).
+
+`reviewer` inherits the session model on purpose (decided 2026-11-25, #153).
+Its verdict is what gates a merge, so it gets the model the person chose for
+the session and not a cheaper one. The cost is a dearer review when the
+session runs on a larger model; the stated budgets, about 25 calls for a
+verdict and 15 or fewer for a re-review of a fix, are what bound it.
 
 Design subagents (codebase-design's design-it-twice) stay on the session model
 on purpose: alternative interfaces are judgment work, and a cheaper model there
@@ -33,8 +51,9 @@ produces three similar designs instead of three different ones.
 - `improve-codebase-architecture` names `scout` for the exploration walk.
 - Skills that are judgment end to end declare `effort:` in their frontmatter.
   It is an override, not a floor: the skill runs at that level whatever the
-  session is set to, up or down. `threat-model`, `tech-due-diligence` and
-  `review-money-movement` pin `xhigh`, the highest level settings can hold;
+  session is set to, up or down. `threat-model`, `tech-due-diligence`,
+  `review-money-movement` and `review-shopify-storefront` pin `xhigh`, the
+  highest level settings can hold;
   procedure-shaped `site-visual-baseline` pins `medium`, deliberately cheaper
   than most sessions.
 
@@ -83,4 +102,4 @@ Change the file here, run `llmctx agents install`, and `llmctx doctor` reports
 the copy current. If `scout` returns thin results on a large codebase, move it
 to `sonnet` before widening its turns. Valid `model` values are `sonnet`,
 `opus`, `haiku`, `fable`, `inherit`, or a full model id; `bin/lint-skills.sh`
-checks the frontmatter.
+checks the frontmatter, and a skill's `effort:` the same way.
