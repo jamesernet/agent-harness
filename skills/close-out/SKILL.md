@@ -65,7 +65,7 @@ Give each remaining item exactly one home:
 | what it is | home |
 |---|---|
 | where in-flight work stands, and what comes next | a comment on its existing ticket, via [handoff](../handoff/) |
-| shipped behaviour or a convention changed and a document still says the old thing | an edit to that document; find the lines with [docs-drift-audit](../docs-drift-audit/) scoped to the files this session touched, not the whole repository |
+| shipped behaviour or a convention changed and a document still says the old thing | an edit to that document; find the lines with [audit-docs-drift](../audit-docs-drift/) scoped to the files this session touched, not the whole repository |
 | work found and not done | a follow-up issue, where the repository tracks work that way |
 | durable guidance on how to work here, of use to later sessions | the agent's memory, where the tool has one |
 
@@ -127,4 +127,4 @@ as part of this skill. Those are separate workflows and authorizations.
 
 - [start-a-session](../start-a-session/) reads the same repository state at opening.
 - [handoff](../handoff/) defines the per-ticket continuity artifact.
-- [docs-drift-audit](../docs-drift-audit/) finds the document lines a change left behind.
+- [audit-docs-drift](../audit-docs-drift/) finds the document lines a change left behind.

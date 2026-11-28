@@ -35,7 +35,7 @@ class of project gets; see the bundles section below.
 
 The five that get used most. The count is a grep over Claude Code's local
 session logs for explicit skill loads, late August to early November 2026; the
-logs are not published. docs-drift-audit arrived in September, so its count
+logs are not published. audit-docs-drift arrived in September, so its count
 covers a shorter window than the others.
 
 | skill | invoke | reach for it when |
@@ -43,7 +43,7 @@ covers a shorter window than the others.
 | [codebase-design](codebase-design/) | auto | you are about to design or reshape a module's interface and want the deep-module vocabulary applied consistently |
 | [tdd](tdd/) | `/tdd` · auto | you want a feature built test-first without the trap of writing every test before any code |
 | [review-product-ux](review-product-ux/) | `/review-product-ux` · auto | a running web product needs an interaction audit whose findings a client cannot wave away |
-| [docs-drift-audit](docs-drift-audit/) | `/docs-drift-audit` · auto | the instruction docs an agent obeys may no longer match the tree |
+| [audit-docs-drift](audit-docs-drift/) | `/audit-docs-drift` · auto | the instruction docs an agent obeys may no longer match the tree |
 | [improve-codebase-architecture](improve-codebase-architecture/) | `/improve-codebase-architecture` | you suspect shallow modules and want the candidates ranked and argued, not listed |
 
 ## How a skill triggers
@@ -75,7 +75,7 @@ cold. If the second column reads as nothing, the skill should not exist.
 ### Design and engineering
 
 For any codebase. The design skills share a vocabulary; repo-knowledge builds
-the source-backed library, and docs-drift-audit checks the docs the others read.
+the source-backed library, and audit-docs-drift checks the docs the others read.
 
 | skill | invoke | focus | what it adds |
 |---|---|---|---|
@@ -86,7 +86,7 @@ the source-backed library, and docs-drift-audit checks the docs the others read.
 | [repo-knowledge](repo-knowledge/) | `/repo-knowledge` · auto | source-backed OKF libraries across industry, business, customers, platform and operations | primary-source research, explicit knowledge gaps and source authority, progressive indexes, pinned portable OKF checks; supporting [authoring profile](repo-knowledge/references/authoring-profile.md) |
 | [interview-me](interview-me/) | `/interview-me` · auto | one question at a time, each with a recommended answer | the primitive that `grab`, `triage` and the architecture review rely on; "with docs" records the answers as ADRs |
 | [diagnosing-bugs](diagnosing-bugs/) | `/diagnosing-bugs` · auto | hard, flaky and performance bugs | no hypothesis until a fast, deterministic, red-capable command exists; then minimise, rank falsifiable hypotheses, instrument with tagged logs, fix with a regression test |
-| [docs-drift-audit](docs-drift-audit/) | `/docs-drift-audit` · auto | AGENTS.md, CLAUDE.md, README against the tree | a seven-stage resolver before anything is called broken, so the report is trusted; supporting [reference-taxonomy](docs-drift-audit/references/reference-taxonomy.md), [report-template](docs-drift-audit/references/report-template.md), [extract-refs.py](docs-drift-audit/scripts/extract-refs.py) |
+| [audit-docs-drift](audit-docs-drift/) | `/audit-docs-drift` · auto | AGENTS.md, CLAUDE.md, README against the tree | a seven-stage resolver before anything is called broken, so the report is trusted; supporting [reference-taxonomy](audit-docs-drift/references/reference-taxonomy.md), [report-template](audit-docs-drift/references/report-template.md), [extract-refs.py](audit-docs-drift/scripts/extract-refs.py) |
 
 ### Intake pipeline
 

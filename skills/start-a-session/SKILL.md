@@ -22,7 +22,7 @@ that look, taken every time a session opens, before anything is picked.
 ### 1. Assess — read-only, cheap signals, this repository only
 
 Four probes. Nothing here writes. Nothing here is a deep audit:
-[docs-drift-audit](../docs-drift-audit/) is a *destination* in step 3, not a
+[audit-docs-drift](../audit-docs-drift/) is a *destination* in step 3, not a
 probe here, because a full drift audit on every session start is the cost
 that gets a skill abandoned.
 
@@ -126,4 +126,4 @@ fanning work into one session.
   it, and `mergePolicy` decides whether a clean verdict ends in a merge.
 - [grab](../grab/) · [triage](../triage/) · [to-issues](../to-issues/) ·
   [improve-codebase-architecture](../improve-codebase-architecture/) ·
-  [docs-drift-audit](../docs-drift-audit/) · [interview-me](../interview-me/)
+  [audit-docs-drift](../audit-docs-drift/) · [interview-me](../interview-me/)
