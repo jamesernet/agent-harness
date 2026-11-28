@@ -60,7 +60,7 @@ phrase (`start-a-session` is both).
 
 Five skills pin an `effort` level. It is an override, not a floor: the skill
 runs at that level whatever the session is set to, up or down. `threat-model`,
-`tech-due-diligence`, `review-money-movement` and `shopify-storefront-review`
+`tech-due-diligence`, `review-money-movement` and `review-shopify-storefront`
 pin `xhigh`; `site-visual-baseline` pins `medium`, deliberately cheaper than
 most sessions. Two name a managed subagent for their fan-out work so the model
 and turn budget of that work has a default that travels with the skill:
@@ -116,7 +116,7 @@ with this bundle.
 | [site-visual-baseline](site-visual-baseline/) | `/site-visual-baseline` · auto | reproducible screenshot sets across viewports | URL-derived filenames so a later run lines up file-for-file; the settle sequence and the capture traps that silently produce wrong screenshots |
 | [review-product-ux](review-product-ux/) | `/review-product-ux` · auto | browser-driven interaction audit | evidence labels on every finding, so it says whether it was observed, inferred or guessed, and never a silent downgrade from runtime testing; supporting [interaction-checklist](review-product-ux/references/interaction-checklist.md), [report-template](review-product-ux/references/report-template.md) |
 | [metadata-audit](metadata-audit/) | `/metadata-audit` · auto | robots, canonical, AI-crawler posture, llms.txt, structured data | gates, not checklists: a noindex page gets no schema advice; supporting [decision-tree](metadata-audit/references/decision-tree.md), [schema-by-page-type](metadata-audit/references/schema-by-page-type.md), [report-template](metadata-audit/references/report-template.md), [inventory.py](metadata-audit/scripts/inventory.py) |
-| [shopify-storefront-review](shopify-storefront-review/) | `/shopify-storefront-review` · auto | a store's money and offer logic | builds the discount register the store usually lacks and measures stacking at a real cart, which is how a dead code in a live email gets found; supporting [register-and-invariants](shopify-storefront-review/references/register-and-invariants.md), [report-template](shopify-storefront-review/references/report-template.md), [storefront-prices.sh](shopify-storefront-review/scripts/storefront-prices.sh) |
+| [review-shopify-storefront](review-shopify-storefront/) | `/review-shopify-storefront` · auto | a store's money and offer logic | builds the discount register the store usually lacks and measures stacking at a real cart, which is how a dead code in a live email gets found; supporting [register-and-invariants](review-shopify-storefront/references/register-and-invariants.md), [report-template](review-shopify-storefront/references/report-template.md), [storefront-prices.sh](review-shopify-storefront/scripts/storefront-prices.sh) |
 | [website-audit-package](website-audit-package/) | `/website-audit-package` · auto | one client deliverable from several audits | three-state finding labels (live, fixed awaiting publish, open) and a machine-written evidence layer nobody hand-edits |
 | [review-prose](review-prose/) | `/review-prose` · auto | writing meant for an audience | three reviewers run independently — a technical editor, a plain-voice editor, the actual target reader — synthesised by agreement; only the reader notices when a piece is well built and still changes nothing |
 
@@ -164,7 +164,7 @@ Everything else is self-contained.
   not yours.
 - **tech-due-diligence** names scoping and deliverable playbooks that live in a
   private repository. The procedure stands without them.
-- **shopify-storefront-review** hands the machine layer to Site Scan, another
+- **review-shopify-storefront** hands the machine layer to Site Scan, another
   Emergent Labs tool. `metadata-audit` and `web-perf` cover the same ground.
 - **tech-due-diligence** also names the repository those playbooks live in; the
   name is the owner's own site, not a client.

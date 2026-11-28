@@ -1,5 +1,5 @@
 ---
-name: shopify-storefront-review
+name: review-shopify-storefront
 description: Review a Shopify storefront's money and offer logic — every live discount, automatic discount, selling-plan rate, partner and affiliate code, bundle price and the email flows that publish them — against what the pages, emails and docs claim. Builds the offer register the store usually lacks, measures prices and stacking at a real cart, finds dead codes in live emails, and reports decisions separately from defects. Use when a Shopify, Recharge, Klaviyo, GoAffPro or similar store needs a pricing, promo code, discount, subscription, bundle, partner-code, abandoned-cart, welcome-offer, cart-drawer or checkout-path review, when a customer received a discount nobody can account for, when prices or percentages on pages disagree, or before changing any rate. Theme copy is in scope wherever it states a price or rate; crawlability, structured data and performance are not — hand those to Site Scan, metadata-audit and web-perf.
 effort: xhigh
 ---
