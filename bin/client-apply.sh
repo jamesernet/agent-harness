@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Render a work context's Claude model policy into its registered account.
+# Render a work context's Claude model limits into its registered account.
 #
-#   llmctx context apply <profile.toml>            write
-#   llmctx context apply <profile.toml> --check    report drift, change nothing
-#   llmctx client apply ...                        compatibility alias
+#   llmctx context apply <work-context.toml>            write
+#   llmctx context apply <work-context.toml> --check    report drift, change nothing
+#   llmctx client apply ...                             compatibility alias
 #
 # This is deliberately narrow: it reads only [providers.claude] (or the legacy
 # [ai] table) and writes only the three settings keys its account, models, and
@@ -16,8 +16,8 @@ set -euo pipefail
 #
 # Why these three and nothing else yet: "which models ran against this client's
 # code, and how hard" is the contract-shaped question nothing on the machine
-# answered. The rest of the profile (identity, SSO, kube) waits for a second
-# real client, as the template says.
+# answered. The rest of the work context (identity, SSO, kube) waits for a
+# second real client, as the template says.
 #
 # The TOML read is a flat-key awk over one table, not a parser. The [ai] keys
 # are scalars and one string array by design; anything fancier belongs in a
@@ -28,7 +28,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/accounts.sh"
 
 usage() {
-  echo "usage: llmctx context apply <profile.toml> [--check]" >&2
+  echo "usage: llmctx context apply <work-context.toml> [--check]" >&2
   exit 2
 }
 
@@ -47,7 +47,7 @@ while [[ "$#" -gt 0 ]]; do
 done
 [[ -n "$profile" ]] || usage
 [[ -f "$profile" ]] || {
-  echo "error: no such profile: $profile" >&2
+  echo "error: no such work-context file: $profile" >&2
   exit 1
 }
 command -v jq >/dev/null 2>&1 || {
@@ -95,12 +95,12 @@ models_raw="$(claude_key models)"
 effort_raw="$(claude_key max_effort)"
 
 if [[ "$(unquote "$mode_raw")" == "disabled" ]]; then
-  echo "error: Claude is disabled in $profile — there is no account policy to apply" >&2
+  echo "error: Claude is disabled in $profile — there are no model limits to apply" >&2
   exit 1
 fi
 
 [[ -n "$account_raw" ]] || {
-  echo "error: Claude account is not set in $profile — the policy needs a registered home to land in" >&2
+  echo "error: Claude account is not set in $profile — the model limits need a registered account to land in" >&2
   exit 1
 }
 account="$(unquote "$account_raw")"
@@ -124,8 +124,8 @@ if [[ -n "$models_raw" ]]; then
   }
   policy="$(jq -c --argjson m "$models_json" '. + {availableModels: $m, enforceAvailableModels: true}' <<<"$policy")"
 fi
-# All three keys are always managed. A profile that drops `models` means "no
-# restriction", so the restriction is removed; a stale allowlist that
+# All three keys are always managed. A work context that drops `models` means
+# "no restriction", so the restriction is removed; a stale allowlist that
 # drift-checks clean is the wrong default for a tool whose job is to say which
 # models may run against a client's code.
 remove='[]'
@@ -147,7 +147,7 @@ fi
   exit 1
 }
 
-# The account must be one this machine knows, or the policy lands nowhere.
+# The account must be one this machine knows, or the limits land nowhere.
 account_dir=""
 while IFS=$'\t' read -r name dir; do
   [[ "$name" == "$account" ]] && account_dir="$dir" && break

@@ -15,8 +15,8 @@ usage:
   llmctx account remove [--provider claude|codex] <name>
   llmctx skills install [--dev] [--bundle <name>[,<name>...]] [--account <name>]
   llmctx agents install [--dev] [--account <name>]
-  llmctx client apply <profile.toml> [--check]
-  llmctx context apply <profile.toml> [--check]
+  llmctx client apply <work-context.toml> [--check]
+  llmctx context apply <work-context.toml> [--check]
   llmctx vendor check
   llmctx repo diff [repo] [--json]
   llmctx env check [repo]
@@ -24,9 +24,9 @@ usage:
   llmctx env session [directory]
   llmctx publish sync [--check]
 
-`profile` is a REPOSITORY policy (personal|client). A work `context` is an
-identity and security boundary. A provider `account` is a Claude or Codex home
-and separate login. Different axes, deliberately different words.
+`profile` is the REPOSITORY profile (personal|client). A work `context` is an
+identity and security boundary. A provider `account` is one Claude or Codex
+login directory. Different axes, deliberately different words.
 EOF
 }
 
