@@ -198,6 +198,40 @@ Codex as well as Claude. The rest of Cloudflare's set was vendored for a
 full current set in `~/.claude/skills` on its own, so that bundle is gone
 (issue #36).
 
+## Naming a skill
+
+Verb first, and name the outcome: `review-money-movement`, `audit-metadata`,
+`create-motion`. No provider or model in the name, because a skill outlives the
+provider it calls today; a platform may appear when it is the subject of the
+work (`review-shopify-storefront`).
+
+The rule applies to new skills. Ten existing ones were renamed to it in 2026-11
+and are listed below. The rest keep the names people already type.
+
+## Renamed
+
+2026-11, to the rule above
+([ADR-003](https://github.com/jamesernet/agent-harness/issues/159)). An
+installed copy the harness owns is replaced on the next install. A copy made by
+hand stays under its old name until you remove it.
+
+| was | now |
+|---|---|
+| `gemini-motion` | `create-motion` |
+| `data-privacy-review` | `review-data-privacy` |
+| `kyc-aml-review` | `review-kyc-aml` |
+| `money-movement-review` | `review-money-movement` |
+| `product-ux-review` | `review-product-ux` |
+| `shopify-storefront-review` | `review-shopify-storefront` |
+| `docs-drift-audit` | `audit-docs-drift` |
+| `metadata-audit` | `audit-metadata` |
+| `diagnosing-bugs` | `diagnose-bugs` |
+| `pci-dss-scoping` | `scope-pci-dss` |
+
+Two directory names did not follow their skill, on purpose: a project's
+`.gemini-motion/` run log, and `evidence/metadata-audit/` inside an audit
+package. Each is state that already exists outside this repository.
+
 ## Dropped
 
 Everything below lives in git history if ever needed.
