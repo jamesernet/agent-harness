@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Independent read of code, a diff, or a design, reported as findings with file and line evidence. Use when a second pair of eyes should not be anchored on the caller's conclusion. Reads and runs read-only commands; never edits.
-model: sonnet
+model: inherit
 effort: high
 tools: Read, Grep, Glob, Bash
 maxTurns: 40

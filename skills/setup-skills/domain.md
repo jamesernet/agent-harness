@@ -42,50 +42,45 @@ the others when `setup-skills` writes this file for a real repo.
         └── docs/adr/
 ```
 
-### OKF (Open Knowledge Framework — `docs/knowledge/` with `okf_version` frontmatter)
+### OKF (Open Knowledge Format — the repo's chosen knowledge root)
 
-The domain language is **not** a flat glossary. It lives in per-concept knowledge
-docs and is indexed by an entity map. There is no `CONTEXT.md`.
+The domain language lives in per-concept knowledge documents with progressive
+indexes. When writing this configuration, replace `<knowledge-root>` with the
+actual root from project instructions and existing docs; `docs/knowledge/` is
+only the default. Preserve the bundle's declared version and authoring profile.
 
-- **Vocabulary** — `docs/knowledge/index.md` (the Knowledge Bundle entry point) and `docs/architecture/domain-model.md` (the conceptual entity map — every entity tagged with build status and linked to its authoritative source). The ubiquitous language lives inside the concept docs these index.
-- **Decisions** — `docs/adr/` (an ADR index at `docs/adr/README.md` if present).
-- **Principles** — `docs/architecture/principles.md` — architecture principles reconciled against as-built, each tagged **enforced / partial / aspirational**. Treat **enforced** principles like ADRs (below).
-- **Test scenarios** — `docs/testing/scenario-matrix.md` — named scenarios mapped to the real test suite. Read it for coverage before adding tests; add new scenarios here and link the tests.
+- **Vocabulary** — `<knowledge-root>/index.md`, then the relevant area indexes and concepts.
+- **Decisions** — the repo's existing ADR convention: record the actual directory or tracker links here.
+- **Optional supporting docs** — name an entity map, principles document or test scenario matrix only when the repo already maintains it. Use its actual path.
 
 ```
-/
-├── docs/
-│   ├── knowledge/                     ← per-concept docs + index.md (the vocabulary)
-│   │   ├── index.md
-│   │   └── <area>/{index.md, <concept>.md}
-│   ├── architecture/
-│   │   ├── domain-model.md            ← conceptual entity map
-│   │   └── principles.md              ← enforced/partial/aspirational principles
-│   ├── testing/scenario-matrix.md
-│   └── adr/{README.md, NNN-slug.md}
-└── src/ (or app/)
+<knowledge-root>/
+├── index.md
+└── <area>/
+    ├── index.md
+    └── <concept>.md
 ```
 
-Reference implementation of this layout:
-the current repository.
+An OKF library does not require an entity map, principles document, test matrix,
+or a parallel `CONTEXT.md`. Reuse existing sources of truth and link them.
 
 ## Before exploring, read these
 
 - The **Vocabulary** source(s) for the layout above.
-- The **Decisions** (`docs/adr/`) that touch the area you're about to work in.
-- For OKF repos, the **Principles** doc and — when your work touches tests — the **Test scenarios** matrix.
+- The **Decisions** in the declared files or tracker that touch the area you're about to work in.
+- Relevant optional supporting docs listed above, when present.
 
-If any of these files don't exist, **proceed silently**. Don't flag their absence;
-don't suggest creating them upfront. The `/domain-modeling` skill (reached via
-`/interview-me` (with docs) and `/improve-codebase-architecture`) creates them lazily when
-terms or decisions actually get resolved.
+If a supporting document does not exist, proceed without proposing it as a
+prerequisite. Record resolved terminology through `/domain-modeling`; establish
+or expand an OKF library through `/repo-knowledge`. Keep decisions in the repo's
+chosen ADR location.
 
 ## Use the domain vocabulary
 
 When your output names a domain concept (in an issue title, a refactor proposal, a
 hypothesis, a test name), use the term as the domain docs define it — the glossary
-entry (`CONTEXT.md`) or the concept doc / entity name (`docs/knowledge/`,
-`docs/architecture/domain-model.md`). Don't drift to synonyms the docs explicitly
+entry (`CONTEXT.md`) or the relevant concept in the configured knowledge root
+(and entity map, when present). Don't drift to synonyms the docs explicitly
 avoid.
 
 If the concept you need isn't in the domain docs yet, that's a signal — either
@@ -99,8 +94,8 @@ silently overriding:
 
 > _Contradicts ADR-0007 (event-sourced orders) — but worth reopening because…_
 
-For OKF repos, do the same against an **enforced** principle in
-`docs/architecture/principles.md`:
+When the repo maintains a principles document, do the same against an
+**enforced** principle at its declared location:
 
 > _Contradicts principle #2 (ledger entries are append-only), which is enforced by
 > a DB trigger — flagging rather than overriding._

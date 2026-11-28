@@ -61,9 +61,10 @@ session per worktree.
    and, when publication was requested and the repository permits unreviewed
    PRs, publish a draft or clearly blocked PR with the gap stated. A missing
    reviewer prevents automatic merge, not preparation of a reviewable result.
-   On
-   completion or when stopping mid-flight, write a handoff per
-   [handoff](../handoff/) so any agent — or a human — can resume.
+   When stopping mid-flight, write a handoff per [handoff](../handoff/) so any
+   agent — or a human — can resume. Completed work needs no handoff: the
+   commits, the ticket and the PR carry it, and [close-out](../close-out/)
+   catches what they do not.
 
 6. **When you are asked to publish the work** — and not before, because
    nothing pushes or opens a pull request without being asked — honor approval
@@ -84,7 +85,8 @@ session per worktree.
      commit or merge-forward changes that head afterwards, the verdict is
      stale: obtain a fresh independent review and CI for the new head before
      merging. A finding goes back through fix and re-review, never
-     a quiet patch. Then clean up the worktree and branch by the global
+     a quiet patch; the re-review is narrow and the loop stops as
+     [review-merge-queue](../review-merge-queue/) step 5 says. Then clean up the worktree and branch by the global
      guidelines' §5 rules. If `gh pr merge` is refused by a permission rule,
      say so and fall back to `hold` out loud — do not treat the refusal as a
      verdict on the work.
