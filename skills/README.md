@@ -74,8 +74,8 @@ cold. If the second column reads as nothing, the skill should not exist.
 
 ### Design and engineering
 
-For any codebase. Five of these share one vocabulary and call each other;
-docs-drift-audit is the odd one out, auditing the docs the others read.
+For any codebase. The design skills share a vocabulary; repo-knowledge builds
+the source-backed library, and docs-drift-audit checks the docs the others read.
 
 | skill | invoke | focus | what it adds |
 |---|---|---|---|
@@ -83,6 +83,7 @@ docs-drift-audit is the odd one out, auditing the docs the others read.
 | [tdd](tdd/) | `/tdd` · auto | red/green in vertical slices | forbids writing all tests first; refactor candidates inline; records scenarios where the repo keeps a matrix; supporting [tests](tdd/tests.md), [mocking](tdd/mocking.md) |
 | [improve-codebase-architecture](improve-codebase-architecture/) | `/improve-codebase-architecture` | scan for shallow modules, report, grill the chosen one | before/after diagrams per candidate, ADR-conflict awareness, a top recommendation rather than a list; supporting [HTML-REPORT](improve-codebase-architecture/HTML-REPORT.md) |
 | [domain-modeling](domain-modeling/) | `/domain-modeling` · auto | glossary and ADRs maintained as decisions land | the three-part ADR gate (hard to reverse, surprising, a real trade-off) keeps ADRs rare; flat, multi-context and OKF layouts; supporting [ADR-FORMAT](domain-modeling/ADR-FORMAT.md), [CONTEXT-FORMAT](domain-modeling/CONTEXT-FORMAT.md), [OKF-FORMAT](domain-modeling/OKF-FORMAT.md) |
+| [repo-knowledge](repo-knowledge/) | `/repo-knowledge` · auto | source-backed OKF libraries across industry, business, customers, platform and operations | primary-source research, explicit knowledge gaps and source authority, progressive indexes, pinned portable OKF checks; supporting [authoring profile](repo-knowledge/references/authoring-profile.md) |
 | [interview-me](interview-me/) | `/interview-me` · auto | one question at a time, each with a recommended answer | the primitive that `grab`, `triage` and the architecture review rely on; "with docs" records the answers as ADRs |
 | [diagnosing-bugs](diagnosing-bugs/) | `/diagnosing-bugs` · auto | hard, flaky and performance bugs | no hypothesis until a fast, deterministic, red-capable command exists; then minimise, rank falsifiable hypotheses, instrument with tagged logs, fix with a regression test |
 | [docs-drift-audit](docs-drift-audit/) | `/docs-drift-audit` · auto | AGENTS.md, CLAUDE.md, README against the tree | a seven-stage resolver before anything is called broken, so the report is trusted; supporting [reference-taxonomy](docs-drift-audit/references/reference-taxonomy.md), [report-template](docs-drift-audit/references/report-template.md), [extract-refs.py](docs-drift-audit/scripts/extract-refs.py) |
@@ -100,7 +101,7 @@ writes, so they never hardcode where a repo keeps its tracker, labels or briefs.
 | [to-issues](to-issues/) | `/to-issues` | a plan into tracer-bullet vertical-slice issues | writes the parent PRD issue from the conversation first when none exists, without interviewing |
 | [grab](grab/) | `/grab` | issue → worktree → brief → implement → handoff in one motion | built for several sessions in parallel; verifies each acceptance criterion with evidence, not claims |
 | [handoff](handoff/) | `/handoff` | compact the session for the next agent | puts the handoff where this repo keeps them, which differs per repo; redacts; points at artifacts rather than copying them |
-| [close-out](close-out/) | `/close-out` | inspect worktrees before sessions close | preserves authorized commits and ticket handoffs, exposes unknown session state, and leaves worktree/branch cleanup to its own workflow; Codex invocation policy also ships in `agents/openai.yaml` |
+| [close-out](close-out/) | `/close-out` | inspect worktrees before sessions close | preserves authorized commits and ticket handoffs, lists what the current session learned that is recorded nowhere and proposes one home for each, exposes unknown session state, and leaves worktree/branch cleanup to its own workflow; Codex invocation policy also ships in `agents/openai.yaml` |
 | [start-a-session](start-a-session/) | `/start-a-session` | open a session: stranded work, tracker, merge queue → at most three seams → one pick → the skill that fits | the squash-merge-correct stranded-work proof via `worktree.sh status`; each seam carries its case against; a fan-out is a batch of sessions, never a batch inside one; supporting [SEAMS](start-a-session/SEAMS.md) |
 | [review-merge-queue](review-merge-queue/) | `/review-merge-queue` | the open PRs: triage, then one fresh adversarial reviewer per reviewable PR, then the verdict | triages before spending — a conflicted, held or stacked PR needs something other than a review; keyed on the head SHA so a re-run costs nothing; the brief is the PR's own claims, not its diff; `mergePolicy` decides the ending and a DO-NOT-MERGE never merges; supporting [BRIEF](review-merge-queue/BRIEF.md) |
 
