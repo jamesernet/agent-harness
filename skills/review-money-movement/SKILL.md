@@ -111,4 +111,4 @@ diagram rendered before relying on it.
 - Retry storm on a mutating endpoint with one idempotency key: one effect.
 
 ## Related
-- [threat-model](../threat-model/) (payment flows are always security-sensitive) · [pci-dss-scoping](../pci-dss-scoping/) · [review-kyc-aml](../review-kyc-aml/)
+- [threat-model](../threat-model/) (payment flows are always security-sensitive) · [scope-pci-dss](../scope-pci-dss/) · [review-kyc-aml](../review-kyc-aml/)

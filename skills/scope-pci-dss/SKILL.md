@@ -1,5 +1,5 @@
 ---
-name: pci-dss-scoping
+name: scope-pci-dss
 description: Scope PCI DSS for a system — map cardholder-data flows, shrink the CDE, choose the right SAQ, plan segmentation. Use when a product touches card payments and someone asks what PCI applies, how to reduce scope, or which SAQ to fill.
 ---
 
