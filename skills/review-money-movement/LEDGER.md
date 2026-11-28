@@ -1,7 +1,7 @@
 # Ledger & Reconciliation
 
 Rule set for trustworthy money records. Loaded by
-[money-movement-review](SKILL.md); read it whenever ledgers, balances,
+[review-money-movement](SKILL.md); read it whenever ledgers, balances,
 wallets, payouts, statements, or reconciliation jobs are in the code under review.
 
 Two uses: design rules for new

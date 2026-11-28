@@ -1,5 +1,5 @@
 ---
-name: metadata-audit
+name: audit-metadata
 description: Walk a web page or site's machine-readable layer — robots.txt, meta robots, canonical, AI-crawler directives, llms.txt, JSON-LD / microdata structured data, and copy cleanliness — and produce a gated, severity-ranked findings report with copy-paste fixes. Use this whenever the user mentions a metadata walk, meta tags, schema markup, structured data, JSON-LD, rich results, robots.txt, llms.txt, canonical tags, crawlability, indexability, AI/LLM visibility, AEO/GEO, "why isn't this page showing up", or asks to audit, check, review, or clean up a page's tags, head section, or markup — even if they don't use the word "audit" and even if they only paste a URL or a chunk of HTML and ask what's wrong with it.
 ---
 

@@ -84,7 +84,7 @@ Default: each role's string equals its name. Ask the user if they want to overri
 
 **Section C — Domain docs.**
 
-> Explainer: Some skills (`improve-codebase-architecture`, `diagnosing-bugs`, `tdd`) read the project's domain docs to learn its domain language, plus `docs/adr/` for past architectural decisions. They need to know where that knowledge lives so they look in the right place. The pointers get recorded in `docs/agents/domain.md`; the skills read that file, not a hardcoded filename.
+> Explainer: Some skills (`improve-codebase-architecture`, `diagnose-bugs`, `tdd`) read the project's domain docs to learn its domain language, plus `docs/adr/` for past architectural decisions. They need to know where that knowledge lives so they look in the right place. The pointers get recorded in `docs/agents/domain.md`; the skills read that file, not a hardcoded filename.
 
 Confirm the layout:
 

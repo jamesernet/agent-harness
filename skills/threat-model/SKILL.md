@@ -63,7 +63,7 @@ that is not graph-shaped in prose rather than forcing it into a diagram.
 - **R**epudiation — can an actor deny having done it? (audit logs with
   actor, timestamp, and integrity; especially admin and money actions)
 - **I**nformation disclosure — what leaks? (errors, logs, timing, IDs;
-  PII/PAN in logs is the classic — see data-privacy-review, pci-dss-scoping)
+  PII/PAN in logs is the classic — see review-data-privacy, scope-pci-dss)
 - **D**enial of service — what's the cheapest way to take it down or run
   up its bill? (rate limits, quotas, queue backpressure, cost caps)
 - **E**levation of privilege — can a user reach admin, or a service exceed
@@ -84,11 +84,11 @@ a calendar.
 
 ## Red flags — instant findings
 - Webhook or callback endpoints with no signature verification (the
-  boundary everyone forgets — see money-movement-review).
+  boundary everyone forgets — see review-money-movement).
 - Authorization checked at the route but not at the object (IDOR).
 - Admin actions with no audit trail.
 - Secrets in code, config files in git, or logs.
 - Internal services that trust each other because "it's inside the VPC."
 
 ## Related
-- [money-movement-review](../money-movement-review/) · [data-privacy-review](../data-privacy-review/) · [pci-dss-scoping](../pci-dss-scoping/) · [tech-due-diligence](../tech-due-diligence/) §5
+- [review-money-movement](../review-money-movement/) · [review-data-privacy](../review-data-privacy/) · [scope-pci-dss](../scope-pci-dss/) · [tech-due-diligence](../tech-due-diligence/) §5

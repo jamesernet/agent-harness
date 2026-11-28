@@ -1,6 +1,6 @@
 ---
-name: shopify-storefront-review
-description: Review a Shopify storefront's money and offer logic — every live discount, automatic discount, selling-plan rate, partner and affiliate code, bundle price and the email flows that publish them — against what the pages, emails and docs claim. Builds the offer register the store usually lacks, measures prices and stacking at a real cart, finds dead codes in live emails, and reports decisions separately from defects. Use when a Shopify, Recharge, Klaviyo, GoAffPro or similar store needs a pricing, promo code, discount, subscription, bundle, partner-code, abandoned-cart, welcome-offer, cart-drawer or checkout-path review, when a customer received a discount nobody can account for, when prices or percentages on pages disagree, or before changing any rate. Theme copy is in scope wherever it states a price or rate; crawlability, structured data and performance are not — hand those to Site Scan, metadata-audit and web-perf.
+name: review-shopify-storefront
+description: Review a Shopify storefront's money and offer logic — every live discount, automatic discount, selling-plan rate, partner and affiliate code, bundle price and the email flows that publish them — against what the pages, emails and docs claim. Builds the offer register the store usually lacks, measures prices and stacking at a real cart, finds dead codes in live emails, and reports decisions separately from defects. Use when a Shopify, Recharge, Klaviyo, GoAffPro or similar store needs a pricing, promo code, discount, subscription, bundle, partner-code, abandoned-cart, welcome-offer, cart-drawer or checkout-path review, when a customer received a discount nobody can account for, when prices or percentages on pages disagree, or before changing any rate. Theme copy is in scope wherever it states a price or rate; crawlability, structured data and performance are not — hand those to Site Scan, audit-metadata and web-perf.
 effort: xhigh
 ---
 
@@ -28,7 +28,7 @@ handful of discounts and had an order of magnitude more.
 
 The machine layer and speed are measured by other tools and must not be
 re-measured here: Site Scan (an external tool) for crawlability, structured data,
-contrast and alt text on commerce sites; `metadata-audit` for the head and robots layer;
+contrast and alt text on commerce sites; `audit-metadata` for the head and robots layer;
 `web-perf` or a Lighthouse snapshot for load times. Quote their numbers, with
 their dates, in one section of the report. Theme hygiene (Liquid, sections,
 settings) is in scope only where a surface states a price or rate.
@@ -178,6 +178,6 @@ Name the Custom App scope needed. Do not build it inside the review.
 ## Related
 
 - [website-audit-package](../website-audit-package/) — three-state labels and the package this report lands in
-- [product-ux-review](../product-ux-review/) — the cart drawer and checkout interactions themselves
-- [money-movement-review](../money-movement-review/) — where the store's own payment or ledger code is in scope
-- [data-privacy-review](../data-privacy-review/) — flows, pixels and consent on the same pages
+- [review-product-ux](../review-product-ux/) — the cart drawer and checkout interactions themselves
+- [review-money-movement](../review-money-movement/) — where the store's own payment or ledger code is in scope
+- [review-data-privacy](../review-data-privacy/) — flows, pixels and consent on the same pages

@@ -40,7 +40,7 @@ allow=(
   "bin/lib/skills.sh"                                             # LLMCTX_SKILL_MANAGED_BY -- a fork must NOT change this; see the comment on the line and ADR-001
   "bin/sync-published-context.sh"                                 # SYNC_MAP, which files publish to which website repository: a fork replaces it or empties it
   "skills/README.md"                                              # clone URL: a fork edits it
-  "skills/shopify-storefront-review/scripts/storefront-prices.sh" # the User-Agent names the repository: a fork renames it
+  "skills/review-shopify-storefront/scripts/storefront-prices.sh" # the User-Agent names the repository: a fork renames it
   "skills/tech-due-diligence/SKILL.md"                            # points at the owner's website repository for playbook templates: a fork edits or drops it
   "targets/cloudflare-pages.conf"                                 # "modelled on" note: a fork may leave it
   "templates/teams/opinion-gallery/src/opinion_gallery/feeds.py"  # the feed reader's User-Agent names the repository: a fork renames it

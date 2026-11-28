@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # The findings register of website-audit-package (#69): built from the evidence
-# layer by running metadata-audit's inventory.py on the saved inputs, so every
+# layer by running audit-metadata's inventory.py on the saved inputs, so every
 # finding cites the files the tool read, and refused when a pointer does not
 # resolve. Nothing here touches the network: the package is a fixture under
 # mktemp, and the one measuring tool is a stdlib script.
@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
 REG="$SRC/skills/website-audit-package/scripts/register.py"
-INV="$SRC/skills/metadata-audit/scripts/inventory.py"
+INV="$SRC/skills/audit-metadata/scripts/inventory.py"
 
 fail() {
   echo "website-audit-register test failed: $*" >&2
@@ -76,7 +76,7 @@ build >"$tmp/build.out" 2>&1 || fail "build failed: $(cat "$tmp/build.out")"
   fail "the empty page directory was not named as not measured: $(q '.limits.pagesNotMeasured')"
 
 # 3. The closed gates on home are findings, each with the severity the
-#    metadata-audit decision tree gives that case.
+#    audit-metadata decision tree gives that case.
 sev() { q ".findings[] | select(.id == \"$1\") | .severity"; }
 [[ "$(sev metadata/home/header_noindex)" == P0 ]] || fail "header noindex was not P0: $(sev metadata/home/header_noindex)"
 [[ "$(sev metadata/home/robots_blocks_everything)" == P0 ]] || fail "robots blocking everything was not P0"
@@ -359,6 +359,21 @@ jq '(.findings[] | select(.id == "metadata/home/images_missing_alt") | .gate) = 
 if check >/dev/null 2>&1; then fail "check passed a gate the table does not give"; fi
 jq '(.findings[] | select(.id == "metadata/home/images_missing_alt") | .severitySource) = "a blog post"' "$tmp/reg.bak" >"$reg"
 if check >/dev/null 2>&1; then fail "check passed a severitySource the table does not give"; fi
+# A register built while the skill was still called metadata-audit carries that
+# name in every place the build writes it: the decision-tree path each finding
+# cites, the tool path at the top and on each finding, and the falsifier text. A
+# delivered package must not start failing because a directory in this
+# repository was renamed; any other spelling of the cited path still fails.
+jq 'walk(if type == "string" then gsub("audit-metadata"; "metadata-audit") else . end)' "$tmp/reg.bak" >"$reg"
+jq -e '[.findings[].severitySource | startswith("metadata-audit/references/decision-tree.md:")] | all and length > 0' \
+  "$reg" >/dev/null || fail "the pre-rename fixture does not cite the old decision-tree path"
+jq -e '.measuredBy.tool == "metadata-audit/scripts/inventory.py"
+       and ([.findings[].measuredBy.tool == "metadata-audit/scripts/inventory.py"] | all)' \
+  "$reg" >/dev/null || fail "the pre-rename fixture does not name the old tool path"
+if grep -q 'audit-metadata' "$reg"; then fail "the pre-rename fixture still carries the new skill name"; fi
+out="$(check 2>&1)" || fail "check rejected a register built before the skill was renamed: $out"
+jq '(.findings[].severitySource) |= sub("^audit-metadata/"; "metadata-audits/")' "$tmp/reg.bak" >"$reg"
+if check >/dev/null 2>&1; then fail "check passed a decision-tree path that was never the skill's"; fi
 jq '.findings += [.findings[0]]' "$tmp/reg.bak" >"$reg"
 if out="$(check 2>&1)"; then fail "check passed two findings with one id"; fi
 grep -q 'duplicate id' <<<"$out" || fail "the duplicate id was not named: $out"

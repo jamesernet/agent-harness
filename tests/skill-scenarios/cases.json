@@ -164,7 +164,7 @@
   },
   {
     "id": "diagnose-known-auth-deferred",
-    "skill": "diagnosing-bugs",
+    "skill": "diagnose-bugs",
     "request": "Check why the project command cannot run. Do not change authentication; I deferred sign-in until tomorrow.",
     "observations": "The command was run once and deterministically reports that the required account is signed out. That account is the declared project account. There is no evidence of a code defect. The owner deferred authentication, and no additional access is available. No code or configuration was changed and no fix was verified.",
     "required_actions": [
@@ -188,7 +188,7 @@
   },
   {
     "id": "diagnose-reproduction-unavailable",
-    "skill": "diagnosing-bugs",
+    "skill": "diagnose-bugs",
     "request": "Diagnose this intermittent failure using the available evidence. No production changes or extra permissions.",
     "observations": "The report describes an intermittent error, but contains no trace or reproducible inputs. The only relevant runtime is unavailable. Two safe local attempts were recorded and cannot exercise the failing path. No red-capable loop has run, no cause is established, and no fix has been verified. The owner can provide a captured trace later.",
     "required_actions": [

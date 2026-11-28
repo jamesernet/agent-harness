@@ -1,5 +1,5 @@
 ---
-name: money-movement-review
+name: review-money-movement
 description: Review or design a money-movement path end to end — the payment flow (auth/capture/settlement/refund/chargeback states, idempotency, retries, webhooks), the money representation behind it (minor units, decimals, currency, rounding, allocation, FX), and the ledger that records it (double-entry integrity, immutability, balance derivation, settlement matching, break workflows). Use when designing or reviewing a PSP integration (Stripe, Adyen, PayPal, or any PSP), checkout, billing, subscriptions, payouts, refunds, wallets, balances, statements, or reconciliation jobs, or when code, schemas, APIs, or DB columns carry monetary amounts, prices, fees, invoices, discounts, taxes, or currency conversion.
 effort: xhigh
 ---
@@ -111,4 +111,4 @@ diagram rendered before relying on it.
 - Retry storm on a mutating endpoint with one idempotency key: one effect.
 
 ## Related
-- [threat-model](../threat-model/) (payment flows are always security-sensitive) · [pci-dss-scoping](../pci-dss-scoping/) · [kyc-aml-review](../kyc-aml-review/)
+- [threat-model](../threat-model/) (payment flows are always security-sensitive) · [scope-pci-dss](../scope-pci-dss/) · [review-kyc-aml](../review-kyc-aml/)

@@ -1,5 +1,5 @@
 ---
-name: pci-dss-scoping
+name: scope-pci-dss
 description: Scope PCI DSS for a system — map cardholder-data flows, shrink the CDE, choose the right SAQ, plan segmentation. Use when a product touches card payments and someone asks what PCI applies, how to reduce scope, or which SAQ to fill.
 ---
 
@@ -60,4 +60,4 @@ for the same artifacts (see tech-due-diligence §5).
 - "We're SAQ A" while server-side code handles raw PANs.
 
 ## Related
-- [money-movement-review](../money-movement-review/) · [threat-model](../threat-model/) · [tech-due-diligence](../tech-due-diligence/)
+- [review-money-movement](../review-money-movement/) · [threat-model](../threat-model/) · [tech-due-diligence](../tech-due-diligence/)

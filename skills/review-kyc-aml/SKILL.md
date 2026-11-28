@@ -1,5 +1,5 @@
 ---
-name: kyc-aml-review
+name: review-kyc-aml
 description: Review a KYC/AML program's technical implementation — identity verification, sanctions/PEP screening, risk rating, transaction monitoring, case management, SAR workflow. Use when building or reviewing onboarding, compliance screening, or monitoring systems for a fintech.
 ---
 
@@ -20,7 +20,7 @@ verify jurisdiction-specific thresholds and timelines rather than assuming.
   verified / rejected / manual-review), and product features are gated on
   it — check for endpoints that work pre-verification but shouldn't.
 - Identity documents are sensitive PII: retention, encryption, and access
-  audit per data-privacy-review.
+  audit per review-data-privacy.
 
 ### 2. Screening (sanctions / PEP / adverse media)
 - At onboarding **and** ongoing — lists change; customers get re-screened
@@ -68,4 +68,4 @@ through disposition (or SAR). The gaps show up in the traces, not the docs.
   ordinary support staff.
 
 ## Related
-- [data-privacy-review](../data-privacy-review/) · [money-movement-review](../money-movement-review/) · [tech-due-diligence](../tech-due-diligence/)
+- [review-data-privacy](../review-data-privacy/) · [review-money-movement](../review-money-movement/) · [tech-due-diligence](../tech-due-diligence/)

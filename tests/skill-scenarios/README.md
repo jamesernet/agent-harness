@@ -23,7 +23,7 @@ the specified JSON. Save its unedited response outside the repository, then:
 python3 tests/skill-scenarios/evaluate.py check /tmp/grab-outcomes.json --skill grab
 ```
 
-Repeat for `review-merge-queue`, `diagnosing-bugs`, and `close-out`, or omit `--skill` to prepare
+Repeat for `review-merge-queue`, `diagnose-bugs`, and `close-out`, or omit `--skill` to prepare
 the full set. Keep the source commit, provider/model, prompt, unedited response,
 and scorer result with the local run evidence. Report which cases failed and
 inspect the free-text reasons before changing a skill; a failed score can expose

@@ -21,10 +21,10 @@ is a suggestion, not an import.
 
 ```sh
 git clone https://github.com/jamesernet/agent-harness.git
-cp -R agent-harness/skills/money-movement-review ~/.claude/skills/
+cp -R agent-harness/skills/review-money-movement ~/.claude/skills/
 ```
 
-Then describe the work in a session, or type `/money-movement-review`.
+Then describe the work in a session, or type `/review-money-movement`.
 
 To install the set as versioned copies that survive moving this checkout, with
 per-account selection and a drift check, use the harness: `./install.sh`, then
@@ -35,15 +35,15 @@ class of project gets; see the bundles section below.
 
 The five that get used most. The count is a grep over Claude Code's local
 session logs for explicit skill loads, late August to early November 2026; the
-logs are not published. docs-drift-audit arrived in September, so its count
+logs are not published. audit-docs-drift arrived in September, so its count
 covers a shorter window than the others.
 
 | skill | invoke | reach for it when |
 |---|---|---|
 | [codebase-design](codebase-design/) | auto | you are about to design or reshape a module's interface and want the deep-module vocabulary applied consistently |
 | [tdd](tdd/) | `/tdd` · auto | you want a feature built test-first without the trap of writing every test before any code |
-| [product-ux-review](product-ux-review/) | `/product-ux-review` · auto | a running web product needs an interaction audit whose findings a client cannot wave away |
-| [docs-drift-audit](docs-drift-audit/) | `/docs-drift-audit` · auto | the instruction docs an agent obeys may no longer match the tree |
+| [review-product-ux](review-product-ux/) | `/review-product-ux` · auto | a running web product needs an interaction audit whose findings a client cannot wave away |
+| [audit-docs-drift](audit-docs-drift/) | `/audit-docs-drift` · auto | the instruction docs an agent obeys may no longer match the tree |
 | [improve-codebase-architecture](improve-codebase-architecture/) | `/improve-codebase-architecture` | you suspect shallow modules and want the candidates ranked and argued, not listed |
 
 ## How a skill triggers
@@ -60,7 +60,7 @@ phrase (`start-a-session` is both).
 
 Five skills pin an `effort` level. It is an override, not a floor: the skill
 runs at that level whatever the session is set to, up or down. `threat-model`,
-`tech-due-diligence`, `money-movement-review` and `shopify-storefront-review`
+`tech-due-diligence`, `review-money-movement` and `review-shopify-storefront`
 pin `xhigh`; `site-visual-baseline` pins `medium`, deliberately cheaper than
 most sessions. Two name a managed subagent for their fan-out work so the model
 and turn budget of that work has a default that travels with the skill:
@@ -75,7 +75,7 @@ cold. If the second column reads as nothing, the skill should not exist.
 ### Design and engineering
 
 For any codebase. The design skills share a vocabulary; repo-knowledge builds
-the source-backed library, and docs-drift-audit checks the docs the others read.
+the source-backed library, and audit-docs-drift checks the docs the others read.
 
 | skill | invoke | focus | what it adds |
 |---|---|---|---|
@@ -85,8 +85,8 @@ the source-backed library, and docs-drift-audit checks the docs the others read.
 | [domain-modeling](domain-modeling/) | `/domain-modeling` · auto | glossary and ADRs maintained as decisions land | the three-part ADR gate (hard to reverse, surprising, a real trade-off) keeps ADRs rare; flat, multi-context and OKF layouts; supporting [ADR-FORMAT](domain-modeling/ADR-FORMAT.md), [CONTEXT-FORMAT](domain-modeling/CONTEXT-FORMAT.md), [OKF-FORMAT](domain-modeling/OKF-FORMAT.md) |
 | [repo-knowledge](repo-knowledge/) | `/repo-knowledge` · auto | source-backed OKF libraries across industry, business, customers, platform and operations | primary-source research, explicit knowledge gaps and source authority, progressive indexes, pinned portable OKF checks; supporting [authoring profile](repo-knowledge/references/authoring-profile.md) |
 | [interview-me](interview-me/) | `/interview-me` · auto | one question at a time, each with a recommended answer | the primitive that `grab`, `triage` and the architecture review rely on; "with docs" records the answers as ADRs |
-| [diagnosing-bugs](diagnosing-bugs/) | `/diagnosing-bugs` · auto | hard, flaky and performance bugs | no hypothesis until a fast, deterministic, red-capable command exists; then minimise, rank falsifiable hypotheses, instrument with tagged logs, fix with a regression test |
-| [docs-drift-audit](docs-drift-audit/) | `/docs-drift-audit` · auto | AGENTS.md, CLAUDE.md, README against the tree | a seven-stage resolver before anything is called broken, so the report is trusted; supporting [reference-taxonomy](docs-drift-audit/references/reference-taxonomy.md), [report-template](docs-drift-audit/references/report-template.md), [extract-refs.py](docs-drift-audit/scripts/extract-refs.py) |
+| [diagnose-bugs](diagnose-bugs/) | `/diagnose-bugs` · auto | hard, flaky and performance bugs | no hypothesis until a fast, deterministic, red-capable command exists; then minimise, rank falsifiable hypotheses, instrument with tagged logs, fix with a regression test |
+| [audit-docs-drift](audit-docs-drift/) | `/audit-docs-drift` · auto | AGENTS.md, CLAUDE.md, README against the tree | a seven-stage resolver before anything is called broken, so the report is trusted; supporting [reference-taxonomy](audit-docs-drift/references/reference-taxonomy.md), [report-template](audit-docs-drift/references/report-template.md), [extract-refs.py](audit-docs-drift/scripts/extract-refs.py) |
 
 ### Intake pipeline
 
@@ -114,9 +114,9 @@ with this bundle.
 | skill | invoke | focus | what it adds |
 |---|---|---|---|
 | [site-visual-baseline](site-visual-baseline/) | `/site-visual-baseline` · auto | reproducible screenshot sets across viewports | URL-derived filenames so a later run lines up file-for-file; the settle sequence and the capture traps that silently produce wrong screenshots |
-| [product-ux-review](product-ux-review/) | `/product-ux-review` · auto | browser-driven interaction audit | evidence labels on every finding, so it says whether it was observed, inferred or guessed, and never a silent downgrade from runtime testing; supporting [interaction-checklist](product-ux-review/references/interaction-checklist.md), [report-template](product-ux-review/references/report-template.md) |
-| [metadata-audit](metadata-audit/) | `/metadata-audit` · auto | robots, canonical, AI-crawler posture, llms.txt, structured data | gates, not checklists: a noindex page gets no schema advice; supporting [decision-tree](metadata-audit/references/decision-tree.md), [schema-by-page-type](metadata-audit/references/schema-by-page-type.md), [report-template](metadata-audit/references/report-template.md), [inventory.py](metadata-audit/scripts/inventory.py) |
-| [shopify-storefront-review](shopify-storefront-review/) | `/shopify-storefront-review` · auto | a store's money and offer logic | builds the discount register the store usually lacks and measures stacking at a real cart, which is how a dead code in a live email gets found; supporting [register-and-invariants](shopify-storefront-review/references/register-and-invariants.md), [report-template](shopify-storefront-review/references/report-template.md), [storefront-prices.sh](shopify-storefront-review/scripts/storefront-prices.sh) |
+| [review-product-ux](review-product-ux/) | `/review-product-ux` · auto | browser-driven interaction audit | evidence labels on every finding, so it says whether it was observed, inferred or guessed, and never a silent downgrade from runtime testing; supporting [interaction-checklist](review-product-ux/references/interaction-checklist.md), [report-template](review-product-ux/references/report-template.md) |
+| [audit-metadata](audit-metadata/) | `/audit-metadata` · auto | robots, canonical, AI-crawler posture, llms.txt, structured data | gates, not checklists: a noindex page gets no schema advice; supporting [decision-tree](audit-metadata/references/decision-tree.md), [schema-by-page-type](audit-metadata/references/schema-by-page-type.md), [report-template](audit-metadata/references/report-template.md), [inventory.py](audit-metadata/scripts/inventory.py) |
+| [review-shopify-storefront](review-shopify-storefront/) | `/review-shopify-storefront` · auto | a store's money and offer logic | builds the discount register the store usually lacks and measures stacking at a real cart, which is how a dead code in a live email gets found; supporting [register-and-invariants](review-shopify-storefront/references/register-and-invariants.md), [report-template](review-shopify-storefront/references/report-template.md), [storefront-prices.sh](review-shopify-storefront/scripts/storefront-prices.sh) |
 | [website-audit-package](website-audit-package/) | `/website-audit-package` · auto | one client deliverable from several audits | three-state finding labels (live, fixed awaiting publish, open) and a machine-written evidence layer nobody hand-edits |
 | [review-prose](review-prose/) | `/review-prose` · auto | writing meant for an audience | three reviewers run independently — a technical editor, a plain-voice editor, the actual target reader — synthesised by agreement; only the reader notices when a piece is well built and still changes nothing |
 
@@ -128,7 +128,7 @@ precedes an engagement.
 | skill | invoke | focus | what it adds |
 |---|---|---|---|
 | [threat-model](threat-model/) | `/threat-model` · auto | one flow: data-flow diagram, trust boundaries, STRIDE, ranked mitigations | Mermaid with one subgraph per trust zone so the artifact diffs; "unmitigated and unaccepted is not an allowed state" |
-| [data-privacy-review](data-privacy-review/) | `/data-privacy-review` · auto | PII inventory, retention and deletion paths, DSAR, processors, consent | "a policy document without a cron job is a finding"; treats prompts to AI vendors as data transfers |
+| [review-data-privacy](review-data-privacy/) | `/review-data-privacy` · auto | PII inventory, retention and deletion paths, DSAR, processors, consent | "a policy document without a cron job is a finding"; treats prompts to AI vendors as data transfers |
 | [tech-due-diligence](tech-due-diligence/) | `/tech-due-diligence` · auto | investor, M&A or situation-review pass | one skeleton, three audiences; findings memo and ranked risk register; separates "expensive to reverse" from "not how I would do it" |
 
 ### Payments and fintech
@@ -138,9 +138,9 @@ and a test checklist.
 
 | skill | invoke | focus | what it adds |
 |---|---|---|---|
-| [money-movement-review](money-movement-review/) | `/money-movement-review` · auto | a payment flow end to end | the state machine drawn first and every failure mode walked; carries two rule sets — [MONEY](money-movement-review/MONEY.md) (minor units, currency, rounding, allocation, FX) and [LEDGER](money-movement-review/LEDGER.md) (double-entry, immutability, derived balances, reconciliation) |
-| [pci-dss-scoping](pci-dss-scoping/) | `/pci-dss-scoping` · auto | cardholder-data flow, CDE, SAQ | "the goal is never pass PCI": shrink the environment until compliance is small |
-| [kyc-aml-review](kyc-aml-review/) | `/kyc-aml-review` · auto | identity verification, screening, risk rating, monitoring, SAR workflow | traces one customer and one alert end to end; "screening at signup only" as the most common real finding |
+| [review-money-movement](review-money-movement/) | `/review-money-movement` · auto | a payment flow end to end | the state machine drawn first and every failure mode walked; carries two rule sets — [MONEY](review-money-movement/MONEY.md) (minor units, currency, rounding, allocation, FX) and [LEDGER](review-money-movement/LEDGER.md) (double-entry, immutability, derived balances, reconciliation) |
+| [scope-pci-dss](scope-pci-dss/) | `/scope-pci-dss` · auto | cardholder-data flow, CDE, SAQ | "the goal is never pass PCI": shrink the environment until compliance is small |
+| [review-kyc-aml](review-kyc-aml/) | `/review-kyc-aml` · auto | identity verification, screening, risk rating, monitoring, SAR workflow | traces one customer and one alert end to end; "screening at signup only" as the most common real finding |
 
 ### Media
 
@@ -149,7 +149,7 @@ the video path has no free tier.
 
 | skill | invoke | focus | what it adds |
 |---|---|---|---|
-| [gemini-motion](gemini-motion/) | `/gemini-motion` · auto | short rendered video, longer videos storyboarded shot by shot, and code animations that ship inside a page | three paths behind one setup — Omni Flash renders mp4 with audio, a storyboard renders a plan of shots through the same gate and stitches them, Gemini 3.8 Flash writes self-contained HTML/CSS/SVG/Lottie; the effort goes into the brief and the review, and a render refuses until the price it will bill, seconds and resolution both, is confirmed back to it |
+| [create-motion](create-motion/) | `/create-motion` · auto | short rendered video, longer videos storyboarded shot by shot, and code animations that ship inside a page | three paths behind one setup — Omni Flash renders mp4 with audio, a storyboard renders a plan of shots through the same gate and stitches them, Gemini 3.8 Flash writes self-contained HTML/CSS/SVG/Lottie; the effort goes into the brief and the review, and a render refuses until the price it will bill, seconds and resolution both, is confirmed back to it |
 
 ## What depends on things outside this repository
 
@@ -164,8 +164,8 @@ Everything else is self-contained.
   not yours.
 - **tech-due-diligence** names scoping and deliverable playbooks that live in a
   private repository. The procedure stands without them.
-- **shopify-storefront-review** hands the machine layer to Site Scan, another
-  Emergent Labs tool. `metadata-audit` and `web-perf` cover the same ground.
+- **review-shopify-storefront** hands the machine layer to Site Scan, another
+  Emergent Labs tool. `audit-metadata` and `web-perf` cover the same ground.
 - **tech-due-diligence** also names the repository those playbooks live in; the
   name is the owner's own site, not a client.
 - **The intake pipeline** assumes a tracker the `gh` or `glab` CLI can reach, or
@@ -178,10 +178,10 @@ harness installs one per Claude account and prunes the rest.
 
 | bundle | a project that is | adds |
 |---|---|---|
-| `core` | any codebase | design and engineering, the intake pipeline, plus metadata-audit because every project here ships a page somewhere and tech-due-diligence because it is the owner's first deliverable on any engagement |
-| `website` | something people look at | core + the website audit family + data-privacy-review |
+| `core` | any codebase | design and engineering, the intake pipeline, plus audit-metadata because every project here ships a page somewhere and tech-due-diligence because it is the owner's first deliverable on any engagement |
+| `website` | something people look at | core + the website audit family + review-data-privacy |
 | `webapp` | a website that holds user data | website + threat-model |
-| `platform` | a backend other things depend on | core + threat-model, data-privacy-review |
+| `platform` | a backend other things depend on | core + threat-model, review-data-privacy |
 | `fintech` | somewhere money moves (additive) | the payments and fintech family |
 | `metered` | willing to spend on a third-party API (additive) | the motion family; `all` excludes these, so they arrive only when the bundle is named. Name it persistently — `git config --global llmctx.skillBundle webapp,metered` — because `--bundle` is one-shot and the next plain install prunes them again |
 
@@ -198,6 +198,40 @@ Codex as well as Claude. The rest of Cloudflare's set was vendored for a
 full current set in `~/.claude/skills` on its own, so that bundle is gone
 (issue #36).
 
+## Naming a skill
+
+Verb first, and name the outcome: `review-money-movement`, `audit-metadata`,
+`create-motion`. No provider or model in the name, because a skill outlives the
+provider it calls today; a platform may appear when it is the subject of the
+work (`review-shopify-storefront`).
+
+The rule applies to new skills. Ten existing ones were renamed to it in 2026-11
+and are listed below. The rest keep the names people already type.
+
+## Renamed
+
+2026-11, to the rule above
+([ADR-003](https://github.com/jamesernet/agent-harness/issues/159)). An
+installed copy the harness owns is replaced on the next install. A copy made by
+hand stays under its old name until you remove it.
+
+| was | now |
+|---|---|
+| `gemini-motion` | `create-motion` |
+| `data-privacy-review` | `review-data-privacy` |
+| `kyc-aml-review` | `review-kyc-aml` |
+| `money-movement-review` | `review-money-movement` |
+| `product-ux-review` | `review-product-ux` |
+| `shopify-storefront-review` | `review-shopify-storefront` |
+| `docs-drift-audit` | `audit-docs-drift` |
+| `metadata-audit` | `audit-metadata` |
+| `diagnosing-bugs` | `diagnose-bugs` |
+| `pci-dss-scoping` | `scope-pci-dss` |
+
+Two directory names did not follow their skill, on purpose: a project's
+`.gemini-motion/` run log, and `evidence/metadata-audit/` inside an audit
+package. Each is state that already exists outside this repository.
+
 ## Dropped
 
 Everything below lives in git history if ever needed.
@@ -205,7 +239,7 @@ Everything below lives in git history if ever needed.
 - `review` — 2026-07. `grab` uses the built-in `/code-review`. Not to be confused with `review-prose`, which reviews writing and deliberately declines code.
 - `to-prd` — 2026-11, folded into `to-issues` as its "no parent issue yet" step.
 - `implement` — 2026-11, folded into `grab` as its step 5.
-- `money-modeling`, `payment-flow-review`, `ledger-and-reconciliation` — 2026-11, merged into `money-movement-review`.
+- `money-modeling`, `payment-flow-review`, `ledger-and-reconciliation` — 2026-11, merged into `review-money-movement`.
 
 ## Attribution and licence
 

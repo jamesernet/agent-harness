@@ -1,5 +1,5 @@
 ---
-name: product-ux-review
+name: review-product-ux
 description: Evidence-driven UX and interaction-quality audit of an implemented web interface, driven through the browser and traced into source. Use when asked to audit, test, or critique a running product's usability; when hunting interaction defects such as dialogs without close controls, dead ends, broken forms, weak feedback, focus traps, inaccessible interactions, or responsive failures; or when validating a frontend before launch. Supports explicitly limited source-only or screenshot-only reviews when runtime access is unavailable.
 ---
 
@@ -305,4 +305,4 @@ When asked to fix findings:
 - State what changed, what was source-confirmed, and what was re-verified in the browser.
 
 ## Related
-- [diagnosing-bugs](../diagnosing-bugs/) · [web-perf](../web-perf/) (Core Web Vitals — same browser-driven pass) · [data-privacy-review](../data-privacy-review/) (consent and cookie UI)
+- [diagnose-bugs](../diagnose-bugs/) · [web-perf](../web-perf/) (Core Web Vitals — same browser-driven pass) · [review-data-privacy](../review-data-privacy/) (consent and cookie UI)

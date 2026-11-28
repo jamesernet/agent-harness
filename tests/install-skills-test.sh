@@ -115,17 +115,17 @@ HOME="$bhome" "$SRC/bin/install-skills.sh" --bundle core >/dev/null 2>&1 || fail
 core_n="$(find "$bhome/.claude/skills" -maxdepth 1 -mindepth 1 -type d | wc -l | tr -d ' ')"
 [ "$core_n" -lt "$all_n" ] || fail "core bundle did not narrow the installed set ($core_n vs $all_n)"
 [ -d "$bhome/.claude/skills/codebase-design" ] || fail "core bundle is missing codebase-design"
-[ -d "$bhome/.claude/skills/kyc-aml-review" ] && fail "core bundle installed a fintech skill"
+[ -d "$bhome/.claude/skills/review-kyc-aml" ] && fail "core bundle installed a fintech skill"
 
 # Inclusion is transitive: website pulls in core.
 HOME="$bhome" "$SRC/bin/install-skills.sh" --bundle website >/dev/null 2>&1 || fail "--bundle website failed"
-[ -d "$bhome/.claude/skills/product-ux-review" ] || fail "website bundle is missing product-ux-review"
+[ -d "$bhome/.claude/skills/review-product-ux" ] || fail "website bundle is missing review-product-ux"
 [ -d "$bhome/.claude/skills/codebase-design" ] || fail "website bundle did not include core transitively"
 
 # Comma-separated bundles union rather than being read as one name.
 HOME="$bhome" "$SRC/bin/install-skills.sh" --bundle webapp,fintech >/dev/null 2>&1 || fail "comma-separated bundles failed"
-[ -d "$bhome/.claude/skills/kyc-aml-review" ] || fail "second bundle in the list was not applied"
-[ -d "$bhome/.claude/skills/product-ux-review" ] || fail "first bundle in the list was not applied"
+[ -d "$bhome/.claude/skills/review-kyc-aml" ] || fail "second bundle in the list was not applied"
+[ -d "$bhome/.claude/skills/review-product-ux" ] || fail "first bundle in the list was not applied"
 
 # A typo must change nothing. Resolving an unknown name to the empty set would
 # prune every installed skill.
@@ -188,7 +188,7 @@ while IFS= read -r skill; do
   [ -d "$bhome/.claude/skills/$skill" ] ||
     fail "naming the metered bundle did not install '$skill'"
 done < <(metered_members)
-[ -d "$bhome/.claude/skills/product-ux-review" ] ||
+[ -d "$bhome/.claude/skills/review-product-ux" ] ||
   fail "metered beside webapp dropped the webapp skills"
 
 # The library resolves `all` a second time for doctor (bin/lib/skills.sh), and a
@@ -221,9 +221,9 @@ HOME="$pahome" "$SRC/bin/install-skills.sh" >/dev/null 2>&1 ||
   fail "per-account install failed"
 [ -d "$pahome/.claude/skills/codebase-design" ] ||
   fail "default account did not get the global bundle"
-[ -d "$pahome/.claude/skills/kyc-aml-review" ] &&
+[ -d "$pahome/.claude/skills/review-kyc-aml" ] &&
   fail "default account picked up the acme bundle"
-[ -d "$acme_dir/skills/kyc-aml-review" ] ||
+[ -d "$acme_dir/skills/review-kyc-aml" ] ||
   fail "acme account did not get its own bundle"
 [ -d "$acme_dir/skills/codebase-design" ] &&
   fail "acme account fell back to the global bundle"
@@ -231,7 +231,7 @@ HOME="$pahome" "$SRC/bin/install-skills.sh" >/dev/null 2>&1 ||
 # An explicit --bundle still wins for every target.
 HOME="$pahome" "$SRC/bin/install-skills.sh" --bundle website >/dev/null 2>&1 ||
   fail "--bundle override failed"
-[ -d "$acme_dir/skills/product-ux-review" ] ||
+[ -d "$acme_dir/skills/review-product-ux" ] ||
   fail "--bundle did not override the per-account key"
 
 # A typo in one account's key must change nothing anywhere.

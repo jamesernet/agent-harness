@@ -10,17 +10,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
-GEN="$SRC/skills/gemini-motion/scripts/generate_video.py"
-SB="$SRC/skills/gemini-motion/scripts/storyboard.py"
-EXAMPLE="$SRC/skills/gemini-motion/references/storyboard-example.json"
+GEN="$SRC/skills/create-motion/scripts/generate_video.py"
+SB="$SRC/skills/create-motion/scripts/storyboard.py"
+EXAMPLE="$SRC/skills/create-motion/references/storyboard-example.json"
 
 fail() {
-  echo "gemini-motion gate test failed: $*" >&2
+  echo "create-motion gate test failed: $*" >&2
   exit 1
 }
 
 command -v python3 >/dev/null || {
-  echo "gemini-motion gate tests: skipped (no python3)"
+  echo "create-motion gate tests: skipped (no python3)"
   exit 0
 }
 
@@ -396,7 +396,7 @@ if [ "$(id -u)" -ne 0 ]; then
   grep -q 'cannot read image' <<<"$out" ||
     fail "an unreadable image was a traceback, not a refusal: $out"
 else
-  echo "gemini-motion gate tests: the unreadable-image check skipped (running as root)"
+  echo "create-motion gate tests: the unreadable-image check skipped (running as root)"
 fi
 
 # 23. A field of the wrong type is refused by name, not by traceback: a numeric
@@ -522,7 +522,7 @@ if command -v ffmpeg >/dev/null; then
   [ -s "$tmp/jim's büild/out/morning-build.mp4" ] ||
     fail "stitch in a directory with an apostrophe and a non-ASCII letter wrote no file: $out"
 else
-  echo "gemini-motion gate tests: case 28 (stitch with an apostrophe in the path) skipped, no ffmpeg"
+  echo "create-motion gate tests: case 28 (stitch with an apostrophe in the path) skipped, no ffmpeg"
 fi
 plan="$tmp/plan.json"
 
@@ -578,7 +578,7 @@ if command -v ffmpeg >/dev/null; then
   grep -q 'coffee (prompt changed since it was rendered)' <<<"$out" ||
     fail "stitch did not refuse a shot whose prompt changed: $out"
 else
-  echo "gemini-motion gate tests: case 31 (stitch without the images) skipped, no ffmpeg"
+  echo "create-motion gate tests: case 31 (stitch without the images) skipped, no ffmpeg"
 fi
 
 # 32. style is part of every prompt, so a style edit makes every shot stale and
@@ -729,4 +729,4 @@ sb check "$plan"
 grep -q 'edited since' <<<"$out" && grep -q -- '--fetch v1_paid' <<<"$out" ||
   fail "an edited billed-not-saved shot did not name the paid render and how to collect it: $out"
 
-echo "gemini-motion gate tests: passed"
+echo "create-motion gate tests: passed"

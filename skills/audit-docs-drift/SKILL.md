@@ -1,5 +1,5 @@
 ---
-name: docs-drift-audit
+name: audit-docs-drift
 description: Audit AGENTS.md, CLAUDE.md, README and other instruction/context docs against the actual codebase and report where they have drifted. Use whenever the user asks to check for doc drift, stale docs, broken paths in docs, outdated instructions, config rot, or whether agent rules still match reality — and after large refactors, file moves, renames, or dependency changes. Also use proactively when you notice a doc referencing a file that does not exist.
 ---
 

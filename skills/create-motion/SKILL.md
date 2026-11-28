@@ -1,9 +1,9 @@
 ---
-name: gemini-motion
+name: create-motion
 description: Make short videos (mp4 with audio) and small code animations (HTML/CSS/SVG/Lottie) with Google's Gemini API — Gemini Omni Flash for rendered video, Gemini 3.8 Flash for animation code, Nano Banana for image assets and keyframes. Use this whenever the user wants something that moves and mentions Gemini, Veo, Omni, Nano Banana or Google's models, or asks to make, render, animate, loop, edit or extend a short clip, reel, intro/outro, product shot, logo animation, loader, hero animation, explainer, trailer, promo, B-roll or GIF-style motion piece, or a longer video storyboarded shot by shot — even if they don't say "video" or "animation" explicitly. Also use it when a request needs an actual rendered clip (photoreal, cinematic, with sound) rather than code, since that requires the Omni video model.
 ---
 
-# gemini-motion
+# create-motion
 
 Three ways to get motion out of Gemini, one shared setup. Claude is the director
 and reviewer; Gemini does the rendering or writes the keyframes.

@@ -1,7 +1,7 @@
 # Money Modeling
 
 Rule set for how money is represented and computed. Loaded by
-[money-movement-review](SKILL.md); read it whenever amounts, prices, fees,
+[review-money-movement](SKILL.md); read it whenever amounts, prices, fees,
 balances, or currency conversion are in the code under review.
 
 Use it two ways: as design rules

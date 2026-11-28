@@ -32,8 +32,8 @@ git -C "$HOME/work" config llmctx.skillBundle all
   "$SRC/bin/install-skills.sh" >/dev/null
 )
 [[ -d "$HOME/.claude/skills/codebase-design" ]] || fail "included core bundle was ignored"
-[[ ! -e "$HOME/.claude/skills/kyc-aml-review" ]] || fail "default bundle was widened"
-[[ -d "$HOME/.claude-acme/skills/kyc-aml-review" ]] || fail "account bundle was ignored"
+[[ ! -e "$HOME/.claude/skills/review-kyc-aml" ]] || fail "default bundle was widened"
+[[ -d "$HOME/.claude-acme/skills/review-kyc-aml" ]] || fail "account bundle was ignored"
 
 # shellcheck source=../bin/lib/routes.sh
 source "$SRC/bin/lib/routes.sh"

@@ -6,12 +6,12 @@ finding in it is derived by running a measuring tool on files saved under the
 package's evidence layer, so every claim carries pointers to the files the tool
 actually read, and a claim that cannot be backed is refused rather than emitted.
 
-Today the one constituent audit with a machine output is metadata-audit, whose
+Today the one constituent audit with a machine output is audit-metadata, whose
 inventory.py reports facts and boolean checks and leaves severity to its skill.
 This script runs it on each page saved under evidence/metadata-audit/<page>/
 (page.html, and robots.txt, llms.txt, headers.txt, sitemap.xml, url and captured
 where saved),
-turns each true check into a finding with the severity metadata-audit's decision
+turns each true check into a finding with the severity audit-metadata's decision
 tree gives that case, and writes register.json and a one-page register.md at the
 package root, beside the capture tool's manifest.json.
 
@@ -50,7 +50,13 @@ from pathlib import Path
 SCHEMA = "website-audit-package/register@1"
 STATES = ("Live", "Fixed in source, awaiting publish", "Open")
 SEVERITIES = ("P0", "P1", "P2", "P3")
-TREE = "metadata-audit/references/decision-tree.md"
+TREE = "audit-metadata/references/decision-tree.md"
+# The skill was called metadata-audit until 2026-11, and a register built before
+# then cites the decision tree by that path. `validate` accepts either spelling,
+# so a delivered package does not fail because a directory here was renamed.
+# The evidence directory inside a package is part of the delivered format and
+# keeps the old name.
+TREE_BEFORE_RENAME = "metadata-audit/references/decision-tree.md"
 OPTIONAL_INPUTS = ("robots.txt", "llms.txt", "headers.txt", "sitemap.xml", "url", "captured")
 
 # Which saved inputs each group of checks needs. A page that lacks one has those
@@ -413,7 +419,7 @@ def sha256_of(path):
 
 def default_inventory():
     here = Path(__file__).resolve().parent
-    return here.parent.parent / "metadata-audit" / "scripts" / "inventory.py"
+    return here.parent.parent / "audit-metadata" / "scripts" / "inventory.py"
 
 
 def robots_facts(result):
@@ -487,7 +493,7 @@ def run_inventory(tool, page_dir, inputs):
 
 def falsifier(check, url, slug, note):
     target = url or "page {}".format(slug)
-    text = ("Re-run metadata-audit's inventory.py on a fresh capture of {}; this finding is "
+    text = ("Re-run audit-metadata's inventory.py on a fresh capture of {}; this finding is "
             "retracted when `{}` is false.".format(target, check))
     if note and "decision" in note:
         text += " It is also not a defect if the owner confirms the setting is intentional."
@@ -605,7 +611,7 @@ def _build(pkg, evdir, tool):
                 "evidence": evidence,
                 "whyItMatters": rule["why"],
                 "howWeWouldKnowWeAreWrong": falsifier(check, url, slug, rule.get("note")),
-                "measuredBy": {"tool": "metadata-audit/scripts/inventory.py", "sha256": tool_sha,
+                "measuredBy": {"tool": "audit-metadata/scripts/inventory.py", "sha256": tool_sha,
                                "check": check, "ranAt": ran_at},
             }
             if rule.get("note"):
@@ -636,7 +642,7 @@ def _build(pkg, evdir, tool):
         "schema": SCHEMA,
         "package": pkg.name,
         "generatedAt": utc_iso(),
-        "measuredBy": {"tool": "metadata-audit/scripts/inventory.py", "sha256": tool_sha,
+        "measuredBy": {"tool": "audit-metadata/scripts/inventory.py", "sha256": tool_sha,
                        "invokedBy": "website-audit-package/scripts/register.py",
                        "python": ".".join(str(n) for n in sys.version_info[:3])},
         "pages": pages,
@@ -648,12 +654,12 @@ def _build(pkg, evdir, tool):
             "pagesNotMeasured": not_measured,
             "checksNotRun": checks_not_run,
             "notes": [
-                "Source: the metadata layer only. product-ux-review, web-perf and the capture "
+                "Source: the metadata layer only. review-product-ux, web-perf and the capture "
                 "emit no machine-readable findings yet, so nothing from them is in this register.",
                 "State is Live as of each page's capture time (asOf, with asOfSource saying "
                 "where it came from). Re-labelling against the tracker and the source branch is "
                 "a human step this generator cannot take.",
-                "Severity is the row metadata-audit's decision tree gives each check, applied by "
+                "Severity is the row audit-metadata's decision tree gives each check, applied by "
                 "register.py; a severityNote marks where the tree is silent or depends on the "
                 "page type.",
                 "AI-crawler posture in robots.txt is a decision, not a defect, and is not emitted. "
@@ -783,7 +789,8 @@ def validate(register, pkg):
             if f.get("gate") != rule["gate"]:
                 problems.append(where + " gate {!r} is not the {} the table gives `{}`".format(
                     f.get("gate"), rule["gate"], mb["check"]))
-            if f.get("severitySource") != rule["source"]:
+            if f.get("severitySource") not in (
+                    rule["source"], rule["source"].replace(TREE, TREE_BEFORE_RENAME, 1)):
                 problems.append(where + " severitySource is not the table's for `{}`".format(mb["check"]))
             if fid != "metadata/{}/{}".format(f.get("page"), mb["check"]):
                 problems.append(where + " id does not name its page and check")
@@ -890,7 +897,7 @@ def main():
     b = sub.add_parser("build", help="measure the evidence layer and write register.json and register.md")
     b.add_argument("package", help="the audit package directory")
     b.add_argument("--inventory", default=None,
-                   help="path to metadata-audit's inventory.py (default: the sibling skill's copy)")
+                   help="path to audit-metadata's inventory.py (default: the sibling skill's copy)")
     c = sub.add_parser("check", help="validate register.json against the package")
     c.add_argument("package", help="the audit package directory")
     args = ap.parse_args()

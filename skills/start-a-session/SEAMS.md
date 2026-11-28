@@ -31,8 +31,8 @@ evidence from step 1, never by taste.
 | blocked on access or a key | a comment on the issue stating the exact action a person must take | the ask, the account, the path |
 | sensitive-code review | a fresh `reviewer` agent, never the authoring session, briefed per [BRIEF](../review-merge-queue/BRIEF.md); report its verdict and stop. Not `/code-review` in the authoring session, and not the [review-merge-queue](../review-merge-queue/) skill itself, which goes on to act on `mergePolicy`: a request to review is not a request to merge | PR number and the paths touched |
 | architecture (nudge) | [improve-codebase-architecture](../improve-codebase-architecture/) | the module or seam the nudge named, if any |
-| ux (nudge) | [product-ux-review](../product-ux-review/) | the running URL |
-| docs (nudge), or policy drift | [docs-drift-audit](../docs-drift-audit/); `bin/llmctx repo diff` remediation for policy findings | the `repo diff` findings, by id |
+| ux (nudge) | [review-product-ux](../review-product-ux/) | the running URL |
+| docs (nudge), or policy drift | [audit-docs-drift](../audit-docs-drift/); `bin/llmctx repo diff` remediation for policy findings | the `repo diff` findings, by id |
 | nothing qualifies | one line saying so, then stop | — |
 
 ## Nudge → seam

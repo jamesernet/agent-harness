@@ -1,5 +1,5 @@
 ---
-name: diagnosing-bugs
+name: diagnose-bugs
 description: Diagnosis loop for hard bugs and performance regressions — build a fast, red-capable feedback loop before any hypothesis, then minimise, rank falsifiable hypotheses, instrument, and fix with a regression test. Use when the user says "diagnose" or "debug this"; reports something broken, throwing, failing, flaky, intermittent, or "slow since"; says a bug cannot be reproduced or only happens in production; or when a first fix did not hold and the cause is still unknown. Not for a fix whose cause is already obvious.
 ---
 
