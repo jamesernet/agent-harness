@@ -41,7 +41,7 @@ others are not is most of this skill's value:
 | behind | `BEHIND` | `gh pr update-branch <n>`; branch protection requires it before merge anyway |
 | held | the newest review comment states a blocking finding and no commit has landed since | the fix, by its author; re-reviewing an unaddressed finding says nothing new |
 | already judged | a verdict comment on this PR names the current `headRefOid` | nothing; the verdict stands until the head moves |
-| **reviewable** | green, unblocked, head not yet judged | one fresh reviewer, step 2 |
+| **reviewable** | green, unblocked, head not yet judged | one fresh reviewer, step 2; a head that moved only by a fix or a tests-only commit after a verdict is judged by step 5 instead |
 
 `already judged` is what makes this safe to re-run: the pass is keyed on the
 head SHA, so running it twice in a row costs nothing and a new commit is what
@@ -65,6 +65,7 @@ Resolve branch updates before dispatching the reviewer, then record the exact
 head being reviewed. If that head changes at any later step, including during a
 merge-forward, invalidate the old verdict and obtain a fresh independent review
 and required CI for the new head. A green build does not renew an old verdict.
+Step 5 names the only two exceptions, both for commits that answer a verdict.
 
 The brief is the PR's own claims, not its diff summary. Write it per
 [BRIEF](BRIEF.md), which is the part that decides whether a verdict is worth
@@ -78,8 +79,8 @@ to falsify, not evidence.
 
 ### 4. Post the verdict, then let the policy decide the ending
 
-One comment per PR: the verdict, each finding with its evidence, and what the
-reviewer did not reach. Then resolve `mergePolicy` once
+One comment per verdict: the verdict, the head it judged, each finding with its
+evidence, and what the reviewer did not reach. Then resolve `mergePolicy` once
 (`bin/llmctx explain mergePolicy`, or the key in `.llmctx.json`, default
 `hold`) and act on it, exactly as [grab](../grab/) does:
 
@@ -101,25 +102,47 @@ finding count did not, because a full review of a changed diff always finds
 another edge case. The rule stays. What is bounded is the scope and budget of
 each re-review, and the stop is said out loud before the first one runs.
 
-1. **Say the stop condition before starting**: a real defect gets one fix
-   commit and a narrow re-review; anything less is recorded and not fixed in
-   this PR.
+A **round** is one fix commit and one narrow re-review of that commit. The
+fix commit answers every defect in the verdict before it, so a verdict with
+three defects still starts one round, not three. There are at most three
+rounds.
+
+1. **Say the stop condition before starting**: defects are fixed, in at most
+   three rounds; anything else is recorded and not fixed in this PR. A defect
+   is wrong behaviour, a claim the change makes that is false, or a step two
+   readers would act on differently. A preference about wording, style or
+   structure is not one.
 2. **A fix gets a narrow re-review, not a new full review.** A fresh `reviewer`
    is briefed with the fix commit's own claims and only that commit's diff, and
-   told to look one door over from the fix. Budget 15 tool calls, and smaller
-   for each later round.
-3. **Stop at `CLEAN`.** A low-severity preference, or a finding that belongs to
-   another slice, is recorded by name as an accepted note in the PR body or as
-   a follow-up issue. It does not open another round.
-4. **A test gap found by a narrow re-review is a tests-only commit**, verified
-   by the suite, not a further review round.
-5. **If the third narrow re-review still finds a defect, stop and tell the
-   owner.** The change is not converging, and whether to continue, split it or
-   rethink it is their decision.
+   told to look one door over from the fix. The brief also lists the defects
+   the fix answers, and the reviewer says of each whether it is answered.
+   Budget 15 tool calls in the first round and fewer in each later one.
+3. **Stop at `CLEAN`.** A preference, or a finding that belongs to another
+   slice, is recorded by name as an accepted note or as a follow-up issue. It
+   does not start a round. Every verdict, full or narrow, is posted as its own
+   comment naming the head it judged, and the note goes in that comment; it
+   goes in the PR body only where this session authored the PR.
+4. **A test gap found by a narrow re-review is a tests-only commit.** It is not
+   a round and gets no re-review.
+5. **If the third round's re-review still finds a defect, stop and tell the
+   owner.** No fourth fix is made and the PR stays `DO-NOT-MERGE`. The change
+   is not converging, and whether to continue, split it or rethink it is their
+   decision.
 
-The head rule in step 3 still holds: every fix commit moves the head, so the
-verdict that permits a merge is the last narrow `CLEAN`, naming the current
-head.
+Every one of these commits moves the head. Once a PR has a verdict, what the
+new head needs depends on what was pushed since that verdict:
+
+| commits since the last verdict | how the new head is judged |
+|---|---|
+| only the fix answering a `DO-NOT-MERGE` | the narrow re-review above, not a full review, though step 1 would call the PR reviewable |
+| only a tests-only commit from item 4 | no review: required CI on the new head, then a comment naming that head and the `CLEAN` it carries forward |
+| anything else, including a merge of the base branch or a fix pushed with unrelated work | a full review, by step 3's head rule |
+
+The first two rows are the only exceptions to step 3's head rule. A narrow
+`CLEAN` closes the verdict its fix answered, because that fix answered every
+defect in it; a fix that left one unanswered is not `CLEAN`, whatever the
+re-review of its diff says. Stopping the loop is not a decision to merge: that
+is still `mergePolicy`, in step 4.
 
 ## Rules
 
