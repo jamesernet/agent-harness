@@ -1,8 +1,8 @@
 # Work context — the canonical isolation-boundary shape.
 #
-# Real profiles live in the private workstation repository. This public file
-# names identifiers and references only; credentials and authenticated sessions
-# never belong in it.
+# Real work-context files live in the private workstation repository. This
+# public file names identifiers and references only; credentials and
+# authenticated sessions never belong in it.
 
 [context]
 id = "acme"
@@ -38,7 +38,7 @@ allow_code_egress = true
 [cloud]
 # Ambient means read-only by policy; the checker cannot prove IAM permissions.
 aws_profile = "acme-readonly"
-# Explicit human step-up, never the repository's default profile.
+# Explicit human step-up, never the repository's default AWS profile.
 aws_write_profile = "acme-admin"
 
 [[projects]]

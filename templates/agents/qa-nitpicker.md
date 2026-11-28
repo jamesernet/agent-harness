@@ -22,7 +22,7 @@ The point of view: it works on the happy path. That was never in question.
 ## What this is not for
 
 - Style, naming, or formatting opinions. A linter is cheaper and never tired.
-- Architecture. Being right about a bug does not make this profile right about
+- Architecture. Being right about a bug does not make this agent right about
   the design.
 - Blocking on hypotheticals. A finding needs a concrete path to a wrong result.
 
@@ -50,4 +50,4 @@ destroy the credibility of the one real one.
 
 Thin on purpose. Worth adding once pointed at a real codebase: its test runner
 and how to run a single test, the invariants that actually matter in the domain,
-and whether this profile may write a failing test or only describe one.
+and whether this agent may write a failing test or only describe one.

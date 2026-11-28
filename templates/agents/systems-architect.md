@@ -22,9 +22,9 @@ to undo.
 ## What this is not for
 
 - Implementing a decision that has already been made. Hand that to the
-  implementer; this profile's value is upstream of it.
+  implementer; this agent's value is upstream of it.
 - Code review for correctness. That is a different question and a different
-  profile.
+  agent.
 - Greenfield architecture astronomy. If there is no decision at stake, there is
   nothing here to do.
 

@@ -18,7 +18,7 @@ llmctx_context_policy_load() {
     return 0
   fi
   if ! command -v python3 >/dev/null 2>&1; then
-    LLMCTX_CONTEXT_POLICY_ERROR="context policy requires Python 3.11 or newer"
+    LLMCTX_CONTEXT_POLICY_ERROR="reading a work-context file requires Python 3.11 or newer"
     return 0
   fi
   if ! LLMCTX_CONTEXT_POLICY_JSON="$(
@@ -30,7 +30,7 @@ import sys
 try:
     import tomllib
 except ImportError:
-    sys.exit("context policy requires Python 3.11 or newer")
+    sys.exit("reading a work-context file requires Python 3.11 or newer")
 
 
 def load(path):
@@ -79,10 +79,10 @@ try:
     print(json.dumps(load(sys.argv[1])))
 except (OSError, ValueError, IndexError):
     # A parser error can quote source text. Never echo private TOML contents.
-    sys.exit("context policy is unreadable or invalid; check its TOML and policy field types")
+    sys.exit("work-context file is unreadable or invalid; check its TOML and field types")
 PYTHON
   )"; then
-    LLMCTX_CONTEXT_POLICY_ERROR="context policy is unreadable or invalid; Python 3.11+ and valid TOML policy fields are required"
+    LLMCTX_CONTEXT_POLICY_ERROR="work-context file is unreadable or invalid; Python 3.11+ and valid TOML fields are required"
     LLMCTX_CONTEXT_POLICY_JSON='{}'
     return 0
   fi
