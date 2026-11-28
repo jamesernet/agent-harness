@@ -61,5 +61,8 @@ or pre-existing. State what you did not reach. Evidence only, no rewrites.
   review of a fix is not optional: on PR #99 the first fix for a reviewer's
   finding had the same hole one door over, and on PR #83 three consecutive
   fixes each introduced the next defect.
+- That second review is narrow: the fix commit's claims, that commit's diff,
+  a budget of 15 calls or fewer, and the instruction to look one door over.
+  [The skill's step 5](SKILL.md) says where the loop stops.
 - A reviewer that stopped early is asked for its verdict on the evidence it
   has, not read out of its transcript.

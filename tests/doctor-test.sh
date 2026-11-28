@@ -318,6 +318,52 @@ jq -e '.checks[] | select(.id == "skill-bundle") | .detail | contains("acme")' \
   "$tmp/per-account.json" >/dev/null ||
   fail "skill-bundle did not report the per-account override"
 
+# Model and effort are reported per account and never fail: they are
+# machine-local. Two accounts that differ are named, and stay healthy.
+model_of() { jq -r --arg id "$1" '.checks[] | select(.id == $id) | .status + " " + .detail' "$tmp/models.json"; }
+mkdir -p "$nb_home/.claude" "$nb_home/.claude-acme"
+HOME="$nb_home" "$SRC/bin/doctor.sh" --json >"$tmp/models.json" 2>/dev/null || true
+[[ "$(model_of claude-model)" == "PASS no settings.json, so it sets no model or effort" ]] ||
+  fail "an account without settings.json was not reported as setting nothing: $(model_of claude-model)"
+printf '%s\n' '{"model":"opus","effortLevel":"high"}' >"$nb_home/.claude/settings.json"
+printf '%s\n' '{"model":"sonnet","availableModels":["opus","sonnet"],"maxEffortLevel":"high"}' \
+  >"$nb_home/.claude-acme/settings.json"
+HOME="$nb_home" "$SRC/bin/doctor.sh" --json >"$tmp/models.json" 2>/dev/null || true
+[[ "$(model_of claude-model)" == "PASS model=opus, effort=high, allowed=any, max effort=none" ]] ||
+  fail "the default account's model was not reported: $(model_of claude-model)"
+[[ "$(model_of 'claude-model[acme]')" == "PASS model=sonnet, effort=unset, allowed=opus,sonnet, max effort=high" ]] ||
+  fail "a second account's model and ceiling were not reported: $(model_of 'claude-model[acme]')"
+[[ "$(model_of claude-model-agreement)" == "PASS accounts differ, which may be deliberate: default has model=opus"*"; acme has model=sonnet"* ]] ||
+  fail "differing accounts were not named: $(model_of claude-model-agreement)"
+printf '%s\n' '{"model":"opus","effortLevel":"high"}' >"$nb_home/.claude-acme/settings.json"
+HOME="$nb_home" "$SRC/bin/doctor.sh" --json >"$tmp/models.json" 2>/dev/null || true
+[[ "$(model_of claude-model-agreement)" == "PASS 2 accounts share one model and effort setting" ]] ||
+  fail "matching accounts were not reported as agreeing: $(model_of claude-model-agreement)"
+HOME="$nb_home" "$SRC/bin/doctor.sh" --account acme --json >"$tmp/models.json" 2>/dev/null || true
+[[ -z "$(model_of claude-model-agreement)" ]] || fail "a single-account run compared accounts"
+# A value holding a newline is one account, not two, and stays on one line.
+printf '%s\n' '{"model":"a\nb;c\td"}' >"$nb_home/.claude-acme/settings.json"
+HOME="$nb_home" "$SRC/bin/doctor.sh" --account acme --json >"$tmp/models.json" 2>/dev/null || true
+[[ -z "$(model_of claude-model-agreement)" ]] || fail "a newline in a model value was counted as a second account"
+[[ "$(model_of 'claude-model[acme]')" == "PASS model=a b;c d, effort=unset, allowed=any, max effort=none" ]] ||
+  fail "control characters in a model value reached the report: $(model_of 'claude-model[acme]')"
+# Settings that could not be read are never compared: two empty files are not a
+# difference and two broken ones are not an agreement.
+for unreadable in '' '{bad' '[]' '{} {}'; do
+  printf '%s' "$unreadable" >"$nb_home/.claude/settings.json"
+  printf '%s' "$unreadable" >"$nb_home/.claude-acme/settings.json"
+  HOME="$nb_home" "$SRC/bin/doctor.sh" --json >"$tmp/models.json" 2>/dev/null || true
+  [[ "$(model_of claude-model)" == "PASS settings.json could not be read as one JSON object; model not reported" ]] ||
+    fail "unreadable settings ($unreadable) were reported as a setting: $(model_of claude-model)"
+  [[ "$(model_of claude-model-agreement)" == "PASS accounts not compared: settings.json could not be read for default, acme" ]] ||
+    fail "unreadable settings ($unreadable) were compared: $(model_of claude-model-agreement)"
+done
+printf '%s\n' '{"model":"opus"}' >"$nb_home/.claude/settings.json"
+HOME="$nb_home" "$SRC/bin/doctor.sh" --json >"$tmp/models.json" 2>/dev/null || true
+[[ "$(model_of claude-model-agreement)" == "PASS accounts not compared: settings.json could not be read for acme" ]] ||
+  fail "one unreadable account was still compared: $(model_of claude-model-agreement)"
+rm -f "$nb_home/.claude/settings.json" "$nb_home/.claude-acme/settings.json"
+
 git config --global --unset llmctx.skillBundle.acme
 git config --global --unset llmctx.skillBundle
 git config --global --unset-all llmctx.claudeAccount
