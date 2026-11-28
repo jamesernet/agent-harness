@@ -8,7 +8,10 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 bin/lint-skills.sh
-bin/check-vendor-lock.sh
+# Through the dispatcher, not the script path: the installed copy of this file
+# is shared by every linked worktree and runs in each one's own tree, so a path
+# named here blocks the commit in whichever tree renames the script first.
+bin/llmctx vendor check
 tests/run.sh
 
 git_dir="$(cd "$(git rev-parse --git-dir)" && pwd -P)"
