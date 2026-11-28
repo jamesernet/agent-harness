@@ -521,9 +521,18 @@ check_account_hooks() { # <hooks dir> <check id> <settings file> <account name>
     git config --global --includes --get-all "llmctx.accountHook.$account" 2>/dev/null || true
   )"
 
+  # A name this repository used to ship is still its own: the installer leaves a
+  # shim there for one release, and reporting that shim as somebody's unmanaged
+  # hook would send the reader to delete the one file keeping an older session's
+  # check alive. Whether the account has caught up with the rename is the
+  # adapters check's to say, as drift.
+  local retired
+  retired="$(llmctx_retired_hooks "$SRC/bin/claude-hooks/retired.conf" "$account" | cut -d'|' -f1)"
+
   is_managed_hook() { # <basename>
     local b="$1" l
     [[ ! -f "$SRC/bin/claude-hooks/$b" ]] || return 0
+    if [[ -n "$retired" ]] && grep -qxF "$b" <<<"$retired"; then return 0; fi
     case "$b" in
       llmctx-*.sh)
         l="${b#llmctx-}"
@@ -697,7 +706,7 @@ if [[ -n "$accounts" ]]; then
   fi
 fi
 
-# Account routes feed hooks/account-guard.sh. A route naming an account that is
+# Account routes feed hooks/account-gate.sh. A route naming an account that is
 # not registered makes the guard silent — it cannot judge what it cannot name —
 # so that is the state to report, not an empty route list.
 routes="$(git config --global --includes --get-all llmctx.accountRoute 2>/dev/null || true)"
@@ -747,7 +756,7 @@ fi
 # A repository .envrc under a routed tree that never runs `source_up_if_exists`
 # shadows the directory-level .envrc carrying CLAUDE_CONFIG_DIR -- silently,
 # direnv loads only the nearest file -- and the routing does not apply there.
-# That is the state account-guard.sh and routing-tripwire.sh then catch at run
+# That is the state account-gate.sh and account-notice.sh then catch at run
 # time; README has said so since the routes arrived. This names WHICH file,
 # before a session is started in it.
 #

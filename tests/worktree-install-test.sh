@@ -33,19 +33,33 @@ fail() {
 
 clone="$tmp/clone"
 wt="$tmp/wt"
-git clone --quiet --local --no-hardlinks "$SRC" "$clone"
-git -C "$clone" worktree add --quiet --detach "$wt" HEAD
 
-# Exercise the WORKING TREE's script, not whatever the clone's HEAD carries —
-# including the hook libraries it installs, which the clone's HEAD may predate.
-cp "$SRC/bin/build-adapters.sh" "$clone/bin/build-adapters.sh"
-cp "$SRC/bin/build-adapters.sh" "$wt/bin/build-adapters.sh"
-mkdir -p "$clone/bin/lib" "$wt/bin/lib"
-cp "$SRC"/bin/lib/*.sh "$clone/bin/lib/"
-cp "$SRC"/bin/lib/*.sh "$wt/bin/lib/"
-# The same source snapshot supplies the required procedures the adapters link.
-cp "$SRC"/global/*.md "$clone/global/"
-cp "$SRC"/global/*.md "$wt/global/"
+# The repository under test is BUILT FROM THE WORKING TREE, not cloned from HEAD.
+# A clone carries whatever HEAD has. Copying three named inputs over one held
+# only while every other input sat where HEAD had it; laying the whole working
+# tree over one fixed additions and edits and still left every path the working
+# tree had deleted or renamed. A commit that moves a directory the adapters read
+# was then tested against a tree holding both names, where a leftover reference
+# to the old one passes. Every tracked or unignored file that exists is copied
+# into a new repository and committed there, so the worktree added below holds
+# exactly the same tree. A nested repository is listed as a directory entry and
+# skipped; a path deleted but not yet staged is listed and absent, and skipped.
+# The name stays "clone" because the assertions below read naturally with it.
+mkdir -p "$clone"
+git -C "$clone" init --quiet
+(
+  cd "$SRC"
+  git ls-files -z --cached --others --exclude-standard |
+    while IFS= read -r -d '' path; do
+      case "$path" in */) continue ;; esac
+      if [[ -e "$path" || -L "$path" ]]; then printf '%s\0' "$path"; fi
+    done |
+    tar -cf - --null -T -
+) | tar -xf - -C "$clone"
+# -f: a tracked file that an ignore rule also matches must not drop out here.
+git -C "$clone" add -A -f .
+git -C "$clone" -c user.name=test -c user.email=test@example.com commit --quiet -m snapshot
+git -C "$clone" worktree add --quiet --detach "$wt" HEAD
 
 run_wt() { "$wt/bin/build-adapters.sh" "$@" >/dev/null 2>"$tmp/err"; }
 

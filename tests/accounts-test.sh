@@ -77,7 +77,7 @@ mkdir -p "$acme_dir"
 jq -n '{
   theme: "dark",
   hooks: {PreToolUse: [{matcher: "Edit|Write|NotebookEdit|Bash",
-    hooks: [{type: "command", command: "$HOME/.claude/hooks/branch-policy.sh"}]}]}
+    hooks: [{type: "command", command: "$HOME/.claude/hooks/branch-gate.sh"}]}]}
 }' >"$acme_dir/settings.json"
 
 run "$copy/install.sh" >/dev/null || fail "install failed"
@@ -85,7 +85,7 @@ run "$copy/install.sh" >/dev/null || fail "install failed"
 for dir in "$test_home/.claude" "$acme_dir"; do
   [[ -f "$dir/CLAUDE.md" ]] || fail "$dir has no CLAUDE.md"
   [[ -f "$dir/settings.json" ]] || fail "$dir has no settings.json"
-  [[ -x "$dir/hooks/branch-policy.sh" ]] || fail "$dir has no branch-policy hook"
+  [[ -x "$dir/hooks/branch-gate.sh" ]] || fail "$dir has no branch-gate hook"
   [[ -d "$dir/skills/codebase-design" ]] || fail "$dir has no skills"
 done
 for dir in "$test_home/.codex" "$codex_acme_dir"; do
@@ -96,16 +96,16 @@ done
 # Each account's settings must point at ITS OWN hooks. Borrowing the default
 # account's directory works until that one is reset, and then the guard is
 # unwired with nothing to show for it.
-jq -e '[.hooks.PreToolUse[].hooks[].command] | index("$HOME/.claude-acme/hooks/branch-policy.sh") != null' \
+jq -e '[.hooks.PreToolUse[].hooks[].command] | index("$HOME/.claude-acme/hooks/branch-gate.sh") != null' \
   "$acme_dir/settings.json" >/dev/null || fail "acme settings point at another account's hooks"
-jq -e '[.hooks.PreToolUse[].hooks[].command] | index("$HOME/.claude/hooks/branch-policy.sh") != null' \
+jq -e '[.hooks.PreToolUse[].hooks[].command] | index("$HOME/.claude/hooks/branch-gate.sh") != null' \
   "$test_home/.claude/settings.json" >/dev/null || fail "default settings hook path changed"
-grep -q '`~/.claude-acme/hooks/branch-policy.sh`' "$acme_dir/CLAUDE.md" ||
+grep -q '`~/.claude-acme/hooks/branch-gate.sh`' "$acme_dir/CLAUDE.md" ||
   fail "acme CLAUDE.md names another account's hook path"
 
 # The inherited path must be RE-POINTED, not left beside the corrected one.
 # A duplicate entry wires the same guard twice and looks like it is working.
-[[ "$(jq '[.hooks.PreToolUse[].hooks[] | select(.command | endswith("branch-policy.sh"))] | length' \
+[[ "$(jq '[.hooks.PreToolUse[].hooks[] | select(.command | endswith("branch-gate.sh"))] | length' \
   "$acme_dir/settings.json")" == 1 ]] || fail "a copied account kept a stale duplicate hook entry"
 jq -e '.theme == "dark"' "$acme_dir/settings.json" >/dev/null ||
   fail "the copied account's own settings were lost"

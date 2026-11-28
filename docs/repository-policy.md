@@ -18,13 +18,13 @@
 }
 ```
 
-All fields except `schemaVersion` are optional. Profiles are `personal` or `client`. Branch policies are `off`, `remind`, `ask`, or `deny`. `protectedBranches` must be a non-empty array of non-empty strings.
+All fields except `schemaVersion` are optional. Repository profiles are `personal` or `client`. Branch policies are `off`, `remind`, `ask`, or `deny`. `protectedBranches` must be a non-empty array of non-empty strings.
 
 `mergePolicy` resolves through the same four tiers as `branchPolicy`, and `llmctx explain mergePolicy` reports which one answered. Its value is shape-validated, unlike `briefs` and `claudeImport`, because a misspelling should be heard from `repo diff` rather than silently ignored by the skill meant to obey it.
 
 `hooks` is `managed` (default) or `repo-owned`. It is not in the example above because the default needs no saying and an explicit `managed` is a checked claim, not a no-op (see `core.hooksPath` below). It is read only from `.llmctx.json` and only by `repo diff`; it has no git-config tier and `llmctx explain` does not know it. It is described, with how and why it is validated, under `core.hooksPath` below.
 
-`irreversiblePolicy` takes the same four values and governs actions that cannot be undone rather than the branch they happen on: force push, hard reset, history rewrite, force branch deletion, remote branch deletion, and a recursive delete whose target resolves outside the repository. Two things differ from `branchPolicy` on purpose. Its built-in default is `ask` for **both** profiles, because "stop and confirm before destroying something" is the same answer in a personal repository and a client engagement, where branch strictness genuinely is a dial. And `remind` is treated as `ask`, because reminding once that a destructive command is destructive and then allowing every one that follows protects nothing.
+`irreversiblePolicy` takes the same four values and governs actions that cannot be undone rather than the branch they happen on: force push, hard reset, history rewrite, force branch deletion, remote branch deletion, and a recursive delete whose target resolves outside the repository. Two things differ from `branchPolicy` on purpose. Its built-in default is `ask` for **both** repository profiles, because "stop and confirm before destroying something" is the same answer in a personal repository and a client engagement, where branch strictness genuinely is a dial. And `remind` is treated as `ask`, because reminding once that a destructive command is destructive and then allowing every one that follows protects nothing.
 
 What it does not check is as deliberate: database drops, migrations against a non-local environment, `git rebase`, `git commit --amend`, and opening a pull request without being asked. The first two are not recognisable from a command string without guessing which connection string points where; the next two are the ordinary way to tidy a branch before review; the last has no mechanism here, since its stage is a `pre-push` hook this repository does not have.
 
@@ -54,7 +54,7 @@ remain manual.
 | `review-and-merge` | dispatches a **fresh** reviewer, never its own authoring context, with the PR body's claims as the brief; merges only on a clean verdict, after CI, then cleans up by the §5 rules; a finding goes back through fix and re-review |
 | `queue` | a named owner or a merge queue merges; the session says it is ready and moves on |
 
-`hold` is the default for both profiles. A merge is the one step in the flow where a person in the loop costs least and protects most, so the cautious answer is what a repository gets for saying nothing; the other two are a committed decision with a diff rather than a sentence in a chat log. Note that `review-and-merge` needs a per-project permission rule allowing `gh pr merge` as well: the policy says what should happen, and the rule is what lets it.
+`hold` is the default for both repository profiles. A merge is the one step in the flow where a person in the loop costs least and protects most, so the cautious answer is what a repository gets for saying nothing; the other two are a committed decision with a diff rather than a sentence in a chat log. Note that `review-and-merge` needs a per-project permission rule allowing `gh pr merge` as well: the policy says what should happen, and the rule is what lets it.
 
 `strandedExempt` is a list of branch-name prefixes, empty by default. `bin/worktree.sh status` reports a branch with commits past a protected branch and no pull request as `STRANDED`; a prefix listed here (for example `backup/`, for branches kept on purpose and never meant to merge) suppresses that headline for branches that start with it. The row is still reported, so nothing is hidden; only the judgement is withheld. It is read by `worktree.sh` alone and is not shape-validated, like the two keys above.
 
@@ -69,7 +69,7 @@ Values resolve in this order:
 3. global `git config --global llmctx.*` values where supported;
 4. built-in defaults.
 
-The built-in profile is `personal`. Its branch policy is `remind`. A committed `client` profile changes that default to `deny`. Protected branches default to `main master`.
+The built-in repository profile is `personal`. Its branch policy is `remind`. A committed `client` repository profile changes that default to `deny`. Protected branches default to `main master`.
 
 Inspect the effective value and its source with:
 

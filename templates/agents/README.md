@@ -1,4 +1,4 @@
-# Agent profile templates
+# Agent templates
 
 Shells for Claude Code subagent definitions. Copy one into a project's
 `.claude/agents/<name>.md` (or an account's `~/.claude/agents/`), then deepen it
@@ -6,17 +6,17 @@ against the work it is actually doing.
 
 **STATUS: shells.** Each file has the right shape and enough substance to be
 useful on the first run, and none of them has been hardened against a real
-engagement yet. They are deliberately thin — a profile written before the work
+engagement yet. They are deliberately thin — a template written before the work
 is a guess, and a guess that reads as settled is worse than an empty file.
 
 ## Why these exist separately from skills
 
-A **skill** is a procedure: load it and follow the steps. A **profile** is a
-point of view: who is looking, what they are tuned to notice, and what they will
-refuse to do. The same codebase reviewed by the QA profile and the business-owner
-profile returns two different lists, and that is the point.
+A **skill** is a procedure: load it and follow the steps. An **agent template**
+is a point of view: who is looking, what they are tuned to notice, and what they
+will refuse to do. The same codebase reviewed by the QA template and the
+business-owner template returns two different lists, and that is the point.
 
-Where a profile's job overlaps a skill that already exists, the profile says so
+Where a template's job overlaps a skill that already exists, the template says so
 and defers. `ux-designer` does not reimplement `product-ux-review`.
 
 ## The shape
@@ -38,9 +38,9 @@ badly. "A UX design expert" routes nothing. "Use when auditing an implemented
 interface for interaction defects, or when a layout needs a design read before
 it ships" routes correctly.
 
-## The profiles
+## The templates
 
-| profile | tuned to notice | writes? |
+| template | tuned to notice | writes? |
 |---|---|---|
 | [systems-architect](systems-architect.md) | decisions that are expensive to reverse | no |
 | [ux-designer](ux-designer.md) | interface and interaction quality | no |
@@ -48,16 +48,16 @@ it ships" routes correctly.
 | [devops-engineer](devops-engineer.md) | build, deploy and observability paths | builds, never deploys |
 | [small-business-owner](small-business-owner.md) | cost, time, and "what do I actually get" | no |
 
-Four of the five are read-only on purpose. A profile is a reviewer; when it
+Four of the five are read-only on purpose. A template is a reviewer; when it
 starts editing, its findings stop being independent of the thing it is judging.
 
 ## House rules these inherit
 
-Profiles do **not** restate the voice, behavioural, or communication rules — those
-live in `global/` and reach an agent through the installed adapters. A profile
+Templates do **not** restate the voice, behavioural, or communication rules — those
+live in `global/` and reach an agent through the installed adapters. A template
 that re-states them creates a second copy free to drift. Say only what is
 specific to the point of view.
 
-One rule is worth repeating inside a profile rather than inheriting, because it
+One rule is worth repeating inside a template rather than inheriting, because it
 is a hard boundary rather than a preference: **an agent builds and checks, it
 never deploys.** See `devops-engineer.md`.

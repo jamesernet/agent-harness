@@ -16,16 +16,16 @@ public contributors/upstreams
             | explicit publication                       |
             v                                            |
       public websites                         private workstation overlay
-                                                 + project-local context
+                                                 + project-local instructions
 ```
 
-The important crossings are untrusted contribution to executable agent context,
-public source to a privileged local installation, and private overlays merged
-with public defaults.
+The important crossings are untrusted contribution to executable agent
+instructions, public source to a privileged local installation, and private
+overlays merged with public defaults.
 
 ## Rules
 
-- Personal permissions, credentials, account identifiers, client profiles, and
+- Personal permissions, credentials, account identifiers, work-context files, and
   private repository names stay in `workstation` or project-local configuration.
 - `global/`, `brand/`, examples, tests, and documentation are public by design.
 - `claude/settings.json` declares only portable safety settings. Its installer

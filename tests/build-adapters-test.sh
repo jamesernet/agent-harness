@@ -37,7 +37,7 @@ jq -n --arg foreign "$foreign" '{
   hooks: {
     PreToolUse: [
       {matcher: "Edit|Write|NotebookEdit|Bash",
-       hooks: [{type: "command", command: "$HOME/.claude/hooks/branch-policy.sh"}]},
+       hooks: [{type: "command", command: "$HOME/.claude/hooks/branch-gate.sh"}]},
       {matcher: "Edit|Write|NotebookEdit|Bash",
        hooks: [{type: "command", command: $foreign, statusMessage: "local"}]}
     ]
@@ -49,7 +49,7 @@ HOME="$test_home" "$SRC/bin/build-adapters.sh" >/dev/null
 jq -e --arg foreign "$foreign" \
   '[.hooks.PreToolUse[].hooks[].command] | index($foreign) != null' "$settings" >/dev/null ||
   fail "a locally-added hook entry was deleted by the merge"
-jq -e '[.hooks.PreToolUse[].hooks[].command] | index("$HOME/.claude/hooks/branch-policy.sh") != null' \
+jq -e '[.hooks.PreToolUse[].hooks[].command] | index("$HOME/.claude/hooks/branch-gate.sh") != null' \
   "$settings" >/dev/null || fail "the managed hook entry is missing"
 jq -e '.theme == "dark"' "$settings" >/dev/null || fail "an undeclared local key was lost"
 
@@ -64,7 +64,7 @@ HOME="$test_home" "$SRC/bin/build-adapters.sh" --check >/dev/null ||
   fail "a foreign hook entry was reported as drift"
 
 # An edited MANAGED entry still is.
-jq '(.hooks.PreToolUse[] | select(.hooks[0].command | test("branch-policy")) | .matcher) = "Bash"' \
+jq '(.hooks.PreToolUse[] | select(.hooks[0].command | test("branch-gate")) | .matcher) = "Bash"' \
   "$settings" >"$settings.tmp" && mv "$settings.tmp" "$settings"
 if HOME="$test_home" "$SRC/bin/build-adapters.sh" --check >/dev/null 2>&1; then
   fail "an edited managed hook entry was not reported as drift"
