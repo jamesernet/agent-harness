@@ -305,4 +305,4 @@ When asked to fix findings:
 - State what changed, what was source-confirmed, and what was re-verified in the browser.
 
 ## Related
-- [diagnosing-bugs](../diagnosing-bugs/) · [web-perf](../web-perf/) (Core Web Vitals — same browser-driven pass) · [review-data-privacy](../review-data-privacy/) (consent and cookie UI)
+- [diagnose-bugs](../diagnose-bugs/) · [web-perf](../web-perf/) (Core Web Vitals — same browser-driven pass) · [review-data-privacy](../review-data-privacy/) (consent and cookie UI)
