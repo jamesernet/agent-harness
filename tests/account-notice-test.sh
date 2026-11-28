@@ -3,9 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
-HOOK="$SRC/bin/claude-hooks/routing-tripwire.sh"
+HOOK="$SRC/bin/claude-hooks/account-notice.sh"
 
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-routing-tripwire.XXXXXX")"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-account-notice.XXXXXX")"
 tmp="$(cd "$tmp" && pwd)"
 export HOME="$tmp/home"
 export GIT_CONFIG_GLOBAL="$tmp/global.gitconfig"
@@ -13,7 +13,7 @@ mkdir -p "$HOME/.claude" "$HOME/.claude-acme" "$HOME/repos/acme/app" "$HOME/repo
 unset CLAUDE_CONFIG_DIR
 
 fail() {
-  echo "routing tripwire test failed: $*" >&2
+  echo "account notice test failed: $*" >&2
   exit 1
 }
 
@@ -48,7 +48,7 @@ jq -r '.systemMessage' <<<"$out" | grep -q 'routed to the "acme" Claude account'
 jq -r '.systemMessage' <<<"$out" | grep -q "expected $HOME/.claude-acme" ||
   fail "the notice did not name the expected config directory"
 jq -r '.systemMessage' <<<"$out" | grep -q 'direnv allow' || fail "the notice did not carry the fix"
-jq -r '.hookSpecificOutput.additionalContext' <<<"$out" | grep -q 'account-guard.sh refuses' ||
+jq -r '.hookSpecificOutput.additionalContext' <<<"$out" | grep -q 'account-gate.sh refuses' ||
   fail "the agent context did not say the guard will refuse writes"
 jq -r '.hookSpecificOutput.additionalContext' <<<"$out" | grep -q 'and stop' ||
   fail "the agent context did not tell the agent to stop"
@@ -90,7 +90,7 @@ fired "$(run "$HOME/repos/acme/mine" "$HOME/.claude-acme")" ||
 
 # The sentinel suspends it for the active account only, as it does the guard.
 touch "$HOME/.claude/.allow-cross-account"
-[[ -z "$(run "$HOME/repos/acme/app")" ]] || fail "the sentinel did not suspend the tripwire"
+[[ -z "$(run "$HOME/repos/acme/app")" ]] || fail "the sentinel did not suspend the notice"
 # Both hooks read the sentinel before they parse a payload, so the library's own
 # sentinel case is reached by no hook; it is part of judge's contract, so it is
 # pinned here directly, for the caller that does not pre-check.
@@ -125,17 +125,17 @@ out="$(
 
 # Registered under SessionStart with no matcher, so every source reaches it,
 # and installed into each account beside its library.
-jq -e '[.hooks.SessionStart[]? | select(has("matcher") | not) | .hooks[]?.command] | any(test("routing-tripwire\\.sh$"))' \
-  "$SRC/claude/settings.json" >/dev/null || fail "claude/settings.json does not register the tripwire under SessionStart without a matcher"
+jq -e '[.hooks.SessionStart[]? | select(has("matcher") | not) | .hooks[]?.command] | any(test("account-notice\\.sh$"))' \
+  "$SRC/claude/settings.json" >/dev/null || fail "claude/settings.json does not register the notice under SessionStart without a matcher"
 LLMCTX_ALLOW_WORKTREE_INSTALL=1 "$SRC/bin/build-adapters.sh" >/dev/null 2>&1 || fail "build-adapters failed"
-[[ -x "$HOME/.claude/hooks/routing-tripwire.sh" ]] || fail "the tripwire was not installed into the default account"
+[[ -x "$HOME/.claude/hooks/account-notice.sh" ]] || fail "the notice was not installed into the default account"
 [[ -f "$HOME/.claude/hooks/llmctx-routes.sh" ]] || fail "the routes library was not installed beside it"
-[[ -x "$HOME/.claude-acme/hooks/routing-tripwire.sh" ]] || fail "the tripwire was not installed into the acme account"
-jq -e '[.hooks.SessionStart[]?.hooks[]?.command] | any(test("/hooks/routing-tripwire\\.sh$"))' \
-  "$HOME/.claude/settings.json" >/dev/null || fail "the installed settings do not register the tripwire"
+[[ -x "$HOME/.claude-acme/hooks/account-notice.sh" ]] || fail "the notice was not installed into the acme account"
+jq -e '[.hooks.SessionStart[]?.hooks[]?.command] | any(test("/hooks/account-notice\\.sh$"))' \
+  "$HOME/.claude/settings.json" >/dev/null || fail "the installed settings do not register the notice"
 # The installed copy answers the same way the in-tree one does.
-fired "$(CLAUDE_CONFIG_DIR="" bash "$HOME/.claude/hooks/routing-tripwire.sh" <<<"$(payload "$HOME/repos/acme/app")")" ||
-  fail "the installed tripwire did not fire"
+fired "$(CLAUDE_CONFIG_DIR="" bash "$HOME/.claude/hooks/account-notice.sh" <<<"$(payload "$HOME/repos/acme/app")")" ||
+  fail "the installed notice did not fire"
 
 # --- doctor: a repository .envrc under a routed tree must source its parent ---
 # direnv loads only the nearest .envrc, so a repository file that does not
@@ -220,4 +220,4 @@ git config --global --add llmctx.accountRoute "acme=~/repos/nowhere"
 r="$(envrc_check)"
 [[ "$(jq -r .status <<<"$r")" == PASS ]] || fail "a route to a missing directory broke the check: $r"
 
-echo "routing tripwire tests: passed"
+echo "account notice tests: passed"

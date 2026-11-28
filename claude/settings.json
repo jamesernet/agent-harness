@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/branch-policy.sh",
+            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/branch-gate.sh",
             "statusMessage": "Checking branch policy..."
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/account-guard.sh",
+            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/account-gate.sh",
             "statusMessage": "Checking the Claude account for this path..."
           }
         ]
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/irreversible-policy.sh",
+            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/irreversible-gate.sh",
             "statusMessage": "Checking for an action that cannot be undone..."
           }
         ]
@@ -37,12 +37,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/routing-tripwire.sh",
+            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/account-notice.sh",
             "statusMessage": "Checking the Claude account for this directory..."
           },
           {
             "type": "command",
-            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/environment-tripwire.sh",
+            "command": "{{CLAUDE_CONFIG_DIR}}/hooks/environment-notice.sh",
             "statusMessage": "Checking the AWS environment for this context..."
           }
         ]

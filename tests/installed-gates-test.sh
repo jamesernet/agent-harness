@@ -67,21 +67,21 @@ git init --quiet "$repo"
 git -C "$repo" symbolic-ref HEAD refs/heads/main
 printf '%s\n' '{"schemaVersion":1,"profile":"client"}' >"$repo/.llmctx.json"
 
-want deny branch-policy.sh "$(jq -nc --arg c "$repo" --arg f "$repo/README.md" \
+want deny branch-gate.sh "$(jq -nc --arg c "$repo" --arg f "$repo/README.md" \
   '{tool_name:"Edit",session_id:"t",tool_input:{file_path:$f},cwd:$c}')" \
   "an edit on a protected branch of a client repository"
 
 # The literal is split so this file can be edited by an agent without the gate
 # under test matching its own source.
 PF="git"" push --force"
-want ask irreversible-policy.sh "$(jq -nc --arg c "$repo" --arg cmd "$PF origin main" \
+want ask irreversible-gate.sh "$(jq -nc --arg c "$repo" --arg cmd "$PF origin main" \
   '{tool_name:"Bash",session_id:"t",tool_input:{command:$cmd},cwd:$c}')" \
   "a force push"
 
 # Registered after the build, so the build installed the default account only.
 git config --global --add llmctx.claudeAccount "acme=$HOME/.claude-acme"
 git config --global --add llmctx.accountRoute "acme=~/repos/acme"
-want deny account-guard.sh "$(jq -nc --arg c "$HOME" --arg f "$HOME/repos/acme/app/x.py" \
+want deny account-gate.sh "$(jq -nc --arg c "$HOME" --arg f "$HOME/repos/acme/app/x.py" \
   '{tool_name:"Edit",session_id:"t",tool_input:{file_path:$f},cwd:$c}')" \
   "an edit under a path routed to another account"
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# bin/claude-hooks/irreversible-policy.sh — the second tenant on the policy
-# ladder. Driven through its real stdin contract, like the branch-policy suite.
+# bin/claude-hooks/irreversible-gate.sh — the second tenant on the policy
+# ladder. Driven through its real stdin contract, like the branch-gate suite.
 #
 # Half of this file is false-positive cases. A guard that is wrong on ordinary
 # work gets switched off, and then it protects nothing — so "this must NOT
@@ -10,7 +10,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
-HOOK="$SRC/bin/claude-hooks/irreversible-policy.sh"
+HOOK="$SRC/bin/claude-hooks/irreversible-gate.sh"
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-irrev-test.XXXXXX")"
 tmp="$(cd "$tmp" && pwd)"
@@ -22,7 +22,7 @@ mkdir -p "$HOME"
 : >"$GIT_CONFIG_GLOBAL"
 
 fail() {
-  echo "irreversible-policy test failed: $*" >&2
+  echo "irreversible-gate test failed: $*" >&2
   exit 1
 }
 
@@ -265,7 +265,7 @@ want allow "global off applies" "$repo" "$PF origin main"
 # destructive command that follows protects nothing.
 git config --global llmctx.irreversiblePolicy remind
 want ask "remind behaves as ask" "$repo" "$PF origin main"
-# ...and unlike branch-policy's remind, it fires EVERY time rather than once.
+# ...and unlike the branch gate's remind, it fires EVERY time rather than once.
 want ask "remind fires again" "$repo" "$PF origin main"
 git config --global --unset llmctx.irreversiblePolicy
 

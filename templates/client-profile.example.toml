@@ -117,7 +117,7 @@ agents_allowed = true
 
 # false => this tree must not be sent to a hosted model. Enforce with a
 # PreToolUse hook that denies Read/Grep/Edit under this client's path, the same
-# mechanism as branch-policy.sh.
+# mechanism as branch-gate.sh.
 allow_code_egress = true
 
 # Never send these even when egress is allowed. Globs, relative to repo root.

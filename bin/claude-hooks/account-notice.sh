@@ -4,7 +4,7 @@ set -euo pipefail
 # Claude Code SessionStart hook: the session's directory is routed to the
 # account the session runs on.
 #
-# account-guard.sh is the gate: it refuses the first WRITE under a routed path
+# account-gate.sh is the gate: it refuses the first WRITE under a routed path
 # from another account. By then the first model call has been made, as its own
 # header says. This hook runs when the session starts, before the first prompt,
 # and reads the same routes, registry and sentinel through the same library, so
@@ -12,10 +12,10 @@ set -euo pipefail
 # agent, which is the half a notice to the person alone does not cover.
 #
 # A SessionStart hook cannot block: Claude Code shows exit 2's stderr and the
-# session proceeds. So this is a tripwire by construction. It says, it does not
+# session proceeds. So this is a notice by construction. It says, it does not
 # stop, and it says it to both sides in one JSON answer: additionalContext
 # reaches the agent before its first prompt, systemMessage reaches the person.
-# account-guard.sh still refuses the write if either ignores it.
+# account-gate.sh still refuses the write if either ignores it.
 #
 # Silent in every case it cannot judge, exactly as the guard is: no routes, an
 # unregistered CLAUDE_CONFIG_DIR, a route to an unregistered account, the
@@ -46,7 +46,7 @@ llmctx_routes_load
 [[ -n "$LLMCTX_ROUTES" ]] || exit 0
 
 # The sentinel is judged again inside the library; it is read here first so a
-# suspended tripwire never pays for jq.
+# suspended notice never pays for jq.
 [[ -e "$(llmctx_routes_active_dir)/.allow-cross-account" ]] && exit 0
 # An unregistered config dir cannot be judged; said here first, the payload is
 # never parsed for it.
@@ -60,7 +60,7 @@ cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
 cwd="$(llmctx_target_canonical "$(llmctx_target_expand_home "$cwd")")"
 [[ "$cwd" == /* ]] || exit 0
 
-# The same verdict account-guard.sh reaches at the first write, from the same
+# The same verdict account-gate.sh reaches at the first write, from the same
 # library call, for the session cwd instead of a write target.
 verdict="$(llmctx_routes_judge "$cwd")"
 [[ -n "$verdict" ]] || exit 0
@@ -72,11 +72,11 @@ message="This session started in a directory routed to the \"$route_name\" Claud
   route              $route_path  ->  $route_name
   CLAUDE_CONFIG_DIR  ${CLAUDE_CONFIG_DIR:-<unset>}   (expected $expected_dir)
 
-account-guard.sh refuses writes under that route from this account.
+account-gate.sh refuses writes under that route from this account.
 
 $(llmctx_routes_fix_text "$route_path" "$active_name" "$active_dir")"
 
-agent_note="Routing tripwire: this session is on the \"$active_name\" Claude account, but its working directory is routed to \"$route_name\". Do not edit, write or run commands under $route_path on this account; account-guard.sh refuses them, and the person has been shown how to restart the session on the right account. Tell them this is why, and stop. The notice they were shown:
+agent_note="Account notice: this session is on the \"$active_name\" Claude account, but its working directory is routed to \"$route_name\". Do not edit, write or run commands under $route_path on this account; account-gate.sh refuses them, and the person has been shown how to restart the session on the right account. Tell them this is why, and stop. The notice they were shown:
 
 $message"
 
