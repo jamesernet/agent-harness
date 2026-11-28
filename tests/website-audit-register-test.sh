@@ -359,12 +359,18 @@ jq '(.findings[] | select(.id == "metadata/home/images_missing_alt") | .gate) = 
 if check >/dev/null 2>&1; then fail "check passed a gate the table does not give"; fi
 jq '(.findings[] | select(.id == "metadata/home/images_missing_alt") | .severitySource) = "a blog post"' "$tmp/reg.bak" >"$reg"
 if check >/dev/null 2>&1; then fail "check passed a severitySource the table does not give"; fi
-# A register built while the skill was still called metadata-audit cites the
-# decision tree by that path. A delivered package must not start failing because
-# a directory in this repository was renamed; any other spelling still fails.
-jq '(.findings[].severitySource) |= sub("^audit-metadata/"; "metadata-audit/")' "$tmp/reg.bak" >"$reg"
+# A register built while the skill was still called metadata-audit carries that
+# name in every place the build writes it: the decision-tree path each finding
+# cites, the tool path at the top and on each finding, and the falsifier text. A
+# delivered package must not start failing because a directory in this
+# repository was renamed; any other spelling of the cited path still fails.
+jq 'walk(if type == "string" then gsub("audit-metadata"; "metadata-audit") else . end)' "$tmp/reg.bak" >"$reg"
 jq -e '[.findings[].severitySource | startswith("metadata-audit/references/decision-tree.md:")] | all and length > 0' \
   "$reg" >/dev/null || fail "the pre-rename fixture does not cite the old decision-tree path"
+jq -e '.measuredBy.tool == "metadata-audit/scripts/inventory.py"
+       and ([.findings[].measuredBy.tool == "metadata-audit/scripts/inventory.py"] | all)' \
+  "$reg" >/dev/null || fail "the pre-rename fixture does not name the old tool path"
+if grep -q 'audit-metadata' "$reg"; then fail "the pre-rename fixture still carries the new skill name"; fi
 out="$(check 2>&1)" || fail "check rejected a register built before the skill was renamed: $out"
 jq '(.findings[].severitySource) |= sub("^audit-metadata/"; "metadata-audits/")' "$tmp/reg.bak" >"$reg"
 if check >/dev/null 2>&1; then fail "check passed a decision-tree path that was never the skill's"; fi

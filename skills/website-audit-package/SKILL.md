@@ -84,8 +84,9 @@ register covers the metadata layer. For each page, save what `inventory.py`
 reads under `evidence/metadata-audit/<page>/`: `page.html`, plus `robots.txt`,
 `llms.txt`, `headers.txt`, `sitemap.xml`, a one-line `url` file and a one-line
 `captured` file holding the capture time in ISO 8601 with a timezone, where you
-have them. The directory keeps the name audit-metadata had before 2026-11:
-it is part of the package, and packages already delivered use it. The
+have them. The directory is still called metadata-audit, that skill's name
+before 2026-11: it is part of the package, and packages already delivered use
+it. The
 capture time becomes each finding's `asOf`; without it the register falls back
 to the `Date` header saved in `headers.txt`, then to the file's own timestamp,
 and `asOfSource` says which. A missing optional input is recorded as checks not
