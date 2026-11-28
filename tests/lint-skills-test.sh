@@ -123,4 +123,17 @@ grep -q 'owned: line 6: "\$0"' <<<"$out" || fail "the dollar-digit was not repor
 grep -q 'line 7' <<<"$out" && fail "\$HOME or \$ARGUMENTS was reported: $out"
 printf '%s\n' '---' 'name: owned' 'description: An owned skill.' '---' '# Owned' >"$fixture/skills/owned/SKILL.md"
 
+# A skill's effort must be a level the loader knows; an unknown one is ignored
+# at load time, so the skill runs at the session's level without a word.
+reset_bundles
+printf '%s\n' '---' 'name: owned' 'description: An owned skill.' 'effort: xhigh' '---' '# Owned' >"$fixture/skills/owned/SKILL.md"
+lint
+[ "$rc" -eq 0 ] || fail "a skill with a valid effort did not pass lint: $out"
+printf '%s\n' '---' 'name: owned' 'description: An owned skill.' 'effort: extreme' '---' '# Owned' >"$fixture/skills/owned/SKILL.md"
+lint
+[ "$rc" -ne 0 ] || fail "a skill with an unknown effort passed lint: $out"
+grep -q 'effort "extreme" is not low|medium|high|xhigh|max' <<<"$out" ||
+  fail "the unknown skill effort was not reported: $out"
+printf '%s\n' '---' 'name: owned' 'description: An owned skill.' '---' '# Owned' >"$fixture/skills/owned/SKILL.md"
+
 echo "lint-skills tests: passed"
