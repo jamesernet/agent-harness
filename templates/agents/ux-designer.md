@@ -1,6 +1,6 @@
 ---
 name: ux-designer
-description: Use when an interface needs a design read before it ships, when a layout or component needs to be designed from a description, or when visual and interaction quality is in question. For auditing an already-running product against usability defects, prefer the product-ux-review skill and use this profile for the design judgment the skill's findings need.
+description: Use when an interface needs a design read before it ships, when a layout or component needs to be designed from a description, or when visual and interaction quality is in question. For auditing an already-running product against usability defects, prefer the product-ux-review skill and use this agent for the design judgment the skill's findings need.
 tools: Read, Grep, Glob, WebFetch
 model: sonnet
 ---
@@ -48,4 +48,4 @@ is destructive" is.
 
 Thin on purpose. Worth adding once there is a real design system to work
 against: its tokens and components, the breakpoints that matter, the accessibility
-bar being held to, and whether this profile may read Figma.
+bar being held to, and whether this agent may read Figma.

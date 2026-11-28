@@ -2,7 +2,7 @@
 
 Portable, versioned defaults for how my coding agents work across machines and repositories.
 
-This repository is the source of truth for global behavior, communication style, portable Claude safety settings, shared skills, third-party skill pins, Git safety hooks, and intentionally public brand context. Project-specific instructions remain in each project. Personal permissions, machine-specific identities, credentials, and application setup remain in the workstation repository.
+This repository is the source of truth for global behavior, communication style, portable Claude safety settings, shared skills, third-party skill pins, Git safety hooks, and intentionally public brand text. Project-specific instructions remain in each project. Personal permissions, machine-specific identities, credentials, and application setup remain in the workstation repository.
 
 ## What this solves
 
@@ -13,7 +13,7 @@ This repository is the source of truth for global behavior, communication style,
 - Local drift is visible through deterministic commands rather than agent interpretation.
 - Public content publication is separate from local agent installation.
 
-The boundary is deliberate: `agent-harness` owns portable agent behavior; a project owns its local context; `workstation` owns machine setup and private values.
+The boundary is deliberate: `agent-harness` owns portable agent behavior; a project owns its own instructions; `workstation` owns machine setup and private values.
 
 ### Why the CLI is still called `llmctx`
 
@@ -56,13 +56,16 @@ bin/llmctx version [--json]
 bin/llmctx install [--account <name>]
 bin/llmctx doctor [--json|--quiet] [--account <name>]
 bin/llmctx repo diff [repo] [--json]
-bin/llmctx explain <profile|branchPolicy|protectedBranches> [repo]
+bin/llmctx env check [repo]
+bin/llmctx env explain [repo]
+bin/llmctx env session [directory]
+bin/llmctx explain <profile|branchPolicy|irreversiblePolicy|mergePolicy|protectedBranches> [repo]
 bin/llmctx account list [--provider claude|codex] [--json]
 bin/llmctx account add [--provider claude|codex] <name> <dir>
 bin/llmctx account remove [--provider claude|codex] <name>
-bin/llmctx skills install [--dev] [--bundle <name>] [--account <name>]
+bin/llmctx skills install [--dev] [--bundle <name>[,<name>...]] [--account <name>]
 bin/llmctx agents install [--dev] [--account <name>]
-bin/llmctx context apply <profile.toml> [--check]
+bin/llmctx context apply <work-context.toml> [--check]
 bin/llmctx vendor check
 bin/llmctx publish sync [--check]
 ```
@@ -75,7 +78,7 @@ Use `doctor` for machine-level state. Use `repo diff` inside a project to compar
 
 Narrowing here is the only thing that makes skill selection real. A project's own `.claude/skills/` is **additive** and cannot hide a globally installed skill, so until the global set is reduced every project sees everything. The choice persists in `git config --global llmctx.skillBundle`; without that, the next `llmctx install` would silently widen it back to `all`. `llmctx doctor` reports the active bundle, so "absent on purpose" stays distinguishable from "install went wrong".
 
-Selection is per Claude account. `llmctx.skillBundle.<account>` overrides the global key for that account, so a machine running a regulated backend under one account and marketing sites under another does not have to share one answer — and a plain `llmctx install` no longer re-applies one account's choice to the others. Registered Codex homes follow the global key; the older bundle-key namespace is not provider-qualified, so sharing Claude overrides would be ambiguous.
+Selection is per Claude account. `llmctx.skillBundle.<account>` overrides the global key for that account, so a machine running a regulated backend under one account and marketing sites under another does not have to share one answer — and a plain `llmctx install` no longer re-applies one account's choice to the others. Registered Codex accounts follow the global key; the older bundle-key namespace is not provider-qualified, so sharing Claude overrides would be ambiguous.
 
 An unknown bundle name is refused and changes nothing — resolving it to the empty set would prune every installed skill over one missing letter.
 
@@ -91,18 +94,18 @@ bin/llmctx install
 bin/llmctx doctor
 ```
 
-Codex homes use the same registry shape with an explicit provider:
+Codex accounts use the same registry shape with an explicit provider:
 
 ```sh
 bin/llmctx account add --provider codex acme ~/.codex-acme
 ```
 
-This makes installation and drift checks cover that home without copying its
-credentials or authenticated session. `CODEX_HOME` selects the home at launch;
-authentication isolation must still be proven with independent real logins on
-the adopting machine before relying on it as a security boundary.
+This makes installation and drift checks cover that account without copying its
+credentials or authenticated session. `CODEX_HOME` selects the account at
+launch; authentication isolation must still be proven with independent real
+logins on the adopting machine before relying on it as a security boundary.
 
-`~/.claude` and `~/.codex` are always installed into as `default` for their provider and cannot be unregistered. Registration is purely additive, because a list that could omit the primary would reintroduce exactly the failure this exists to prevent: an install that skips a config directory and still reports success. `--account <name>` remains a Claude-only narrowing flag for compatibility; a normal run checks every registered home.
+`~/.claude` and `~/.codex` are always installed into as `default` for their provider and cannot be unregistered. Registration is purely additive, because a list that could omit the primary would reintroduce exactly the failure this exists to prevent: an install that skips an account and still reports success. `--account <name>` remains a Claude-only narrowing flag for compatibility; a normal run checks every registered account.
 
 Each account gets its own `hooks/`, so no account depends on another's directory surviving. An account created by copying another arrives holding the original's hook paths; `install` re-points them rather than leaving both wired.
 
@@ -115,7 +118,7 @@ git config --global --add llmctx.accountHook.verse client-only-guard.sh
 
 `account remove` unregisters a directory. It never deletes one — dropping a credential store as a side effect of a config change is not a trade this tool makes for you.
 
-**`account` is not `profile` or `context`.** A *profile* (`personal` / `client`) describes repository policy. A *context* describes a work identity and security boundary. An *account* describes which provider login a session runs on. Different axes, deliberately different words.
+**An account is not a repository profile or a work context.** A *repository profile* (`personal` / `client`) describes repository policy. A *work context* describes a work identity and security boundary. An *account* describes which provider login a session runs on. Different axes, deliberately different words.
 
 **Routing a repository to an account** is direnv's job, not this tool's, since it is the shell that has to carry `CLAUDE_CONFIG_DIR` into `claude`. Put the `.envrc` one level ABOVE the repositories so it covers all of them:
 
@@ -132,35 +135,35 @@ A repository with its own `.envrc` needs `source_up_if_exists` as its first line
 git config --global --add llmctx.accountRoute acme=~/repos/github.com/acme
 ```
 
-A write under a routed path from any other account is refused at the first tool call, with the fix in the message. Routes-only and symmetric: an unrouted path is nobody's business, so the client account can still edit a personal repo. It fails fast rather than early — quota is consumed by model calls and a `PreToolUse` hook runs after the first one. `hooks/routing-tripwire.sh` is the early word from the other side: it runs at session start, before the first prompt, reads the same routes through the same library, and when the session's directory is routed to another account it tells the person and the agent at once, with the same fix. A `SessionStart` hook cannot refuse anything, so the guard stays the gate; neither is a billing boundary, since the session was already opened on the wrong login. Suspend both deliberately with `touch <config-dir>/.allow-cross-account`. `llmctx doctor` reports the routes, refuses one that names an unregistered account, and names every repository `.envrc` under a routed tree that never runs `source_up_if_exists`, because that file shadows the routing silently.
+A write under a routed path from any other account is refused at the first tool call, with the fix in the message. Routes-only and symmetric: an unrouted path is nobody's business, so the client account can still edit a personal repo. It fails fast rather than early — quota is consumed by model calls and a `PreToolUse` hook runs after the first one. `hooks/routing-tripwire.sh` is the early word from the other side: it runs at session start, before the first prompt, reads the same routes through the same library, and when the session's directory is routed to another account it tells the person and the agent at once, with the same fix. A `SessionStart` hook cannot refuse anything, so the guard stays the gate; neither is a billing boundary, since the session was already opened on the wrong login. Suspend both deliberately with `touch <account>/.allow-cross-account`. `llmctx doctor` reports the routes, refuses one that names an unregistered account, and names every repository `.envrc` under a routed tree that never runs `source_up_if_exists`, because that file shadows the routing silently.
 
 The AWS half uses the machine-local `llmctx.contextProfile` binding described
 under Environments. `hooks/environment-tripwire.sh` compares `AWS_PROFILE` and
-`AWS_DEFAULT_PROFILE` with the context's declared read-only profile, and notices
-ambient credentials or alternate configuration sources that can override it.
-Only variable names are reported. A context with no AWS role accepts an unset
-profile or WorkStation's explicit unbound sentinel. Invalid bound policy also
-produces a notice; an unbound directory cannot be judged.
+`AWS_DEFAULT_PROFILE` with the work context's declared read-only AWS profile, and
+notices ambient credentials or alternate configuration sources that can override
+it. Only variable names are reported. A work context with no AWS role accepts an
+unset AWS profile or `workstation`'s explicit unbound sentinel. An invalid bound
+work-context file also produces a notice; an unbound directory cannot be judged.
 
 `llmctx env session [directory]` runs the same checks from Codex or a shell and
 returns nonzero on a finding. Claude's SessionStart notice reaches both person
 and agent but cannot block execution. These checks never call AWS, resolve a
 secret or change the environment. They do not verify IAM permissions or replace
-WorkStation's credential isolation.
+`workstation`'s credential isolation.
 
 ## Data flow
 
 ```text
-global/ ───────────────> <claude-home>/CLAUDE.md
-       └───────────────> <codex-home>/AGENTS.md
-claude/settings.json ──> <claude-home>/settings.json (portable keys merged)
-bin/claude-hooks/ ─────> <claude-home>/hooks/
-skills/ + vendor/ ─────> <claude-home>/skills/ and <codex-home>/skills/
-agents/ ──────────────> <claude-home>/agents/
+global/ ───────────────> <claude-account>/CLAUDE.md
+       └───────────────> <codex-account>/AGENTS.md
+claude/settings.json ──> <claude-account>/settings.json (portable keys merged)
+bin/claude-hooks/ ─────> <claude-account>/hooks/
+skills/ + vendor/ ─────> <claude-account>/skills/ and <codex-account>/skills/
+agents/ ──────────────> <claude-account>/agents/
 brand/ ── explicit ────> existing publication repositories
 ```
 
-Default homes and every registered provider home are covered by a normal install.
+The default accounts and every registered account are covered by a normal install.
 
 `AGENTS.md` is the canonical project instruction file. A project's `CLAUDE.md` should import it with `@AGENTS.md`, avoiding two drifting project rule sets.
 
@@ -204,28 +207,30 @@ bin/llmctx env explain [repo]    the declaration, and what is still manual
 
 `check` is read-only: no network, no credentials, and it never sources
 `.envrc`, because sourcing would run arbitrary repository code during a check.
-It verifies resolution, not validity — whether a profile still has working
+It verifies resolution, not validity — whether an AWS profile still has working
 credentials only using it can tell you, and finding that out is a deploy.
 
-AWS and MCP declarations also need a private work-context policy, bound on the
+AWS and MCP declarations also need a private work-context file, bound on the
 machine rather than committed to the project:
 
 ```sh
 git config --local llmctx.contextProfile /absolute/path/to/private-context.toml
 ```
 
-A conditional Git include can supply the same key for a whole context. The
-checker reads TOML with Python 3.11+ and never sources it. Canonical contexts use
-`[cloud] aws_profile` for the read-only ambient profile, `aws_write_profile` for
-human step-up, and `[ai] allow_code_egress` / `agents_allowed`. Legacy
-`[aws] default_profile` / `write_profile` remain supported. Contradictory fields,
-missing policy, a non-ambient repository AWS profile, or MCP entries under a
-no-egress/no-agent policy produce findings. Missing policy is also a finding
-in CI; only machine-specific AWS configuration and secret bindings are exempt.
+A conditional Git include can supply the same key for a whole work context. The
+checker reads TOML with Python 3.11+ and never sources it. Canonical work
+contexts use `[cloud] aws_profile` for the read-only ambient AWS profile,
+`aws_write_profile` for human step-up, and `[ai] allow_code_egress` /
+`agents_allowed`. Legacy `[aws] default_profile` / `write_profile` remain
+supported. Contradictory fields, a missing work-context file, a non-ambient
+repository AWS profile, or MCP entries under a no-egress/no-agent work context
+produce findings. A missing work-context file is also a finding in CI; only
+machine-specific AWS configuration and secret bindings are exempt.
 
 These are checks against the owner's declaration. They do not prove IAM
 permissions, remove ambient credentials, constrain MCP execution, or authorize
-a deployment. Machine isolation and profile binding remain WorkStation's job.
+a deployment. Machine isolation and work-context binding remain
+`workstation`'s job.
 
 Where a value comes from is layered, lowest to highest: the target file, the
 repository's declaration, then the machine's binding in `workstation`. Claude
@@ -246,7 +251,7 @@ Projects may commit `.llmctx.json`:
 }
 ```
 
-Resolution order is repository-local Git config, committed policy, global Git config, then built-in defaults. A `client` profile defaults to `deny`; `personal` defaults to `remind`. Local overrides stay local:
+Resolution order is repository-local Git config, committed policy, global Git config, then built-in defaults. A `client` repository profile defaults to `deny`; `personal` defaults to `remind`. Local overrides stay local:
 
 ```sh
 git config llmctx.branchPolicy off
@@ -278,12 +283,12 @@ git config llmctx.irreversiblePolicy deny
 ```
 
 Two things differ from `branchPolicy`, both deliberate. The default is `ask`
-**everywhere** rather than derived from the profile, because branch strictness
-genuinely is a dial a client engagement turns up, while "stop and confirm before
-destroying something" is the same answer in every repository — and a
-profile-derived default would have made the personal case `remind`, which for a
-destructive command means warning once and allowing every one after it. For the
-same reason `remind` is treated as `ask` here.
+**everywhere** rather than derived from the repository profile, because branch
+strictness genuinely is a dial a client engagement turns up, while "stop and
+confirm before destroying something" is the same answer in every repository —
+and a default derived from the repository profile would have made the personal
+case `remind`, which for a destructive command means warning once and allowing
+every one after it. For the same reason `remind` is treated as `ask` here.
 
 What it does not check matters as much. Database drops and migrations against a
 non-local environment are named in the guidelines and are not recognisable from
@@ -336,9 +341,9 @@ bin/llmctx publish sync
 bin/llmctx publish sync --check
 ```
 
-Normal sync skips consumer repositories that are not cloned and never creates repository roots. Check mode treats missing repositories and marker-block drift as failures. Content intended to remain private does not belong in `global/`, `brand/`, or any published target.
+Normal sync skips consumer repositories that are not cloned and never creates repository roots. Check mode treats missing repositories and marker-block drift as failures. Content intended to remain private does not belong in `global/`, `brand/`, or anything else that is published.
 
-## Work-context profiles
+## Work contexts
 
 `templates/work-context.example.toml` is the canonical shape for an identity and security boundary. It supports path precedence, public Git identity, explicit provider bindings, projects, environments, and secret-manager references. `templates/client-profile.example.toml` remains as a compatibility example.
 
@@ -351,12 +356,12 @@ Two ideas carry most of the value:
 
 Path resolution uses longest-match precedence, so an organization default can be overridden by one repository without changing the context ID later.
 
-**Executable slice.** `bin/llmctx context apply <profile.toml> [--check]` renders the `[providers.claude]` model policy — `account`, `models`, `max_effort` — into that account's `settings.json` as `availableModels`, `enforceAvailableModels` and `maxEffortLevel`, touching nothing else, with a drift check. `client apply` accepts the older `[ai]` shape as a compatibility alias. WorkStation owns generation of identities, path indexes, and provider registries.
+**Executable slice.** `bin/llmctx context apply <work-context.toml> [--check]` renders the `[providers.claude]` model limits — `account`, `models`, `max_effort` — into that account's `settings.json` as `availableModels`, `enforceAvailableModels` and `maxEffortLevel`, touching nothing else, with a drift check. `client apply` accepts the older `[ai]` shape as a compatibility alias. `workstation` owns generation of identities, path indexes, and provider registries.
 
 ## Teams
 
-`templates/teams/` holds copyable multi-persona packs with their own runtime, as
-against the single-file profiles in `templates/agents/`. The first is
+`templates/teams/` holds copyable multi-persona teams with their own runtime, as
+against the single-file agent templates in `templates/agents/`. The first is
 `templates/teams/opinion-gallery/`: four or five AI personas read a
 news feed on an org's behalf, stay quiet by default, draft when one has a
 strong opinion, debate once when two flag the same story, and hand the result
@@ -368,17 +373,21 @@ own repo. See `templates/teams/opinion-gallery/README.md`.
 ## Layout
 
 ```text
-global/       portable behavioral, communication, and handoff rules
-claude/       portable Claude safety settings
-targets/      hosting-target descriptions for environment declarations
-skills/       owned skills
-agents/       managed subagent definitions (model, effort, turn budget)
-vendor/       pinned third-party skills
-templates/    copy-into-project starters: agents, work contexts, teams
-brand/        intentionally public personal-brand context
-bin/          stable CLI, installers, checks, hooks, and libraries
-tests/        deterministic shell tests and portable runner
-docs/         detailed operating references
+install.sh        entry point; runs bin/llmctx install
+.llmctx.json      the repository policy this repository declares for itself
+vendor.lock.json  the pin for vendor/
+.github/          the CI workflow
+global/           portable behavioral, communication, and handoff rules
+claude/           portable Claude safety settings
+targets/          hosting-target descriptions for environment declarations
+skills/           owned skills
+agents/           managed subagent definitions (model, effort, turn budget)
+vendor/           pinned third-party skills
+templates/        copy-into-project starters: agents, work contexts, teams
+brand/            intentionally public personal-brand text
+bin/              stable CLI, installers, checks, hooks, and libraries
+tests/            deterministic shell tests and portable runner
+docs/             detailed operating references
 ```
 
 ## Development and releases
