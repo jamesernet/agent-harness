@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # bin/lib/target.sh — the shared "which directory does this command act on"
-# resolver, extracted from branch-policy.sh and account-guard.sh.
+# resolver, extracted from branch-gate.sh and account-gate.sh.
 #
 # Every case below was behaviour one of those two hooks already had. The suite
 # exists so the two can never diverge again without a test saying so.
@@ -118,9 +118,9 @@ want "empty command yields nothing" \
 
 # THE ONE DIVERGENCE, decided. An unresolvable variable means "cannot tell",
 # so the caller falls back to the cwd it was given rather than matching a
-# route on the strength of a path nobody wrote. branch-policy.sh's effective
+# route on the strength of a path nobody wrote. branch-gate.sh's effective
 # behaviour is unchanged (its -d test already rejected the literal);
-# account-guard.sh becomes strictly more careful.
+# account-gate.sh becomes strictly more careful.
 want "an unresolvable \$VAR yields nothing rather than the literal" \
   "" 'cd "$NOT_ASSIGNED_HERE" && git commit -m x'
 
@@ -141,7 +141,7 @@ want "a non-existent absolute path is returned" \
 # only -C and cd, so from a cwd outside the target they fell back to that cwd
 # and the gate never reached the branch. The answer is the directory
 # CONTAINING the git dir, because `rev-parse --show-toplevel` is fatal from
-# inside a `.git` and that call is the first thing branch-policy.sh makes with
+# inside a `.git` and that call is the first thing branch-gate.sh makes with
 # it -- the git dir itself would make it exit 0, which is the bypass.
 want "--git-dir=<x>/.git resolves to <x>" \
   "$tmp/a" "git --git-dir=$tmp/a/.git commit -m x"

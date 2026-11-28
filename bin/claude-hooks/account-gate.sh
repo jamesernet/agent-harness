@@ -4,7 +4,7 @@ set -euo pipefail
 # Claude Code PreToolUse hook: a routed path is edited on its own account.
 #
 # Installed by bin/build-adapters.sh into `hooks/` inside EVERY registered Claude
-# account directory, like branch-policy.sh. It is symmetric and routes-only: a
+# account directory, like branch-gate.sh. It is symmetric and routes-only: a
 # path with no route is nobody's business, so on a client account you can still
 # edit a personal repo, and on the personal account a client tree is refused.
 #
@@ -25,7 +25,7 @@ set -euo pipefail
 # PreToolUse hook runs after the first of those. This fails the session fast, at
 # the first write, rather than preventing the first request. Early enough to stop
 # a long run landing on the wrong account; not a billing boundary.
-# routing-tripwire.sh says the same thing at session start, before the first
+# account-notice.sh says the same thing at session start, before the first
 # prompt, through the same library; a SessionStart hook cannot refuse anything,
 # so this hook remains the gate.
 #
@@ -43,7 +43,7 @@ set -euo pipefail
 # volume, `~/Repos/acme` and `~/repos/acme` are one directory and this hook
 # treats them as two. Route the spelling your shell actually uses.
 #
-# Fails OPEN on any error, matching branch-policy.sh.
+# Fails OPEN on any error, matching branch-gate.sh.
 trap 'exit 0' ERR
 
 command -v jq >/dev/null 2>&1 || exit 0
@@ -55,7 +55,7 @@ TARGET_LIB="$SCRIPT_DIR/llmctx-target.sh"
 # shellcheck source=../lib/target.sh
 source "$TARGET_LIB"
 # Routes and the account registry are read through one library, shared with the
-# SessionStart tripwire (routing-tripwire.sh), so the two cannot drift apart.
+# SessionStart notice (account-notice.sh), so the two cannot drift apart.
 ROUTES_LIB="$SCRIPT_DIR/llmctx-routes.sh"
 [[ -f "$ROUTES_LIB" ]] || ROUTES_LIB="$SCRIPT_DIR/../lib/routes.sh"
 [[ -f "$ROUTES_LIB" ]] || exit 0
@@ -91,9 +91,9 @@ case "$tool" in
   *) exit 0 ;;
 esac
 
-# Judge the TARGET, not the session cwd, for the reason branch-policy.sh gives.
+# Judge the TARGET, not the session cwd, for the reason branch-gate.sh gives.
 # For Bash that means the directory a `git -C` names or the last
-# statement-initial `cd` lands in, the way branch-policy.sh resolves it; the
+# statement-initial `cd` lands in, the way branch-gate.sh resolves it; the
 # session cwd is the fallback. Judging Bash by cwd alone let `cd <client> &&
 # edit` pass from a personal directory and denied `direnv allow` — the very
 # fix the denial prints — from inside the client tree.
@@ -101,14 +101,14 @@ cwd="$(printf '%s' "$input" | jq -r '.cwd // "."')"
 target="$(printf '%s' "$input" | jq -r '.tool_input.file_path // ""')"
 if [[ -z "$target" && "$tool" == "Bash" ]]; then
   cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // ""')"
-  # The remediation this hook prints is `touch <config-dir>/.allow-cross-account`,
+  # The remediation this hook prints is `touch <account>/.allow-cross-account`,
   # and the session that needs it is usually standing in the routed tree. A
   # command that names the sentinel is operating on the account, not the tree.
   case "$cmd" in
     *.allow-cross-account*) exit 0 ;;
   esac
   # Which directory the command acts on is bin/lib/target.sh's job, shared with
-  # branch-policy.sh so the two can no longer drift. An unresolvable `$VAR`
+  # branch-gate.sh so the two can no longer drift. An unresolvable `$VAR`
   # yields nothing there, so this falls back to the payload cwd rather than
   # matching a route on the strength of a path nobody wrote.
   target="$(llmctx_target_from_command "$cmd")"
@@ -125,7 +125,7 @@ case "$target" in
 esac
 
 # Everything that decides whether this write belongs to another account is one
-# library call, shared with routing-tripwire.sh. Silence is "cannot tell" or
+# library call, shared with account-notice.sh. Silence is "cannot tell" or
 # "nothing to say"; the library's header lists which cases, and every one of
 # them fails open.
 verdict="$(llmctx_routes_judge "$target")"

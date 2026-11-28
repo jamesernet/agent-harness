@@ -2,8 +2,8 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
-HOOK="$SRC/bin/claude-hooks/environment-tripwire.sh"
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-env-tripwire.XXXXXX")"
+HOOK="$SRC/bin/claude-hooks/environment-notice.sh"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/llmctx-env-notice.XXXXXX")"
 tmp="$(cd "$tmp" && pwd -P)"
 trap 'rm -rf "$tmp"' EXIT
 unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS
@@ -13,7 +13,7 @@ git -C "$tmp/repo" init -q
 git -C "$tmp/other" init -q
 for variable in AWS_PROFILE AWS_DEFAULT_PROFILE AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_SECURITY_TOKEN AWS_WEB_IDENTITY_TOKEN_FILE AWS_ROLE_ARN AWS_ROLE_SESSION_NAME AWS_CONTAINER_CREDENTIALS_RELATIVE_URI AWS_CONTAINER_CREDENTIALS_FULL_URI AWS_CONTAINER_AUTHORIZATION_TOKEN AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE; do unset "$variable"; done
 fail() {
-  echo "environment tripwire test failed: $*" >&2
+  echo "environment notice test failed: $*" >&2
   exit 1
 }
 payload() { jq -cn --arg cwd "$tmp/repo/pkg" '{cwd:$cwd}'; }
@@ -82,8 +82,8 @@ mkdir -p "$tmp/home/.claude"
 printf '{"theme":"light","hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"/foreign/startup.sh"}]}]}}\n' >"$tmp/home/.claude/settings.json"
 HOME="$tmp/home" LLMCTX_ALLOW_WORKTREE_INSTALL=1 "$SRC/bin/build-adapters.sh" --account default >/dev/null
 settings="$tmp/home/.claude/settings.json"
-jq -e '.theme == "light" and ([.hooks.SessionStart[].hooks[].command] | any(contains("environment-tripwire.sh"))) and ([.hooks.SessionStart[].hooks[].command] | index("/foreign/startup.sh") != null)' "$settings" >/dev/null || fail "hook registration lost managed or foreign settings"
-out="$(HOME="$tmp/home" AWS_PROFILE=fixture-step-up bash "$tmp/home/.claude/hooks/environment-tripwire.sh" <<<"$(payload)")"
+jq -e '.theme == "light" and ([.hooks.SessionStart[].hooks[].command] | any(contains("environment-notice.sh"))) and ([.hooks.SessionStart[].hooks[].command] | index("/foreign/startup.sh") != null)' "$settings" >/dev/null || fail "hook registration lost managed or foreign settings"
+out="$(HOME="$tmp/home" AWS_PROFILE=fixture-step-up bash "$tmp/home/.claude/hooks/environment-notice.sh" <<<"$(payload)")"
 fired "$out" || fail "installed hook could not load its context libraries"
 HOME="$tmp/home" LLMCTX_ALLOW_WORKTREE_INSTALL=1 "$SRC/bin/build-adapters.sh" --check --account default >/dev/null || fail "installed hook libraries report drift"
-echo 'environment tripwire tests: passed'
+echo 'environment notice tests: passed'

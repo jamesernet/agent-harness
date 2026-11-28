@@ -192,6 +192,31 @@ llmctx_account_home_path() {
   esac
 }
 
+# Claude hook file names this repository used to ship and no longer does, as
+# `old|new` lines read from <retired.conf>, for one account. The file says why
+# the list exists. A name the owner declared with llmctx.accountHook, globally
+# or for this account, is theirs and is left out: neither the installer nor
+# doctor may treat a script somebody kept on purpose as a leftover of ours.
+llmctx_retired_hooks() { # <retired.conf> [account name]
+  local file="$1" account="${2:-}" declared old new
+  [[ -f "$file" ]] || return 0
+  declared="$(
+    git config --global --includes --get-all llmctx.accountHook 2>/dev/null || true
+    [[ -z "$account" ]] ||
+      git config --global --includes --get-all "llmctx.accountHook.$account" 2>/dev/null || true
+  )"
+  # `|| [[ -n "$old" ]]`: read fills its variables and still reports failure on
+  # a final line with no newline, and that line is as much a rename as the rest.
+  while IFS='|' read -r old new || [[ -n "$old" ]]; do
+    case "$old" in '' | \#*) continue ;; esac
+    # A line with no successor is malformed. Kept, its shim would exec the hooks
+    # directory itself; the test refuses one in the committed file.
+    [[ -n "$new" ]] || continue
+    if grep -qxF "$old" <<<"$declared"; then continue; fi
+    printf '%s|%s\n' "$old" "$new"
+  done <"$file"
+}
+
 # Direct `@import` targets in an account's CLAUDE.md that will not resolve when
 # Claude Code reads it. An unresolved target produces NO error: the session
 # simply runs without those rules, and nothing connects the loss to its cause.
