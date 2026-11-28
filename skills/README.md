@@ -115,7 +115,7 @@ with this bundle.
 |---|---|---|---|
 | [site-visual-baseline](site-visual-baseline/) | `/site-visual-baseline` · auto | reproducible screenshot sets across viewports | URL-derived filenames so a later run lines up file-for-file; the settle sequence and the capture traps that silently produce wrong screenshots |
 | [review-product-ux](review-product-ux/) | `/review-product-ux` · auto | browser-driven interaction audit | evidence labels on every finding, so it says whether it was observed, inferred or guessed, and never a silent downgrade from runtime testing; supporting [interaction-checklist](review-product-ux/references/interaction-checklist.md), [report-template](review-product-ux/references/report-template.md) |
-| [metadata-audit](metadata-audit/) | `/metadata-audit` · auto | robots, canonical, AI-crawler posture, llms.txt, structured data | gates, not checklists: a noindex page gets no schema advice; supporting [decision-tree](metadata-audit/references/decision-tree.md), [schema-by-page-type](metadata-audit/references/schema-by-page-type.md), [report-template](metadata-audit/references/report-template.md), [inventory.py](metadata-audit/scripts/inventory.py) |
+| [audit-metadata](audit-metadata/) | `/audit-metadata` · auto | robots, canonical, AI-crawler posture, llms.txt, structured data | gates, not checklists: a noindex page gets no schema advice; supporting [decision-tree](audit-metadata/references/decision-tree.md), [schema-by-page-type](audit-metadata/references/schema-by-page-type.md), [report-template](audit-metadata/references/report-template.md), [inventory.py](audit-metadata/scripts/inventory.py) |
 | [review-shopify-storefront](review-shopify-storefront/) | `/review-shopify-storefront` · auto | a store's money and offer logic | builds the discount register the store usually lacks and measures stacking at a real cart, which is how a dead code in a live email gets found; supporting [register-and-invariants](review-shopify-storefront/references/register-and-invariants.md), [report-template](review-shopify-storefront/references/report-template.md), [storefront-prices.sh](review-shopify-storefront/scripts/storefront-prices.sh) |
 | [website-audit-package](website-audit-package/) | `/website-audit-package` · auto | one client deliverable from several audits | three-state finding labels (live, fixed awaiting publish, open) and a machine-written evidence layer nobody hand-edits |
 | [review-prose](review-prose/) | `/review-prose` · auto | writing meant for an audience | three reviewers run independently — a technical editor, a plain-voice editor, the actual target reader — synthesised by agreement; only the reader notices when a piece is well built and still changes nothing |
@@ -165,7 +165,7 @@ Everything else is self-contained.
 - **tech-due-diligence** names scoping and deliverable playbooks that live in a
   private repository. The procedure stands without them.
 - **review-shopify-storefront** hands the machine layer to Site Scan, another
-  Emergent Labs tool. `metadata-audit` and `web-perf` cover the same ground.
+  Emergent Labs tool. `audit-metadata` and `web-perf` cover the same ground.
 - **tech-due-diligence** also names the repository those playbooks live in; the
   name is the owner's own site, not a client.
 - **The intake pipeline** assumes a tracker the `gh` or `glab` CLI can reach, or
@@ -178,7 +178,7 @@ harness installs one per Claude account and prunes the rest.
 
 | bundle | a project that is | adds |
 |---|---|---|
-| `core` | any codebase | design and engineering, the intake pipeline, plus metadata-audit because every project here ships a page somewhere and tech-due-diligence because it is the owner's first deliverable on any engagement |
+| `core` | any codebase | design and engineering, the intake pipeline, plus audit-metadata because every project here ships a page somewhere and tech-due-diligence because it is the owner's first deliverable on any engagement |
 | `website` | something people look at | core + the website audit family + review-data-privacy |
 | `webapp` | a website that holds user data | website + threat-model |
 | `platform` | a backend other things depend on | core + threat-model, review-data-privacy |

@@ -79,12 +79,13 @@ so a stale one never stands beside changed evidence. Every claim that failed the
 this (#69) was a claim with a citation that did not support it; the register is
 the layer that cannot do that.
 
-Today the one constituent audit with a machine output is metadata-audit, so the
+Today the one constituent audit with a machine output is audit-metadata, so the
 register covers the metadata layer. For each page, save what `inventory.py`
 reads under `evidence/metadata-audit/<page>/`: `page.html`, plus `robots.txt`,
 `llms.txt`, `headers.txt`, `sitemap.xml`, a one-line `url` file and a one-line
 `captured` file holding the capture time in ISO 8601 with a timezone, where you
-have them. The
+have them. The directory keeps the name audit-metadata had before 2026-11:
+it is part of the package, and packages already delivered use it. The
 capture time becomes each finding's `asOf`; without it the register falls back
 to the `Date` header saved in `headers.txt`, then to the file's own timestamp,
 and `asOfSource` says which. A missing optional input is recorded as checks not
@@ -109,7 +110,7 @@ document that argues for findings instead of reporting them.
    browser from computed styles, not judged from screenshots.
 3. **Performance** — [web-perf](../web-perf/). Capture desktop *and* mobile; the
    gap between them is frequently the headline.
-4. **Machine readability** — [metadata-audit](../metadata-audit/). Structured data,
+4. **Machine readability** — [audit-metadata](../audit-metadata/). Structured data,
    crawler files, `llms.txt`. Save what its `inventory.py` reads under
    `evidence/metadata-audit/<page>/`, so the register can measure from it.
 5. **Analytics** — the client's own export. Usually arrives last; see Slots.
